@@ -1,0 +1,1305 @@
+BetMind AI — Fase 4: Motor Táctico y Narrativo
+El proyecto está en excelente estado — Fases 0 a 3 completadas con tests pasando. Ahora construimos el cerebro cualitativo.
+
+Evaluación de la Bitácora
+
+Dos observaciones antes del diseño que impactan decisiones de arquitectura:
+
+Los tests muestran lambda_home=4.738, lambda_away=3.051 con score más probable 4-3. Eso es inusualmente alto — la Premier League promedia ~2.7 goles totales por partido. Antes de la Fase 4, conviene revisar si los attack_index de prueba están normalizados correctamente contra la league_avg. No es bloqueante para esta fase, pero el Cerebro Táctico va a amplificar esos números en la narrativa y quedaría inconsistente.
+
+El módulo narrativo necesita vivir en packages/ml/betmind_ml/narrative/ y no en apps/api/. La razón: el LLM recibe datos del motor ML como contexto. Si lo pones en la API, creas una dependencia circular donde el paquete ML importaría cosas de la API. La API solo llama al pipeline, el pipeline llama al narrativo.
+
+Arquitectura de Archivos Completa
+
+packages/ml/betmind_ml/
+├── config.py
+├── schemas/
+│   ├── team_strength.py          ← Ya existe
+│   ├── match_input.py            ← Ya existe
+│   ├── prediction_output.py      ← Ya existe
+│   │
+│   ├── referee.py                ← NUEVO: RefereeProfile
+│   ├── player_props.py           ← NUEVO: PlayerProfile, PlayerPropLine
+│   ├── match_context.py          ← NUEVO: MatchContext (clima, altitud, derby)
+│   └── tactical_analysis.py      ← NUEVO: TacticalAnalysis (output del LLM)
+│
+├── features/
+│   ├── strength_calculator.py    ← Ya existe
+│   ├── form_calculator.py        ← Ya existe
+│   ├── referee_calculator.py     ← NUEVO: métricas del árbitro
+│   ├── player_props_calculator.py ← NUEVO: tiros, corners por jugador
+│   └── corners_calculator.py     ← NUEVO: volumen de córneres por equipo
+│
+├── models/
+│   ├── poisson_engine.py         ← Ya existe
+│   ├── market_calculator.py      ← Ya existe
+│   ├── cards_model.py            ← NUEVO: modelo de tarjetas
+│   └── corners_model.py          ← NUEVO: modelo de córneres
+│
+├── narrative/                    ← NUEVO: Cerebro Táctico Cualitativo
+│   ├── __init__.py
+│   ├── prompts/
+│   │   ├── __init__.py
+│   │   ├── base_prompt.py        ← Sistema base anti-alucinación
+│   │   ├── goals_prompt.py       ← Prompt para Over/Under y BTTS
+│   │   ├── cards_prompt.py       ← Prompt para mercado de tarjetas
+│   │   ├── corners_prompt.py     ← Prompt para córneres
+│   │   ├── player_props_prompt.py ← Prompt para props de jugadores
+│   │   └── bet_builder_prompt.py ← Prompt para combinadas correlacionadas
+│   ├── generators/
+│   │   ├── __init__.py
+│   │   ├── goals_narrative.py
+│   │   ├── cards_narrative.py
+│   │   ├── corners_narrative.py
+│   │   ├── player_props_narrative.py
+│   │   └── bet_builder.py
+│   └── narrative_orchestrator.py ← Coordina todos los generadores
+│
+├── ev/
+│   └── ev_calculator.py          ← Ya existe
+│
+└── pipeline/
+    ├── prediction_pipeline.py    ← Ya existe (se extiende)
+    └── full_analysis_pipeline.py ← NUEVO: pipeline completo con narrativa
+
+
+1. Schemas (SDD — Todo antes del código)
+
+# packages/ml/betmind_ml/schemas/referee.py
+"""
+Perfil estadístico de un árbitro basado en su historial.
+Fuente de datos: se obtiene del agente de búsqueda o API-Football (fixtures stats).
+"""
+from pydantic import BaseModel, Field
+
+
+class RefereeProfile(BaseModel):
+    """
+    Perfil completo de un árbitro para el mercado de tarjetas.
+    Todos los promedios son por partido de 90 minutos reglamentarios.
+    """
+    referee_name: str
+    matches_sample: int = Field(..., ge=0, description="Partidos usados para calcular el perfil")
+
+    # Promedios generales
+    avg_yellow_cards: float = Field(..., ge=0, description="Amarillas por partido")
+    avg_red_cards: float = Field(..., ge=0, description="Rojas por partido")
+    avg_fouls_called: float = Field(..., ge=0, description="Faltas pitadas por partido")
+
+    # Estrictez relativa (1.0 = promedio de la liga, > 1.0 = más estricto)
+    strictness_index: float = Field(1.0, description="Índice relativo a media de árbitros de la liga")
+
+    # Comportamiento en partidos de alta tensión
+    high_stakes_avg_yellows: float | None = Field(
+        None, description="Amarillas en derbis/playoffs/descenso"
+    )
+
+    # Tendencia reciente (últimos 5 partidos como árbitro)
+    recent_avg_yellow_cards: float | None = None
+    recent_trend: str | None = Field(
+        None, description="'increasing' | 'decreasing' | 'stable'"
+    )
+
+    # Flag de confiabilidad
+    is_reliable: bool = Field(
+        True, description="False si matches_sample < 5"
+    )
+
+    model_config = {"from_attributes": True}
+
+
+
+# packages/ml/betmind_ml/schemas/player_props.py
+"""
+Estadísticas de jugadores individuales para mercados de props.
+"""
+from pydantic import BaseModel, Field
+from enum import Enum
+
+
+class PlayerPosition(str, Enum):
+    FORWARD   = "forward"
+    MIDFIELDER = "midfielder"
+    DEFENDER  = "defender"
+    GOALKEEPER = "goalkeeper"
+
+
+class PlayerProfile(BaseModel):
+    """Perfil estadístico de un jugador para props de tiros y tarjetas."""
+    player_id: int | None = None
+    player_name: str
+    team_id: int
+    team_name: str
+    position: PlayerPosition
+
+    # Tiros (por 90 minutos reglamentarios)
+    avg_shots_per_90: float = Field(0.0, ge=0)
+    avg_shots_on_target_per_90: float = Field(0.0, ge=0)
+    shot_accuracy: float = Field(0.0, ge=0, le=1, description="shots_on_target / total_shots")
+
+    # Disciplina del jugador
+    avg_yellow_cards_per_90: float = Field(0.0, ge=0)
+    avg_fouls_committed_per_90: float = Field(0.0, ge=0)
+    bookings_in_last_5: int = Field(0, ge=0, description="Tarjetas en últimos 5 partidos")
+
+    # Estado actual
+    is_available: bool = True           # No lesionado / no suspendido
+    games_since_last_booking: int | None = None
+    form_shots_last_3: float | None = None  # Promedio de tiros en últimos 3 partidos
+
+    # Rendimiento vs el rival específico (H2H de props)
+    h2h_avg_shots_vs_opponent: float | None = None
+
+
+class PlayerPropLine(BaseModel):
+    """
+    Línea de apuesta para un prop de jugador específico.
+    Ej: "Benzema Over 2.5 tiros a puerta"
+    """
+    player: PlayerProfile
+    market_type: str  = Field(..., description="'shots_on_target' | 'shots_total' | 'yellow_card'")
+    line: float       = Field(..., description="La línea: ej 2.5 para Over/Under 2.5 tiros")
+    our_probability_over: float = Field(..., ge=0, le=1)
+    our_probability_under: float = Field(..., ge=0, le=1)
+    bookmaker_odds_over: float | None = None
+    bookmaker_odds_under: float | None = None
+    ev_over: float | None = None
+    ev_under: float | None = None
+
+
+
+# packages/ml/betmind_ml/schemas/match_context.py
+"""
+Contexto cualitativo del partido que no se captura en estadísticas puras.
+Estos factores modulan la narrativa y algunos modelos.
+"""
+from pydantic import BaseModel, Field
+from enum import Enum
+
+
+class MatchImportance(str, Enum):
+    FINAL           = "final"           # Final de torneo
+    SEMIFINAL       = "semifinal"
+    DERBY           = "derby"           # Clásico / Derby regional
+    RELEGATION      = "relegation"      # Lucha por el descenso
+    TITLE_DECIDER   = "title_decider"   # Define al campeón
+    REGULAR         = "regular"         # Partido de liga normal
+    DEAD_RUBBER     = "dead_rubber"     # Sin nada en juego
+
+
+class MatchContext(BaseModel):
+    """
+    Contexto completo del partido para enriquecer la narrativa táctica.
+    Se construye en el orquestador de FastAPI antes de llamar al pipeline.
+    """
+    match_id: int
+
+    # Geografía y condiciones físicas
+    stadium_altitude_masl: float = Field(
+        0.0, description="Altitud del estadio en metros sobre el nivel del mar"
+    )
+    expected_temperature_celsius: float | None = None
+    expected_weather: str | None = Field(
+        None, description="'sunny' | 'rainy' | 'windy' | 'cold'"
+    )
+
+    # Importancia del partido
+    match_importance: MatchImportance = MatchImportance.REGULAR
+    is_derby: bool = False
+    rivalry_intensity: int = Field(
+        1, ge=1, le=5, description="Intensidad de la rivalidad (1=baja, 5=clásico histórico)"
+    )
+
+    # Situación en la tabla
+    home_position: int | None = None
+    away_position: int | None = None
+    home_games_without_win: int = 0     # Racha negativa
+    away_games_without_win: int = 0
+
+    # Calendario y fatiga
+    home_days_since_last_match: int | None = None
+    away_days_since_last_match: int | None = None
+    home_matches_last_30_days: int = 0
+    away_matches_last_30_days: int = 0
+    is_midweek_match: bool = False      # Entre semana = más rotación probable
+
+    # Bajas confirmadas (impacto cualitativo)
+    home_key_players_out: list[str] = Field(
+        default_factory=list,
+        description="Nombres de jugadores clave del local que no juegan"
+    )
+    away_key_players_out: list[str] = Field(
+        default_factory=list,
+        description="Nombres de jugadores clave del visitante que no juegan"
+    )
+
+    # Efectos especiales para altitud (> 2500 msnm afecta intensamente)
+    @property
+    def altitude_impact(self) -> str:
+        if self.stadium_altitude_masl >= 2500:
+            return "high"       # Bogotá, Manizales, Medellín (2150)
+        elif self.stadium_altitude_masl >= 1500:
+            return "moderate"
+        return "none"
+
+
+
+# packages/ml/betmind_ml/schemas/tactical_analysis.py
+"""
+Output estructurado del LLM para cada mercado analizado.
+Este schema es el contrato entre el LLM (via Instructor) y el resto del sistema.
+"""
+from pydantic import BaseModel, Field
+from enum import Enum
+
+
+class SignalStrength(str, Enum):
+    STRONG  = "strong"   # 3+ factores alineados
+    MODERATE = "moderate" # 2 factores alineados
+    WEAK    = "weak"     # 1 factor o factores contradictorios
+
+
+class ProConPoint(BaseModel):
+    """Un punto individual de análisis Pros/Contras."""
+    factor: str = Field(..., description="Categoría: 'forma' | 'arbitro' | 'h2h' | 'contexto' | 'estadistica'")
+    description: str = Field(..., max_length=200, description="Explicación concisa y factual")
+    weight: str = Field(..., description="'high' | 'medium' | 'low' — impacto del factor")
+
+
+class MarketNarrative(BaseModel):
+    """
+    Análisis completo de Pros y Contras para un mercado específico.
+    El LLM devuelve exactamente esta estructura — sin texto libre adicional.
+    """
+    market_name: str
+    our_probability: float
+    recommendation: str = Field(
+        ..., description="La apuesta recomendada: 'Over 2.5', 'Local Gana', 'Más de 3.5 córneres local', etc."
+    )
+
+    pros: list[ProConPoint] = Field(
+        ..., min_length=2, max_length=5,
+        description="Factores a FAVOR de la apuesta recomendada"
+    )
+    cons: list[ProConPoint] = Field(
+        ..., min_length=1, max_length=4,
+        description="Factores EN CONTRA — el análisis honesto es obligatorio"
+    )
+
+    signal_strength: SignalStrength
+    key_risk: str = Field(..., max_length=150, description="El riesgo principal en una frase")
+    tactical_summary: str = Field(..., max_length=300, description="Resumen ejecutivo del análisis")
+
+    # Solo para props de jugadores
+    featured_player: str | None = None
+
+
+class BetBuilderCombination(BaseModel):
+    """Una combinada táctica generada por el sistema."""
+    name: str = Field(..., description="Nombre comercial: 'Combo Ofensivo Local', 'Combo Árbitro Permisivo'")
+    legs: list[str] = Field(..., min_length=2, max_length=4, description="Las jugadas de la combinada")
+    combined_probability: float = Field(..., ge=0, le=1)
+    combined_odds_estimate: float | None = None
+    correlation_rationale: str = Field(
+        ..., max_length=250,
+        description="Por qué estas jugadas están correlacionadas positivamente"
+    )
+    risk_level: str = Field(..., description="'low' | 'medium' | 'high'")
+
+
+class TacticalAnalysis(BaseModel):
+    """
+    Output completo del Cerebro Táctico para un partido.
+    Un objeto de este tipo se adjunta al MatchPredictionOutput y se persiste en Supabase.
+    """
+    match_id: int
+    model_version: str = "narrative_v1.0"
+
+    # Un MarketNarrative por cada mercado analizado
+    goals_narrative: MarketNarrative | None = None         # Over/Under + BTTS
+    cards_narrative: MarketNarrative | None = None         # Tarjetas
+    corners_narrative: MarketNarrative | None = None       # Córneres
+    player_props_narratives: list[MarketNarrative] = Field(default_factory=list)  # Props individuales
+
+    # Combinadas sugeridas
+    bet_builder_suggestions: list[BetBuilderCombination] = Field(
+        default_factory=list, max_length=3
+    )
+
+    # Veredicto global
+    overall_confidence: int = Field(..., ge=0, le=100)
+    match_preview_headline: str = Field(
+        ..., max_length=120,
+        description="Titular periodístico del partido: atractivo, factual, sin clickbait"
+    )
+
+    # Metadata de generación
+    llm_model_used: str = ""
+    generation_tokens_used: int = 0
+    data_completeness_score: float = Field(
+        ..., ge=0, le=1,
+        description="Qué tan completos estaban los datos de entrada (0=muy incompleto, 1=completo)"
+    )
+
+
+
+2. Los Prompts (Anti-alucinación por diseño)
+
+# packages/ml/betmind_ml/narrative/prompts/base_prompt.py
+"""
+Sistema base que todos los prompts de narrativa heredan.
+Las reglas anti-alucinación van aquí — en un solo lugar.
+"""
+
+SYSTEM_BASE = """
+Eres BetMind AI Analyst, un analista cuantitativo de fútbol de élite.
+Tu trabajo es generar análisis tácticos estructurados basados EXCLUSIVAMENTE
+en los datos estadísticos que se te proporcionan.
+
+## REGLAS CRÍTICAS — TOLERANCIA CERO A ALUCINACIONES
+
+1. **SOLO datos proporcionados:** Cada afirmación que hagas DEBE estar respaldada
+   por un número o dato explícito en el contexto. Si el dato no está, di que
+   no hay información disponible — NUNCA inventes estadísticas.
+
+2. **Honestidad obligatoria:** Debes incluir SIEMPRE al menos 1 factor EN CONTRA
+   (cons) de la apuesta recomendada. Un análisis sin contras es sospechoso y
+   no refleja la realidad del fútbol.
+
+3. **Probabilidades coherentes:** Si el motor de Poisson dice P(Over 2.5) = 54%,
+   tu narrativa DEBE estar alineada con esa probabilidad. No puedes decir
+   "muy probable" si la probabilidad es 54%, ni "improbable" si es 70%.
+
+4. **Calibración de lenguaje:**
+   - 65-100%: "alta probabilidad", "favorecido ampliamente"
+   - 55-65%: "ligera ventaja", "levemente favorable"
+   - 45-55%: "partido equilibrado", "mercado disputado"
+   - < 45%: "en contra de la tendencia", "apuesta de riesgo"
+
+5. **Factores ausentes:** Si no tienes datos del árbitro, NO menciones al árbitro.
+   Si no hay datos de jugadores, NO hagas props de jugadores.
+   Ajusta tu análisis solo a los datos disponibles.
+
+6. **Formato:** Responde ÚNICAMENTE con el JSON schema especificado.
+   Cero texto fuera del JSON. Cero markdown. Cero explicaciones adicionales.
+"""
+
+
+
+# packages/ml/betmind_ml/narrative/prompts/goals_prompt.py
+"""
+Prompt especializado para el mercado de goles: Over/Under y BTTS.
+"""
+
+GOALS_ANALYSIS_USER = """
+Analiza el mercado de GOLES para el siguiente partido y devuelve el JSON.
+
+## DATOS DEL PARTIDO
+**{home_team} vs {away_team}** | {league} | {match_date}
+
+### Motor Cuantitativo (Poisson)
+- Goles esperados Local (λ): {lambda_home}
+- Goles esperados Visitante (λ): {lambda_away}
+- P(Over 2.5 goles): {p_over_25}%
+- P(Under 2.5 goles): {p_under_25}%
+- P(BTTS - Ambos Anotan): {p_btts}%
+- Marcador más probable: {most_likely_score} ({most_likely_prob}%)
+
+### Forma Reciente (últimos 5 partidos — solo 90 min)
+**{home_team}:**
+- Puntos: {home_form_points}/15
+- Goles marcados promedio: {home_avg_scored}
+- Goles recibidos promedio: {home_avg_conceded}
+- Índice de ataque (vs liga): {home_attack_index} (1.0 = promedio)
+- Índice de defensa (vs liga): {home_defense_index} (>1.0 = mejor que promedio)
+
+**{away_team}:**
+- Puntos: {away_form_points}/15
+- Goles marcados promedio: {away_avg_scored}
+- Goles recibidos promedio: {away_avg_conceded}
+- Índice de ataque (vs liga): {away_attack_index}
+- Índice de defensa (vs liga): {away_defense_index}
+
+### Historial H2H (últimos {h2h_count} enfrentamientos)
+- Promedio de goles totales: {h2h_avg_goals}
+- Partidos Over 2.5: {h2h_over_25_count}/{h2h_count}
+- BTTS en H2H: {h2h_btts_count}/{h2h_count}
+
+### Contexto del Partido
+- Importancia: {match_importance}
+- Altitud estadio: {altitude_masl} msnm (impacto: {altitude_impact})
+- Clima esperado: {weather}
+- Bajas local: {home_players_out}
+- Bajas visitante: {away_players_out}
+- Días desde último partido (local): {home_days_rest}
+- Días desde último partido (visitante): {away_days_rest}
+
+{bookmaker_section}
+
+## INSTRUCCIÓN
+Basándote SOLO en los datos anteriores, genera el análisis para el mercado de Over/Under 2.5 goles.
+La recommendation debe ser la opción con mayor valor esperado o mayor probabilidad si no hay cuotas.
+
+Responde con exactamente este JSON schema:
+{json_schema}
+"""
+
+BOOKMAKER_SECTION_WITH_ODDS = """
+### Cuotas del Bookmaker
+- Over 2.5: {odds_over} (P. implícita: {implied_over}%)
+- Under 2.5: {odds_under} (P. implícita: {implied_under}%)
+- EV Over 2.5: {ev_over}
+- EV Under 2.5: {ev_under}
+- **Edge detectado:** {edge}%
+"""
+
+BOOKMAKER_SECTION_NO_ODDS = """
+### Cuotas del Bookmaker
+No disponibles para este análisis. Análisis basado solo en probabilidades del modelo.
+"""
+
+
+
+# packages/ml/betmind_ml/narrative/prompts/cards_prompt.py
+"""
+Prompt para el mercado de disciplina y tarjetas.
+El árbitro es el factor diferencial de este mercado.
+"""
+
+CARDS_ANALYSIS_USER = """
+Analiza el mercado de TARJETAS para el siguiente partido.
+
+## DATOS DEL PARTIDO
+**{home_team} vs {away_team}** | {league}
+
+### Árbitro Designado: {referee_name}
+{referee_section}
+
+### Disciplina de los Equipos (últimos {strength_window} partidos — 90 min)
+**{home_team}:**
+- Faltas cometidas promedio: {home_avg_fouls}
+- Tarjetas amarillas promedio recibidas: {home_avg_yellows}
+- Jugadores con > 3 amarillas en la temporada: {home_booked_players}
+
+**{away_team}:**
+- Faltas cometidas promedio: {away_avg_fouls}
+- Tarjetas amarillas promedio recibidas: {away_avg_yellows}
+- Jugadores con > 3 amarillas en la temporada: {away_booked_players}
+
+### Contexto de Tensión
+- Tipo de partido: {match_importance}
+- Es derby/clásico: {is_derby}
+- Intensidad de la rivalidad: {rivalry_intensity}/5
+- Situación en tabla (local posición {home_position} vs visitante posición {away_position})
+
+### Línea de Tarjetas a Analizar
+- Over {cards_line} tarjetas totales
+- Promedio esperado del modelo: {expected_total_cards} tarjetas
+
+{bookmaker_cards_section}
+
+## REGLA ESPECIAL PARA TARJETAS
+El árbitro es el factor con MAYOR peso en este mercado (>40% del análisis).
+Si no hay datos confiables del árbitro (matches_sample < 5), indícalo explícitamente
+en un "con" y reduce el signal_strength a "weak" o "moderate" máximo.
+
+Responde con exactamente este JSON schema:
+{json_schema}
+"""
+
+REFEREE_DATA_AVAILABLE = """
+- Partidos como árbitro (muestra): {referee_matches}
+- Amarillas promedio por partido: {referee_avg_yellows}
+- Rojas promedio por partido: {referee_avg_reds}
+- Faltas pitadas promedio: {referee_avg_fouls}
+- Índice de estrictez (vs árbitros de la liga): {referee_strictness} (1.0 = promedio)
+- En derbis/alta tensión: {referee_high_stakes_avg} amarillas promedio
+- Tendencia reciente: {referee_trend}
+"""
+
+REFEREE_DATA_UNAVAILABLE = """
+- ADVERTENCIA: No hay datos históricos del árbitro {referee_name} en nuestra base.
+  El análisis de tarjetas tendrá menor confiabilidad.
+  Usa solo los datos de disciplina de equipos y contexto del partido.
+"""
+
+
+
+# packages/ml/betmind_ml/narrative/prompts/corners_prompt.py
+
+CORNERS_ANALYSIS_USER = """
+Analiza el mercado de CÓRNERES para el siguiente partido.
+
+## DATOS DEL PARTIDO
+**{home_team} vs {away_team}** | {league}
+
+### Estadísticas de Córneres (últimos {strength_window} partidos — 90 min)
+**{home_team} (jugando de LOCAL):**
+- Córneres a favor promedio: {home_corners_for_avg}
+- Córneres en contra promedio: {home_corners_against_avg}
+- Tiros bloqueados promedio (generan córners): {home_blocked_shots_avg}
+- Estilo táctico: {home_tactical_style}
+
+**{away_team} (jugando de VISITANTE):**
+- Córneres a favor promedio: {away_corners_for_avg}
+- Córneres en contra promedio: {away_corners_against_avg}
+- Tiros bloqueados promedio: {away_blocked_shots_avg}
+- Estilo táctico: {away_tactical_style}
+
+### Total esperado por el modelo
+- Córneres esperados local: {expected_corners_home}
+- Córneres esperados visitante: {expected_corners_away}
+- Total esperado: {expected_corners_total}
+
+### H2H de Córneres
+- Promedio de córneres totales en H2H: {h2h_corners_avg}
+- Partidos con Over {corners_line}: {h2h_over_corners_count}/{h2h_count}
+
+### Factores Tácticos Especiales
+- Si {away_team} va perdiendo → tiende a presionar más = más córneres
+- Datos de presión alta del local: {home_high_press_index}
+- Dato de juego por bandas del visitante: {away_wide_play_index}
+
+{bookmaker_corners_section}
+
+## NOTA
+Los córneres tienen alta varianza. El signal_strength raramente debe ser "strong"
+a menos que el modelo indique > 68% de probabilidad Y los datos H2H lo confirmen.
+
+Responde con exactamente este JSON schema:
+{json_schema}
+"""
+
+
+
+# packages/ml/betmind_ml/narrative/prompts/bet_builder_prompt.py
+
+BET_BUILDER_USER = """
+Eres un especialista en apuestas combinadas (Bet Builder) con enfoque en correlación positiva.
+
+## DATOS DEL PARTIDO
+**{home_team} vs {away_team}** | {league}
+
+### Probabilidades del Modelo
+{markets_summary}
+
+### Análisis de Correlación Disponible
+Estas jugadas tienden a correlacionarse positivamente en el fútbol:
+- Victoria Local + Over 1.5 goles: correlación positiva (el local marca para ganar)
+- Victoria amplia + Más córneres del local: correlación positiva (dominancia = más córneres)  
+- Árbitro estricto + Over tarjetas: correlación directa
+- Derby + Over tarjetas + Under goles: correlación moderada (tensión → más infracciones, menos espacio)
+- Equipo inferior fuera + BTTS: moderada (necesita marcar = más abierto)
+
+### Restricción Crítica
+Las siguientes jugadas tienen correlación NEGATIVA — NUNCA las combines:
+- Under goles + Over córneres del favorito (si hay pocos goles, hay menos córneres del atacante)
+- Victoria visitante amplia + Over córneres del local (si el local pierde amplio, genera menos)
+- Árbitro permisivo + Over tarjetas
+
+### Datos Disponibles
+{all_analysis_data}
+
+## INSTRUCCIÓN
+Genera exactamente {n_suggestions} combinadas que tengan sentido táctico.
+Cada combinada debe tener 2-4 legs y estar justificada por correlación real.
+RECHAZA cualquier combinada con correlación negativa.
+
+Responde con exactamente este JSON schema:
+{json_schema}
+"""
+
+
+
+3. Los Generadores Narrativos
+
+# packages/ml/betmind_ml/narrative/generators/goals_narrative.py
+"""
+SRP: Genera la narrativa táctica para el mercado de goles.
+Usa Instructor + Pydantic para garantizar output estructurado sin alucinaciones.
+"""
+import json
+import logging
+import instructor
+from anthropic import AsyncAnthropic
+
+from betmind_ml.schemas.tactical_analysis import MarketNarrative
+from betmind_ml.schemas.prediction_output import MatchPredictionOutput
+from betmind_ml.schemas.team_strength import TeamStrengthProfile
+from betmind_ml.schemas.match_context import MatchContext
+from betmind_ml.narrative.prompts.base_prompt import SYSTEM_BASE
+from betmind_ml.narrative.prompts.goals_prompt import (
+    GOALS_ANALYSIS_USER,
+    BOOKMAKER_SECTION_WITH_ODDS,
+    BOOKMAKER_SECTION_NO_ODDS,
+)
+
+logger = logging.getLogger(__name__)
+
+LLM_MODEL = "claude-sonnet-4-6"
+
+
+async def generate_goals_narrative(
+    match_output: MatchPredictionOutput,
+    home_strength: TeamStrengthProfile,
+    away_strength: TeamStrengthProfile,
+    context: MatchContext,
+    home_team_name: str,
+    away_team_name: str,
+    league_name: str,
+    match_date: str,
+    h2h_stats: dict,
+    anthropic_client: AsyncAnthropic,
+) -> MarketNarrative | None:
+    """
+    Genera el análisis de Pros/Contras para Over/Under y BTTS.
+    Retorna None si los datos son insuficientes para una narrativa confiable.
+    """
+    # Extraer probabilidades del motor Poisson
+    markets_by_name = {m.market_name: m for m in match_output.markets}
+    over_25 = markets_by_name.get("OVER_2_5")
+    under_25 = markets_by_name.get("UNDER_2_5")
+    btts = markets_by_name.get("BTTS_YES")
+
+    if not over_25:
+        logger.warning("generate_goals_narrative: OVER_2_5 no disponible en el output del motor")
+        return None
+
+    # Construir sección de cuotas
+    if over_25.bookmaker_odds:
+        bookmaker_section = BOOKMAKER_SECTION_WITH_ODDS.format(
+            odds_over=over_25.bookmaker_odds,
+            implied_over=round((over_25.implied_probability or 0) * 100, 1),
+            odds_under=under_25.bookmaker_odds if under_25 else "N/D",
+            implied_under=round((under_25.implied_probability or 0) * 100, 1) if under_25 else "N/D",
+            ev_over=f"{over_25.expected_value:+.3f}" if over_25.expected_value else "N/D",
+            ev_under=f"{under_25.expected_value:+.3f}" if under_25 and under_25.expected_value else "N/D",
+            edge=f"{over_25.edge:+.1f}" if over_25.edge else "N/D",
+        )
+    else:
+        bookmaker_section = BOOKMAKER_SECTION_NO_ODDS
+
+    user_prompt = GOALS_ANALYSIS_USER.format(
+        home_team=home_team_name,
+        away_team=away_team_name,
+        league=league_name,
+        match_date=match_date,
+        lambda_home=match_output.lambda_home,
+        lambda_away=match_output.lambda_away,
+        p_over_25=round(over_25.our_probability * 100, 1),
+        p_under_25=round((1 - over_25.our_probability) * 100, 1),
+        p_btts=round(btts.our_probability * 100, 1) if btts else "N/D",
+        most_likely_score=match_output.score_matrix.most_likely_score,
+        most_likely_prob=round(match_output.score_matrix.most_likely_prob * 100, 1),
+        # Forma del local
+        home_form_points=home_strength.form_points,
+        home_avg_scored=home_strength.avg_goals_scored,
+        home_avg_conceded=home_strength.avg_goals_conceded,
+        home_attack_index=home_strength.attack_index,
+        home_defense_index=home_strength.defense_index,
+        # Forma del visitante
+        away_form_points=away_strength.form_points,
+        away_avg_scored=away_strength.avg_goals_scored,
+        away_avg_conceded=away_strength.avg_goals_conceded,
+        away_attack_index=away_strength.attack_index,
+        away_defense_index=away_strength.defense_index,
+        # H2H
+        h2h_count=h2h_stats.get("total_matches", 0),
+        h2h_avg_goals=h2h_stats.get("avg_goals_total", "N/D"),
+        h2h_over_25_count=h2h_stats.get("over_25_count", "N/D"),
+        h2h_btts_count=h2h_stats.get("btts_count", "N/D"),
+        # Contexto
+        match_importance=context.match_importance.value,
+        altitude_masl=context.stadium_altitude_masl,
+        altitude_impact=context.altitude_impact,
+        weather=context.expected_weather or "No disponible",
+        home_players_out=", ".join(context.home_key_players_out) or "Ninguna baja confirmada",
+        away_players_out=", ".join(context.away_key_players_out) or "Ninguna baja confirmada",
+        home_days_rest=context.home_days_since_last_match or "N/D",
+        away_days_rest=context.away_days_since_last_match or "N/D",
+        bookmaker_section=bookmaker_section,
+        json_schema=json.dumps(MarketNarrative.model_json_schema(), ensure_ascii=False, indent=2),
+    )
+
+    try:
+        client = instructor.from_anthropic(anthropic_client)
+        narrative: MarketNarrative = await client.messages.create(
+            model=LLM_MODEL,
+            max_tokens=1500,
+            system=SYSTEM_BASE,
+            messages=[{"role": "user", "content": user_prompt}],
+            response_model=MarketNarrative,
+            max_retries=3,   # Instructor reintenta si el JSON no valida
+        )
+        logger.info(
+            "GoalsNarrative generada: %s | Signal: %s | Pros: %d | Cons: %d",
+            narrative.recommendation,
+            narrative.signal_strength.value,
+            len(narrative.pros),
+            len(narrative.cons),
+        )
+        return narrative
+
+    except Exception as e:
+        logger.error("Error generando GoalsNarrative: %s", e)
+        return None
+
+
+
+# packages/ml/betmind_ml/narrative/generators/cards_narrative.py
+"""
+SRP: Genera la narrativa para el mercado de tarjetas.
+El árbitro tiene peso dominante (>40%) en este análisis.
+"""
+import json
+import logging
+import instructor
+from anthropic import AsyncAnthropic
+
+from betmind_ml.schemas.tactical_analysis import MarketNarrative
+from betmind_ml.schemas.referee import RefereeProfile
+from betmind_ml.schemas.match_context import MatchContext
+from betmind_ml.narrative.prompts.base_prompt import SYSTEM_BASE
+from betmind_ml.narrative.prompts.cards_prompt import (
+    CARDS_ANALYSIS_USER,
+    REFEREE_DATA_AVAILABLE,
+    REFEREE_DATA_UNAVAILABLE,
+)
+from betmind_ml.config import CARDS_LINE_DEFAULT, STRENGTH_WINDOW
+
+logger = logging.getLogger(__name__)
+LLM_MODEL = "claude-sonnet-4-6"
+
+
+async def generate_cards_narrative(
+    home_team_name: str,
+    away_team_name: str,
+    league_name: str,
+    home_fouls_avg: float,
+    home_yellows_avg: float,
+    away_fouls_avg: float,
+    away_yellows_avg: float,
+    home_booked_players: list[str],
+    away_booked_players: list[str],
+    referee: RefereeProfile | None,
+    context: MatchContext,
+    expected_total_cards: float,
+    cards_line: float,
+    bookmaker_odds_over: float | None,
+    bookmaker_odds_under: float | None,
+    anthropic_client: AsyncAnthropic,
+) -> MarketNarrative | None:
+    """
+    Genera el análisis táctico para Over/Under de tarjetas.
+    Si no hay árbitro, reduce automáticamente la confianza del análisis.
+    """
+    # Construir sección del árbitro
+    if referee and referee.is_reliable:
+        referee_section = REFEREE_DATA_AVAILABLE.format(
+            referee_matches=referee.matches_sample,
+            referee_avg_yellows=referee.avg_yellow_cards,
+            referee_avg_reds=referee.avg_red_cards,
+            referee_avg_fouls=referee.avg_fouls_called,
+            referee_strictness=referee.strictness_index,
+            referee_high_stakes_avg=referee.high_stakes_avg_yellows or "N/D",
+            referee_trend=referee.recent_trend or "estable",
+        )
+        referee_name = referee.referee_name
+    elif referee and not referee.is_reliable:
+        referee_section = REFEREE_DATA_UNAVAILABLE.format(referee_name=referee.referee_name)
+        referee_name = referee.referee_name
+    else:
+        referee_section = REFEREE_DATA_UNAVAILABLE.format(referee_name="No designado aún")
+        referee_name = "Por confirmar"
+
+    # Sección de cuotas
+    if bookmaker_odds_over:
+        implied_over = round((1 / bookmaker_odds_over) * 100, 1)
+        implied_under = round((1 / bookmaker_odds_under) * 100, 1) if bookmaker_odds_under else "N/D"
+        bookmaker_section = (
+            f"- Over {cards_line} tarjetas: cuota {bookmaker_odds_over} (P. implícita: {implied_over}%)\n"
+            f"- Under {cards_line} tarjetas: cuota {bookmaker_odds_under} (P. implícita: {implied_under}%)"
+        )
+    else:
+        bookmaker_section = "Sin cuotas disponibles para este mercado."
+
+    user_prompt = CARDS_ANALYSIS_USER.format(
+        home_team=home_team_name,
+        away_team=away_team_name,
+        league=league_name,
+        referee_name=referee_name,
+        referee_section=referee_section,
+        strength_window=STRENGTH_WINDOW,
+        home_avg_fouls=home_fouls_avg,
+        home_avg_yellows=home_yellows_avg,
+        home_booked_players=", ".join(home_booked_players) or "Ninguno con tarjetas acumuladas",
+        away_avg_fouls=away_fouls_avg,
+        away_avg_yellows=away_yellows_avg,
+        away_booked_players=", ".join(away_booked_players) or "Ninguno con tarjetas acumuladas",
+        match_importance=context.match_importance.value,
+        is_derby="Sí" if context.is_derby else "No",
+        rivalry_intensity=context.rivalry_intensity,
+        home_position=context.home_position or "N/D",
+        away_position=context.away_position or "N/D",
+        cards_line=cards_line,
+        expected_total_cards=round(expected_total_cards, 1),
+        bookmaker_cards_section=bookmaker_section,
+        json_schema=json.dumps(MarketNarrative.model_json_schema(), ensure_ascii=False, indent=2),
+    )
+
+    try:
+        client = instructor.from_anthropic(anthropic_client)
+        narrative: MarketNarrative = await client.messages.create(
+            model=LLM_MODEL,
+            max_tokens=1500,
+            system=SYSTEM_BASE,
+            messages=[{"role": "user", "content": user_prompt}],
+            response_model=MarketNarrative,
+            max_retries=3,
+        )
+        return narrative
+    except Exception as e:
+        logger.error("Error generando CardsNarrative: %s", e)
+        return None
+
+
+
+4. El Orquestador Narrativo
+
+# packages/ml/betmind_ml/narrative/narrative_orchestrator.py
+"""
+Coordina la generación de todas las narrativas para un partido.
+Ejecuta los generadores en paralelo para minimizar latencia.
+El sistema degrada elegantemente: si un generador falla, los demás siguen.
+"""
+import asyncio
+import logging
+import time
+from anthropic import AsyncAnthropic
+
+from betmind_ml.schemas.tactical_analysis import TacticalAnalysis, BetBuilderCombination
+from betmind_ml.schemas.prediction_output import MatchPredictionOutput
+from betmind_ml.schemas.team_strength import TeamStrengthProfile
+from betmind_ml.schemas.referee import RefereeProfile
+from betmind_ml.schemas.player_props import PlayerProfile
+from betmind_ml.schemas.match_context import MatchContext
+from betmind_ml.narrative.generators.goals_narrative import generate_goals_narrative
+from betmind_ml.narrative.generators.cards_narrative import generate_cards_narrative
+from betmind_ml.narrative.generators.corners_narrative import generate_corners_narrative
+from betmind_ml.narrative.generators.bet_builder import generate_bet_builder
+
+logger = logging.getLogger(__name__)
+
+LLM_MODEL = "claude-sonnet-4-6"
+
+
+class NarrativeOrchestrator:
+    """
+    Genera TacticalAnalysis completo ejecutando los generadores en paralelo.
+    
+    Principio de degradación elegante:
+        Si el árbitro no está disponible → cards_narrative se genera igualmente
+            pero con menor confianza.
+        Si un generador falla → ese mercado queda como None.
+            El análisis parcial es mejor que ningún análisis.
+    """
+
+    def __init__(self, anthropic_api_key: str) -> None:
+        self._client = AsyncAnthropic(api_key=anthropic_api_key)
+
+    async def generate_full_analysis(
+        self,
+        match_output: MatchPredictionOutput,
+        home_strength: TeamStrengthProfile,
+        away_strength: TeamStrengthProfile,
+        context: MatchContext,
+        home_team_name: str,
+        away_team_name: str,
+        league_name: str,
+        match_date: str,
+        h2h_stats: dict,
+        referee: RefereeProfile | None = None,
+        home_fouls_avg: float = 0.0,
+        away_fouls_avg: float = 0.0,
+        home_yellows_avg: float = 0.0,
+        away_yellows_avg: float = 0.0,
+        home_booked_players: list[str] | None = None,
+        away_booked_players: list[str] | None = None,
+        corners_data: dict | None = None,
+        bookmaker_odds: dict | None = None,
+    ) -> TacticalAnalysis:
+        """
+        Ejecuta todos los generadores en paralelo con asyncio.gather.
+        Tiempo total ≈ máximo de los tiempos individuales (no suma).
+        """
+        start_time = time.monotonic()
+        odds = bookmaker_odds or {}
+
+        logger.info(
+            "NarrativeOrchestrator: generando análisis completo para match_id=%d",
+            match_output.match_id
+        )
+
+        # ── Ejecutar todos los generadores en paralelo ────────────────────────
+        (
+            goals_result,
+            cards_result,
+            corners_result,
+        ) = await asyncio.gather(
+            # 1. Goles
+            generate_goals_narrative(
+                match_output=match_output,
+                home_strength=home_strength,
+                away_strength=away_strength,
+                context=context,
+                home_team_name=home_team_name,
+                away_team_name=away_team_name,
+                league_name=league_name,
+                match_date=match_date,
+                h2h_stats=h2h_stats,
+                anthropic_client=self._client,
+            ),
+            # 2. Tarjetas
+            generate_cards_narrative(
+                home_team_name=home_team_name,
+                away_team_name=away_team_name,
+                league_name=league_name,
+                home_fouls_avg=home_fouls_avg,
+                home_yellows_avg=home_yellows_avg,
+                away_fouls_avg=away_fouls_avg,
+                away_yellows_avg=away_yellows_avg,
+                home_booked_players=home_booked_players or [],
+                away_booked_players=away_booked_players or [],
+                referee=referee,
+                context=context,
+                expected_total_cards=home_yellows_avg + away_yellows_avg,
+                cards_line=3.5,
+                bookmaker_odds_over=odds.get("CARDS_OVER_3_5"),
+                bookmaker_odds_under=odds.get("CARDS_UNDER_3_5"),
+                anthropic_client=self._client,
+            ),
+            # 3. Córneres
+            generate_corners_narrative(
+                home_team_name=home_team_name,
+                away_team_name=away_team_name,
+                league_name=league_name,
+                corners_data=corners_data or {},
+                context=context,
+                bookmaker_odds_over=odds.get("CORNERS_OVER_9_5"),
+                bookmaker_odds_under=odds.get("CORNERS_UNDER_9_5"),
+                anthropic_client=self._client,
+            ),
+            # Las excepciones de cada coroutine se capturan individualmente
+            return_exceptions=False,
+        )
+
+        # ── Bet Builder (necesita los resultados anteriores como contexto) ────
+        all_narratives_summary = _build_narratives_summary(goals_result, cards_result, corners_result)
+        markets_summary = _build_markets_summary(match_output)
+
+        bet_builder_result = await generate_bet_builder(
+            home_team_name=home_team_name,
+            away_team_name=away_team_name,
+            league_name=league_name,
+            markets_summary=markets_summary,
+            all_analysis_data=all_narratives_summary,
+            n_suggestions=3,
+            anthropic_client=self._client,
+        )
+
+        # ── Calcular confianza global ─────────────────────────────────────────
+        narratives_generated = sum(
+            1 for n in [goals_result, cards_result, corners_result] if n is not None
+        )
+        overall_confidence = _calculate_overall_confidence(
+            match_output, home_strength, away_strength, narratives_generated
+        )
+
+        elapsed = time.monotonic() - start_time
+        logger.info(
+            "NarrativeOrchestrator: completado en %.2fs | "
+            "%d/%d narrativas generadas",
+            elapsed, narratives_generated, 3
+        )
+
+        return TacticalAnalysis(
+            match_id=match_output.match_id,
+            goals_narrative=goals_result,
+            cards_narrative=cards_result,
+            corners_narrative=corners_result,
+            bet_builder_suggestions=bet_builder_result or [],
+            overall_confidence=overall_confidence,
+            match_preview_headline=_generate_headline(
+                home_team_name, away_team_name, match_output, goals_result
+            ),
+            llm_model_used=LLM_MODEL,
+            data_completeness_score=_data_completeness(
+                referee, corners_data, h2h_stats
+            ),
+        )
+
+
+# ── Helpers privados ───────────────────────────────────────────────────────────
+
+def _calculate_overall_confidence(
+    output: MatchPredictionOutput,
+    home: TeamStrengthProfile,
+    away: TeamStrengthProfile,
+    narratives_count: int,
+) -> int:
+    base = output.confidence_score
+    # Bonus por narrativas generadas exitosamente (máx 15 puntos extra)
+    narrative_bonus = (narratives_count / 3) * 15
+    return min(round(base + narrative_bonus), 100)
+
+
+def _generate_headline(
+    home: str,
+    away: str,
+    output: MatchPredictionOutput,
+    goals_narrative,
+) -> str:
+    """Headline determinístico como fallback si el LLM no generó narrativa."""
+    markets = {m.market_name: m for m in output.markets}
+    over_25 = markets.get("OVER_2_5")
+    p = round(over_25.our_probability * 100) if over_25 else 50
+
+    if p >= 65:
+        trend = "con alto voltaje ofensivo"
+    elif p >= 55:
+        trend = "con tendencia a los goles"
+    else:
+        trend = "en un duelo táctico cerrado"
+
+    return f"{home} vs {away}: {trend} según el modelo BetMind"
+
+
+def _build_markets_summary(output: MatchPredictionOutput) -> str:
+    lines = []
+    for m in output.markets:
+        ev_str = f" | EV: {m.expected_value:+.3f}" if m.expected_value is not None else ""
+        lines.append(f"- {m.market_name}: {m.our_probability:.1%}{ev_str}")
+    return "\n".join(lines)
+
+
+def _build_narratives_summary(goals, cards, corners) -> str:
+    parts = []
+    if goals:
+        parts.append(f"Goles: {goals.tactical_summary}")
+    if cards:
+        parts.append(f"Tarjetas: {cards.tactical_summary}")
+    if corners:
+        parts.append(f"Córneres: {corners.tactical_summary}")
+    return "\n".join(parts) if parts else "Análisis previos no disponibles."
+
+
+def _data_completeness(referee, corners_data, h2h_stats) -> float:
+    score = 0.0
+    if referee and referee.is_reliable:
+        score += 0.35
+    if corners_data and corners_data.get("home_corners_for_avg"):
+        score += 0.35
+    if h2h_stats and h2h_stats.get("total_matches", 0) >= 3:
+        score += 0.30
+    return round(score, 2)
+
+
+
+5. Pipeline Completo Extendido
+
+# packages/ml/betmind_ml/pipeline/full_analysis_pipeline.py
+"""
+Entry point de la Fase 4: combina el motor cuantitativo (Fase 3)
+con el Cerebro Táctico (Fase 4) en una sola llamada.
+
+El FastAPI PredictionOrchestrator llama a esta función.
+"""
+import logging
+from betmind_ml.pipeline.prediction_pipeline import run_prediction
+from betmind_ml.narrative.narrative_orchestrator import NarrativeOrchestrator
+from betmind_ml.schemas.prediction_output import MatchPredictionOutput
+from betmind_ml.schemas.tactical_analysis import TacticalAnalysis
+from betmind_ml.schemas.match_context import MatchContext
+from betmind_ml.schemas.referee import RefereeProfile
+
+logger = logging.getLogger(__name__)
+
+
+async def run_full_analysis(
+    # Datos del motor cuantitativo (mismos que run_prediction)
+    match_id: int,
+    home_team_id: int,
+    home_team_name: str,
+    away_team_id: int,
+    away_team_name: str,
+    league_id: int,
+    league_key: str,
+    league_name: str,
+    season: int,
+    match_date: str,
+    home_matches: list[dict],
+    away_matches: list[dict],
+    all_league_matches: list[dict],
+    h2h_matches: list[dict],
+    # Datos adicionales para la narrativa
+    context: MatchContext,
+    anthropic_api_key: str,
+    referee: RefereeProfile | None = None,
+    home_fouls_avg: float = 0.0,
+    away_fouls_avg: float = 0.0,
+    home_yellows_avg: float = 0.0,
+    away_yellows_avg: float = 0.0,
+    home_booked_players: list[str] | None = None,
+    away_booked_players: list[str] | None = None,
+    corners_data: dict | None = None,
+    bookmaker_odds: dict | None = None,
+    is_neutral_venue: bool = False,
+) -> tuple[MatchPredictionOutput, TacticalAnalysis]:
+    """
+    Retorna una tupla (output_cuantitativo, analisis_tactico).
+    El orquestador de FastAPI persiste ambos en Supabase.
+    """
+    # ── Fase 3: Motor Cuantitativo (síncrono, muy rápido) ─────────────────────
+    quant_output = run_prediction(
+        match_id=match_id,
+        home_team_id=home_team_id,
+        home_team_name=home_team_name,
+        away_team_id=away_team_id,
+        away_team_name=away_team_name,
+        league_id=league_id,
+        league_key=league_key,
+        season=season,
+        home_matches=home_matches,
+        away_matches=away_matches,
+        all_league_matches=all_league_matches,
+        h2h_matches=h2h_matches,
+        bookmaker_odds=bookmaker_odds,
+        is_neutral_venue=is_neutral_venue,
+    )
+
+    # Calcular H2H stats para la narrativa
+    h2h_stats = _compute_h2h_stats(h2h_matches)
+
+    # ── Fase 4: Cerebro Táctico (asíncrono — llama al LLM) ───────────────────
+    orchestrator = NarrativeOrchestrator(anthropic_api_key=anthropic_api_key)
+    tactical_output = await orchestrator.generate_full_analysis(
+        match_output=quant_output,
+        home_strength=_extract_home_strength(quant_output),
+        away_strength=_extract_away_strength(quant_output),
+        context=context,
+        home_team_name=home_team_name,
+        away_team_name=away_team_name,
+        league_name=league_name,
+        match_date=match_date,
+        h2h_stats=h2h_stats,
+        referee=referee,
+        home_fouls_avg=home_fouls_avg,
+        away_fouls_avg=away_fouls_avg,
+        home_yellows_avg=home_yellows_avg,
+        away_yellows_avg=away_yellows_avg,
+        home_booked_players=home_booked_players,
+        away_booked_players=away_booked_players,
+        corners_data=corners_data,
+        bookmaker_odds=bookmaker_odds,
+    )
+
+    return quant_output, tactical_output
+
+
+def _compute_h2h_stats(h2h_matches: list[dict]) -> dict:
+    """Estadísticas H2H relevantes para la narrativa de goles."""
+    if not h2h_matches:
+        return {"total_matches": 0}
+
+    valid = [m for m in h2h_matches if m.get("home_goals") is not None]
+    if not valid:
+        return {"total_matches": 0}
+
+    total_goals = [m["home_goals"] + m["away_goals"] for m in valid]
+    over_25 = sum(1 for g in total_goals if g > 2.5)
+    btts = sum(
+        1 for m in valid
+        if m.get("home_goals", 0) >= 1 and m.get("away_goals", 0) >= 1
+    )
+
+    return {
+        "total_matches": len(valid),
+        "avg_goals_total": round(sum(total_goals) / len(total_goals), 2),
+        "over_25_count": over_25,
+        "btts_count": btts,
+    }
+
+
+def _extract_home_strength(output: MatchPredictionOutput):
+    """Reconstruye un TeamStrengthProfile mínimo desde el output del motor."""
+    from betmind_ml.schemas.team_strength import TeamStrengthProfile
+    return TeamStrengthProfile(
+        team_id=0,
+        team_name="Home",
+        league_id=0,
+        season=0,
+        attack_index=output.home_attack_index,
+        defense_index=output.home_defense_index,
+        avg_goals_scored=output.lambda_home,
+        avg_goals_conceded=0.0,
+        form_points=0.0,
+        form_goal_diff=0.0,
+        form_matches_used=0,
+        h2h_matches_available=0,
+        h2h_win_rate=0.5,
+        h2h_avg_goals_scored=0.0,
+    )
+
+
+def _extract_away_strength(output: MatchPredictionOutput):
+    from betmind_ml.schemas.team_strength import TeamStrengthProfile
+    return TeamStrengthProfile(
+        team_id=0,
+        team_name="Away",
+        league_id=0,
+        season=0,
+        attack_index=output.away_attack_index,
+        defense_index=output.away_defense_index,
+        avg_goals_scored=output.lambda_away,
+        avg_goals_conceded=0.0,
+        form_points=0.0,
+        form_goal_diff=0.0,
+        form_matches_used=0,
+        h2h_matches_available=0,
+        h2h_win_rate=0.5,
+        h2h_avg_goals_scored=0.0,
+    )
+
+
+
+Resumen de la Arquitectura Completa Fase 4
+
+FastAPI PredictionOrchestrator
+            │
+            ▼
+    run_full_analysis()          ← Entry point único
+       │          │
+       ▼          ▼
+run_prediction()  NarrativeOrchestrator.generate_full_analysis()
+(Fase 3 — sync)        │
+                        ├── generate_goals_narrative()  ─┐
+                        ├── generate_cards_narrative()   ├─ asyncio.gather (paralelo)
+                        └── generate_corners_narrative() ─┘
+                                    │
+                                    ▼ (secuencial, necesita resultados anteriores)
+                            generate_bet_builder()
+                                    │
+                                    ▼
+                            TacticalAnalysis (Pydantic)
+                                    │
+                            Supabase → tabla tactical_analyses
+                                    │
+                            FastAPI → App móvil / Web
+
+
+
+Latencia estimada: El asyncio.gather corre los 3 generadores de LLM en paralelo. Cada llamada a Claude tarda ~2-4s. El total es ~4-5s en lugar de 12s secuencial. El Bet Builder añade ~2s más. Total: ~6-7s para el análisis completo.
+
+Estrategia de caché: Persiste el TacticalAnalysis en Supabase. Una vez generado para un partido, sirve desde DB con TTL de 6 horas. Las cuotas se recalculan en tiempo real desde el ev_calculator sin regenerar la narrativa.
+
+¿Arrancamos con corners_narrative.py y bet_builder.py que son los que faltan en los generadores, o con la actualización del PredictionOrchestrator de FastAPI para llamar al full_analysis_pipeline?

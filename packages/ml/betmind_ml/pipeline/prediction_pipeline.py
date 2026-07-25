@@ -1,0 +1,172 @@
+"""
+Entry point del paquete ML. Orquesta el flujo completo:
+    TeamStrengthProfiles → Lambdas → Matriz → Mercados → EV → Output
+
+Este módulo es el que llama el PredictionOrchestrator de FastAPI.
+No tiene dependencias de DB — recibe todo como parámetros.
+"""
+import logging
+from betmind_ml.schemas.team_strength import TeamStrengthProfile
+from betmind_ml.schemas.prediction_output import MatchPredictionOutput, MarketProbability
+from betmind_ml.features.strength_calculator import (
+    calculate_league_averages,
+    calculate_team_strength,
+)
+from betmind_ml.models.poisson_engine import calculate_lambdas, build_score_matrix
+from betmind_ml.models.market_calculator import build_all_markets
+from betmind_ml.ev.ev_calculator import enrich_markets_batch, get_top_ev_opportunities
+from betmind_ml.config import MODEL_VERSION, CONFIDENCE_WEIGHTS, MIN_MATCHES_FOR_STRENGTH
+
+logger = logging.getLogger(__name__)
+
+
+def run_prediction(
+    match_id: int,
+    home_team_id: int,
+    home_team_name: str,
+    away_team_id: int,
+    away_team_name: str,
+    league_id: int,
+    league_key: str,
+    season: int,
+    home_matches: list[dict],       # Partidos recientes del local
+    away_matches: list[dict],       # Partidos recientes del visitante
+    all_league_matches: list[dict], # Para calcular promedios de la liga
+    h2h_matches: list[dict],        # Enfrentamientos directos
+    bookmaker_odds: dict[str, float] | None = None,  # Cuotas opcionales
+    is_neutral_venue: bool = False,
+) -> MatchPredictionOutput:
+    """
+    Flujo completo de predicción para un partido.
+
+    Args:
+        home_matches / away_matches: Dicts con keys: home_team_id, away_team_id,
+                                     home_goals, away_goals (ya filtrados a 90 min)
+        bookmaker_odds: Opcional. Si se proveen, se calcula el +EV.
+                        Keys: "1X2_HOME", "1X2_DRAW", "1X2_AWAY",
+                              "OVER_2_5", "BTTS_YES", etc.
+    """
+    logger.info(
+        "PredictionPipeline: iniciando match_id=%d | %s vs %s",
+        match_id, home_team_name, away_team_name,
+    )
+
+    # ── 1. Promedios de la liga ───────────────────────────────────────────────
+    league_averages = calculate_league_averages(all_league_matches)
+
+    # ── 2. Perfiles de fuerza ─────────────────────────────────────────────────
+    home_strength = calculate_team_strength(
+        team_id=home_team_id,
+        team_name=home_team_name,
+        league_id=league_id,
+        season=season,
+        team_matches=home_matches,
+        league_averages=league_averages,
+        h2h_matches=h2h_matches,
+    )
+    away_strength = calculate_team_strength(
+        team_id=away_team_id,
+        team_name=away_team_name,
+        league_id=league_id,
+        season=season,
+        team_matches=away_matches,
+        league_averages=league_averages,
+        h2h_matches=h2h_matches,  # Mismo H2H, desde la perspectiva del visitante
+    )
+
+    # ── 3. Lambdas (xG) ──────────────────────────────────────────────────────
+    lambda_home, lambda_away = calculate_lambdas(
+        home=home_strength,
+        away=away_strength,
+        league_key=league_key,
+        league_avg_goals=league_averages["avg_goals_per_team_per_match"],
+        is_neutral_venue=is_neutral_venue,
+    )
+
+    # ── 4. Matriz de Poisson ──────────────────────────────────────────────────
+    score_matrix = build_score_matrix(lambda_home, lambda_away)
+
+    # ── 5. Probabilidades de mercados ─────────────────────────────────────────
+    markets = build_all_markets(score_matrix.matrix)
+
+    # ── 6. Enriquecer con EV si hay cuotas ───────────────────────────────────
+    if bookmaker_odds:
+        markets = enrich_markets_batch(markets, bookmaker_odds)
+
+    # ── 7. Score de confianza ─────────────────────────────────────────────────
+    confidence_score, confidence_flags = _calculate_confidence(
+        home_strength, away_strength, h2h_matches, all_league_matches
+    )
+
+    output = MatchPredictionOutput(
+        match_id=match_id,
+        model_version=MODEL_VERSION,
+        lambda_home=lambda_home,
+        lambda_away=lambda_away,
+        markets=markets,
+        score_matrix=score_matrix,
+        confidence_score=confidence_score,
+        confidence_flags=confidence_flags,
+        home_attack_index=home_strength.attack_index,
+        away_attack_index=away_strength.attack_index,
+        home_defense_index=home_strength.defense_index,
+        away_defense_index=away_strength.defense_index,
+    )
+
+    logger.info(
+        "PredictionPipeline: completado | λ_home=%.3f λ_away=%.3f | "
+        "Score más probable: %s (%.1f%%) | Confianza: %d/100",
+        lambda_home, lambda_away,
+        score_matrix.most_likely_score,
+        score_matrix.most_likely_prob * 100,
+        confidence_score,
+    )
+
+    return output
+
+
+def _calculate_confidence(
+    home: TeamStrengthProfile,
+    away: TeamStrengthProfile,
+    h2h_matches: list[dict],
+    league_matches: list[dict],
+) -> tuple[int, list[str]]:
+    """Score compuesto 0-100 con banderas de advertencia."""
+    flags: list[str] = []
+    scores: dict[str, float] = {}
+
+    # 1. Confiabilidad de los perfiles de fuerza
+    if home.is_reliable and away.is_reliable:
+        scores["strength_reliability"] = 100.0
+    elif home.is_reliable or away.is_reliable:
+        scores["strength_reliability"] = 50.0
+        flags.append(f"Datos insuficientes para {'visitante' if home.is_reliable else 'local'}")
+    else:
+        scores["strength_reliability"] = 0.0
+        flags.append("Ambos equipos tienen datos insuficientes")
+
+    # 2. Completitud de forma reciente
+    form_completeness = (
+        home.form_matches_used + away.form_matches_used
+    ) / (2 * 5)   # 5 = FORM_WINDOW
+    scores["form_data_completeness"] = min(form_completeness * 100, 100.0)
+    if form_completeness < 0.6:
+        flags.append("Forma reciente incompleta (< 3 partidos)")
+
+    # 3. Disponibilidad H2H
+    h2h_available = len(h2h_matches)
+    scores["h2h_available"] = min((h2h_available / 4) * 100, 100.0)
+    if h2h_available == 0:
+        flags.append("Sin historial H2H disponible")
+
+    # 4. Madurez de la temporada
+    season_matches = len(league_matches)
+    scores["season_maturity"] = min((season_matches / 60) * 100, 100.0)
+    if season_matches < 20:
+        flags.append(f"Temporada joven ({season_matches} partidos en liga)")
+
+    # Score final ponderado
+    weights = CONFIDENCE_WEIGHTS
+    raw_score = sum(scores[key] * weights[key] for key in weights if key in scores)
+
+    return round(min(max(raw_score, 0), 100)), flags
