@@ -305,6 +305,37 @@ class APIFootballService:
         data = await self._request("fixtures", params)
         return data.get("response", [])
 
+    async def get_fixtures_by_date_range(
+        self,
+        league: int,
+        season: int,
+        date_from: str,
+        date_to: str,
+    ) -> list[dict[str, Any]]:
+        """
+        Obtiene partidos/fixtures de una liga en un rango de fechas específico.
+        
+        Args:
+            league: ID de la liga
+            season: Año de la temporada (ej: 2024)
+            date_from: Fecha inicio en formato YYYY-MM-DD
+            date_to: Fecha fin en formato YYYY-MM-DD
+        """
+        params = {
+            "league": league,
+            "season": season,
+            "from": date_from,
+            "to": date_to,
+        }
+        data = await self._request("fixtures", params)
+        fixtures = data.get("response", [])
+        
+        logger.info(
+            f"Fetched {len(fixtures)} fixtures for league {league} "
+            f"from {date_from} to {date_to}"
+        )
+        return fixtures
+
     def parse_fixture_to_match_data(self, fixture: dict) -> dict[str, Any]:
         """
         Convierte respuesta de fixture de API-Football a formato interno.
