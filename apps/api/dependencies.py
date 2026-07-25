@@ -1,5 +1,6 @@
 from typing import AsyncGenerator
 
+from fastapi import Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db.database import get_async_session as _get_async_session
@@ -19,3 +20,19 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 def get_cache_service() -> CacheService:
     return CacheService(settings.REDIS_URL)
+
+
+async def require_admin_key(
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+) -> str:
+    if not settings.ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin API key not configured on server",
+        )
+    if x_admin_key != settings.ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid admin key",
+        )
+    return x_admin_key

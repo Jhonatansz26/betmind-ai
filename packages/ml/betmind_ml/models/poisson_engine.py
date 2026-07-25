@@ -25,6 +25,7 @@ from betmind_ml.config import (
     MODEL_VERSION,
 )
 from betmind_ml.schemas.prediction_output import ScoreMatrix
+from betmind_ml.calibration.league_calibrator import validate_lambda
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,13 @@ def calculate_lambdas(
     # Clamp: lambdas fuera de rango son señal de datos corruptos
     lambda_home = max(0.1, min(lambda_home, 6.0))
     lambda_away = max(0.1, min(lambda_away, 6.0))
+
+    # Validacion contra rangos historicos de la liga
+    lambda_home, home_warnings = validate_lambda(lambda_home, league_key, "home")
+    lambda_away, away_warnings = validate_lambda(lambda_away, league_key, "away")
+
+    for w in home_warnings + away_warnings:
+        logger.warning("PoissonEngine — %s", w)
 
     logger.debug(
         "Lambdas calculados: %s λ=%.3f | %s λ=%.3f (ha=%.2f)",

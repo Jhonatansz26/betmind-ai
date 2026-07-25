@@ -8,8 +8,17 @@ from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 
 from apps.api.models.match import Match
+from apps.api.models.league import League
 from apps.api.models.prediction import Prediction
 from apps.api.core.exceptions import MatchNotFoundException
+
+LEAGUE_KEY_TO_EXTERNAL_ID: dict[str, int] = {
+    "liga_betplay": 239,
+    "premier_league": 39,
+    "laliga": 140,
+    "bundesliga": 78,
+    "serie_a": 135,
+}
 
 
 class MatchRepository:
@@ -105,6 +114,43 @@ class MatchRepository:
                 )
             )
             .order_by(Match.match_date.desc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_all_finished_matches(
+        self,
+        league_key: str,
+        season: int | None = None,
+    ) -> list[Match]:
+        """
+        Obtiene todos los partidos finalizados de una liga identificada por league_key.
+        Usado por el motor de backtesting para cargar datos historicos.
+        """
+        external_id = LEAGUE_KEY_TO_EXTERNAL_ID.get(league_key)
+        if external_id is None:
+            return []
+
+        league_stmt = select(League).where(League.external_id == external_id)
+        league_result = await self._session.execute(league_stmt)
+        league = league_result.scalar_one_or_none()
+        if league is None:
+            return []
+
+        stmt = (
+            select(Match)
+            .where(
+                and_(
+                    Match.league_id == league.id,
+                    Match.status == "FINISHED",
+                    Match.regulation_time_only == True,  # noqa: E712
+                )
+            )
+            .order_by(Match.match_date.asc())
+            .options(
+                selectinload(Match.home_team),
+                selectinload(Match.away_team),
+            )
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
