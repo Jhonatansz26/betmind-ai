@@ -103,7 +103,7 @@ class TestLeagueCalibrator:
 
     def test_validate_lambda_exceeds_max(self):
         corrected, warnings = validate_lambda(5.0, "liga_betplay", "home")
-        assert corrected == 2.5
+        assert corrected == 2.4
         assert len(warnings) == 1
         assert "excede" in warnings[0]
 

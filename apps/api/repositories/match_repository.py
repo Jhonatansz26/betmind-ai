@@ -18,6 +18,16 @@ LEAGUE_KEY_TO_EXTERNAL_ID: dict[str, int] = {
     "laliga": 140,
     "bundesliga": 78,
     "serie_a": 135,
+    "serie_a_bra": 71,
+    "liga_profesional_arg": 128,
+    "liga_mx": 262,
+    "mls": 253,
+    "primera_chile": 274,
+    "liga_pro_ecu": 275,
+    "liga_1_peru": 294,
+    "allsvenskan": 113,
+    "superliga_den": 119,
+    "super_league_sui": 207,
 }
 
 

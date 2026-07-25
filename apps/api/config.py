@@ -107,3 +107,66 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+FEATURED_LEAGUES: dict[str, dict] = {
+    "liga_betplay": {
+        "api_football_id": 239,
+        "name": "Liga BetPlay Dimayor",
+        "country": "Colombia",
+    },
+    "serie_a_bra": {
+        "api_football_id": 71,
+        "name": "Serie A",
+        "country": "Brasil",
+    },
+    "liga_profesional_arg": {
+        "api_football_id": 128,
+        "name": "Liga Profesional",
+        "country": "Argentina",
+    },
+    "liga_mx": {
+        "api_football_id": 262,
+        "name": "Liga MX",
+        "country": "México",
+    },
+    "mls": {
+        "api_football_id": 253,
+        "name": "Major League Soccer",
+        "country": "USA",
+    },
+    "primera_chile": {
+        "api_football_id": 274,
+        "name": "Primera División",
+        "country": "Chile",
+    },
+    "liga_pro_ecu": {
+        "api_football_id": 275,
+        "name": "Liga Pro",
+        "country": "Ecuador",
+    },
+    "liga_1_peru": {
+        "api_football_id": 294,
+        "name": "Liga 1",
+        "country": "Perú",
+    },
+    "allsvenskan": {
+        "api_football_id": 113,
+        "name": "Allsvenskan",
+        "country": "Suecia",
+    },
+    "superliga_den": {
+        "api_football_id": 119,
+        "name": "Superliga",
+        "country": "Dinamarca",
+    },
+    "super_league_sui": {
+        "api_football_id": 207,
+        "name": "Super League",
+        "country": "Suiza",
+    },
+}
+
+FEATURED_LEAGUE_IDS: list[int] = [
+    league["api_football_id"] for league in FEATURED_LEAGUES.values()
+]

@@ -37,9 +37,69 @@ KNOWN_LEAGUE_BASELINES = {
     },
     "liga_betplay": {
         "avg_goals_per_team": 1.15,
-        "lambda_range_home": (0.6, 2.5),
+        "lambda_range_home": (0.6, 2.4),
         "lambda_range_away": (0.4, 2.0),
         "home_win_rate_historical": 0.44,
+    },
+    "serie_a_bra": {
+        "avg_goals_per_team": 1.25,
+        "lambda_range_home": (0.7, 2.6),
+        "lambda_range_away": (0.5, 2.2),
+        "home_win_rate_historical": 0.45,
+    },
+    "liga_profesional_arg": {
+        "avg_goals_per_team": 1.12,
+        "lambda_range_home": (0.6, 2.3),
+        "lambda_range_away": (0.4, 1.9),
+        "home_win_rate_historical": 0.43,
+    },
+    "liga_mx": {
+        "avg_goals_per_team": 1.32,
+        "lambda_range_home": (0.7, 2.7),
+        "lambda_range_away": (0.5, 2.4),
+        "home_win_rate_historical": 0.46,
+    },
+    "mls": {
+        "avg_goals_per_team": 1.48,
+        "lambda_range_home": (0.8, 3.1),
+        "lambda_range_away": (0.6, 2.6),
+        "home_win_rate_historical": 0.47,
+    },
+    "primera_chile": {
+        "avg_goals_per_team": 1.28,
+        "lambda_range_home": (0.7, 2.6),
+        "lambda_range_away": (0.5, 2.3),
+        "home_win_rate_historical": 0.45,
+    },
+    "liga_pro_ecu": {
+        "avg_goals_per_team": 1.22,
+        "lambda_range_home": (0.7, 2.6),
+        "lambda_range_away": (0.5, 2.1),
+        "home_win_rate_historical": 0.46,
+    },
+    "liga_1_peru": {
+        "avg_goals_per_team": 1.25,
+        "lambda_range_home": (0.7, 2.7),
+        "lambda_range_away": (0.4, 2.2),
+        "home_win_rate_historical": 0.45,
+    },
+    "allsvenskan": {
+        "avg_goals_per_team": 1.38,
+        "lambda_range_home": (0.8, 2.9),
+        "lambda_range_away": (0.5, 2.5),
+        "home_win_rate_historical": 0.47,
+    },
+    "superliga_den": {
+        "avg_goals_per_team": 1.35,
+        "lambda_range_home": (0.7, 2.8),
+        "lambda_range_away": (0.5, 2.4),
+        "home_win_rate_historical": 0.46,
+    },
+    "super_league_sui": {
+        "avg_goals_per_team": 1.42,
+        "lambda_range_home": (0.8, 3.0),
+        "lambda_range_away": (0.6, 2.6),
+        "home_win_rate_historical": 0.47,
     },
 }
 

@@ -1910,7 +1910,6 @@ async def main():
 - ⚠️ Validaciones de longitud: Ajustar `tactical_summary` max_length
 
 ## 🟢 Fase 4.6: Ajustes Finales y Cierre de Fase 4 (Completado)
-
 ### 1. Ajuste de Schemas Pydantic para Llama 3.3
 
 **Archivo modificado:** `packages/ml/betmind_ml/schemas/tactical_analysis.py`
@@ -2079,7 +2078,7 @@ PredictionOrchestrator.get_prediction()
 3. **Optimización de prompts:** Ajustar prompts para Llama 3.3
 4. **Implementar modelos adicionales:** cards_model.py, corners_model.py
 5. **Player props:** Implementar generador de player_props_narrative
-6. **Calibración de Poisson:** Ajustar lambdas para ligas específicas
+6. ~~**Calibración de Poisson:** Ajustar lambdas para ligas específicas~~ ✅ Completado en Fase 5
 
 ---
 
@@ -2104,12 +2103,296 @@ Cliente API → FastAPI → PredictionOrchestrator
                               ├─► Caché DB (Supabase, 6h)
                               └─► Pipeline ML
                                    ├─► Fase 3: Motor Cuantitativo (Poisson)
+                                   │    └─► Calibración de lambdas por liga (Fase 5)
                                    └─► Fase 4: Cerebro Táctico (Groq Llama 3.3)
                                         ├─► Goals Narrative
                                         ├─► Cards Narrative
                                         ├─► Corners Narrative
                                         └─► Bet Builder
+
+Backtesting (admin):
+POST /api/v1/backtesting/{league_key}
+    └─► Walk-forward validation
+         ├─► Calibración previa
+         ├─► Simulación sin leakage
+         ├─► Métricas: Brier, ROI, Hit Rate
+         └─► Reporte con model_quality_score
 ```
+
+---
+
+## 🎉 Fase 5 Completada al 100%
+
+**Resumen de logros:**
+- ✅ Calibración de Poisson con baselines históricos por liga
+- ✅ Validación de lambdas en el motor (clamp por liga)
+- ✅ Motor de Backtesting Walk-Forward (simulator, metrics, runner)
+- ✅ Métricas: Brier Score, ROI, Hit Rate, Calibration Curve
+- ✅ Endpoint admin de backtesting en FastAPI
+- ✅ Tests de integración: 19 tests nuevos, 27/27 totales en verde
+
+---
+
+## 🟢 Fase 5.1: Configuración de 11 Ligas Activas Prioritarias (Completado)
+
+### 1. Objetivo
+Configurar las 11 ligas prioritarias para ingesta de datos y calibración de Poisson, expandiendo el sistema más allá de las 3 ligas iniciales (Premier League, LaLiga, Liga BetPlay).
+
+### 2. Baselines de Calibración Actualizados
+
+**Archivo modificado:** `packages/ml/betmind_ml/calibration/league_calibrator.py`
+
+Se expandió `KNOWN_LEAGUE_BASELINES` de 3 a 13 ligas con parámetros históricos calibrados:
+
+| Liga | País | avg_goals/team | λ_home range | λ_away range | home_win_rate |
+|------|------|----------------|--------------|--------------|---------------|
+| premier_league | Inglaterra | 1.35 | (0.8, 3.0) | (0.5, 2.5) | 0.46 |
+| laliga | España | 1.30 | (0.7, 2.8) | (0.5, 2.3) | 0.47 |
+| liga_betplay | Colombia | 1.15 | (0.6, 2.4) | (0.4, 2.0) | 0.44 |
+| serie_a_bra | Brasil | 1.25 | (0.7, 2.6) | (0.5, 2.2) | 0.45 |
+| liga_profesional_arg | Argentina | 1.12 | (0.6, 2.3) | (0.4, 1.9) | 0.43 |
+| liga_mx | México | 1.32 | (0.7, 2.7) | (0.5, 2.4) | 0.46 |
+| mls | USA | 1.48 | (0.8, 3.1) | (0.6, 2.6) | 0.47 |
+| primera_chile | Chile | 1.28 | (0.7, 2.6) | (0.5, 2.3) | 0.45 |
+| liga_pro_ecu | Ecuador | 1.22 | (0.7, 2.6) | (0.5, 2.1) | 0.46 |
+| liga_1_peru | Perú | 1.25 | (0.7, 2.7) | (0.4, 2.2) | 0.45 |
+| allsvenskan | Suecia | 1.38 | (0.8, 2.9) | (0.5, 2.5) | 0.47 |
+| superliga_den | Dinamarca | 1.35 | (0.7, 2.8) | (0.5, 2.4) | 0.46 |
+| super_league_sui | Suiza | 1.42 | (0.8, 3.0) | (0.6, 2.6) | 0.47 |
+
+**Nota:** MLS tiene el promedio de goles más alto (1.48), mientras que Liga Profesional Argentina tiene el más bajo (1.12), reflejando las diferencias estilísticas entre ligas.
+
+### 3. Configuración de Ligas Objetivo
+
+**Archivo modificado:** `apps/api/config.py`
+
+Se agregó `FEATURED_LEAGUES` con los IDs de API-Football para las 11 ligas prioritarias:
+
+```python
+FEATURED_LEAGUES: dict[str, dict] = {
+    "liga_betplay": {"api_football_id": 239, "name": "Liga BetPlay Dimayor", "country": "Colombia"},
+    "serie_a_bra": {"api_football_id": 71, "name": "Serie A", "country": "Brasil"},
+    "liga_profesional_arg": {"api_football_id": 128, "name": "Liga Profesional", "country": "Argentina"},
+    "liga_mx": {"api_football_id": 262, "name": "Liga MX", "country": "México"},
+    "mls": {"api_football_id": 253, "name": "Major League Soccer", "country": "USA"},
+    "primera_chile": {"api_football_id": 274, "name": "Primera División", "country": "Chile"},
+    "liga_pro_ecu": {"api_football_id": 275, "name": "Liga Pro", "country": "Ecuador"},
+    "liga_1_peru": {"api_football_id": 294, "name": "Liga 1", "country": "Perú"},
+    "allsvenskan": {"api_football_id": 113, "name": "Allsvenskan", "country": "Suecia"},
+    "superliga_den": {"api_football_id": 119, "name": "Superliga", "country": "Dinamarca"},
+    "super_league_sui": {"api_football_id": 207, "name": "Super League", "country": "Suiza"},
+}
+
+FEATURED_LEAGUE_IDS: list[int] = [
+    league["api_football_id"] for league in FEATURED_LEAGUES.values()
+]
+```
+
+### 4. Actualización de Tests
+
+**Archivo modificado:** `tests/test_backtest_runner.py`
+
+Se actualizó `test_validate_lambda_exceeds_max` para reflejar el nuevo rango de Liga BetPlay (0.6, 2.4) en lugar del anterior (0.6, 2.5).
+
+### 5. Resultados de Tests
+
+```
+tests/test_backtest_runner.py: 19 passed
+tests/test_full_analysis.py:    4 passed
+tests/test_poisson_engine.py:   4 passed
+Total:                         27 passed in 1.69s
+```
+
+### 6. Archivos Modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `packages/ml/betmind_ml/calibration/league_calibrator.py` | Expandido KNOWN_LEAGUE_BASELINES de 3 a 13 ligas |
+| `apps/api/config.py` | Agregado FEATURED_LEAGUES y FEATURED_LEAGUE_IDS |
+| `apps/api/repositories/match_repository.py` | Expandido LEAGUE_KEY_TO_EXTERNAL_ID de 5 a 15 ligas |
+| `tests/test_backtest_runner.py` | Actualizado test para nuevo rango de liga_betplay |
+
+### 7. Verificación
+- ✅ 13 ligas configuradas en KNOWN_LEAGUE_BASELINES
+- ✅ 11 ligas prioritarias en FEATURED_LEAGUES con IDs de API-Football
+- ✅ Tests actualizados y pasando (27/27)
+- ✅ Calibración funcional para todas las ligas configuradas
+
+---
+
+## 🟢 Fase 5: Calibración de Poisson y Motor de Backtesting Walk-Forward (Completado)
+
+### 1. Motivación
+El motor de Poisson presentaba un problema crítico: λ_home=5.084 para Liga BetPlay cuando el promedio histórico real es ~1.15 goles por equipo. Un `confidence_score: 100/100` con lambdas erróneos es peor que un 60/100 correcto, porque da falsa seguridad. La calibración era prerequisite para cualquier validación posterior.
+
+### 2. Módulo de Calibración (`packages/ml/betmind_ml/calibration/`)
+
+#### Archivos Creados
+```
+packages/ml/betmind_ml/calibration/
+├── __init__.py                # Exporta calibrate_league, validate_lambda, LeagueCalibrationReport
+└── league_calibrator.py       # Calibración por liga con baselines históricos
+```
+
+#### `LeagueCalibrationReport` (dataclass)
+- `league_key`, `total_matches_analyzed`, `avg_goals_per_team`
+- `avg_total_goals_per_match`
+- `lambda_home_expected_range`, `lambda_away_expected_range`
+- `home_advantage_empirical` (calculado desde datos reales)
+- `is_calibrated` (bool), `warnings` (list[str])
+
+#### `KNOWN_LEAGUE_BASELINES`
+Baselines históricos reales por liga (fuente: FBref, Transfermarkt):
+
+| Liga | avg_goals/team | λ_home range | λ_away range | home_win_rate |
+|------|---------------|-------------|-------------|---------------|
+| Premier League | 1.35 | (0.8, 3.0) | (0.5, 2.5) | 0.46 |
+| LaLiga | 1.30 | (0.7, 2.8) | (0.5, 2.3) | 0.47 |
+| Liga BetPlay | 1.15 | (0.6, 2.5) | (0.4, 2.0) | 0.44 |
+
+#### Funciones Públicas
+- `calibrate_league(league_key, all_matches, min_matches_required=20)` — Analiza datos reales, compara contra baselines, genera reporte con warnings
+- `validate_lambda(lambda_value, league_key, team_role)` — Clampea lambda contra rango histórico de la liga
+
+### 3. Modificación en `poisson_engine.py`
+
+**Cambio:** Integración de `validate_lambda()` al final de `calculate_lambdas()`, después del clamp genérico (0.1-6.0) y antes del return.
+
+**Orden de validación:**
+1. Clamp genérico: `max(0.1, min(lambda, 6.0))` — captura datos corruptos
+2. `validate_lambda()` — refina por liga (ej: liga_betplay home: 0.6-2.5)
+3. Logging de warnings si se clampeó
+
+### 4. Módulo de Backtesting (`packages/ml/betmind_ml/backtesting/`)
+
+#### Archivos Creados
+```
+packages/ml/betmind_ml/backtesting/
+├── __init__.py                # Existente (stub), actualizado
+├── simulator.py               # Walk-forward validation + dataclasses
+├── metrics.py                 # Brier Score, ROI, Hit Rate, Calibration Curve
+├── report_generator.py        # Formateo de reportes
+└── runner.py                  # Entry point async del backtesting
+```
+
+#### `simulator.py`
+- **`BacktestMatch`** (dataclass): Partido del dataset con resultado real conocido + cuotas históricas opcionales
+- **`BacktestPrediction`** (dataclass): Predicción vs realidad. `__post_init__` determina `actual_result` (HOME/DRAW/AWAY), `actual_btts`, `predicted_result` y `result_correct`
+- **`run_walkforward_simulation()`**: Walk-forward validation — para cada partido de test, usa SOLO partidos anteriores como training pool (leakage cero)
+  - Split temporal: 70% train / 30% test
+  - Mínimo 3 partidos previos por equipo para predecir
+  - Invoca `run_prediction()` del pipeline existente
+
+#### `metrics.py`
+- **`MarketMetrics`** (dataclass): brier_score, hit_rate, roi_flat_stake, yield_pct, total_ev_bets
+- **`BacktestReport`** (dataclass): Reporte completo con métricas por mercado (1X2, Over/Under 2.5, BTTS), calibration_buckets, model_quality_score (0-100), summary_lines
+- **Funciones:**
+  - `calculate_brier_score()` — BS multiclase para 1X2, BS binario para Over/BTTS
+  - `calculate_roi_flat_stake()` — ROI con 1 unidad en cada apuesta EV+ (> EV_POSITIVE_THRESHOLD)
+  - `calculate_calibration_curve()` — 5 buckets, compara probabilidad predicha vs tasa real
+  - `generate_full_report()` — Genera BacktestReport completo con score de calidad compuesto
+
+#### `report_generator.py`
+- `format_report_as_text(report)` — Convierte BacktestReport a string formateado para logs/CLI
+
+#### `runner.py`
+- `run_full_backtest()` (async) — Flujo completo:
+  1. Calibración previa (detecta problemas antes de correr)
+  2. Simulación walk-forward
+  3. Generación de métricas
+  4. Reporte con resumen legible
+
+### 5. Cambios en la Capa de API
+
+#### `match_repository.py` — Nuevo Método
+```python
+async def get_all_finished_matches(league_key: str, season: int | None = None) -> list[Match]:
+```
+- Mapea `league_key` → `external_id` via `LEAGUE_KEY_TO_EXTERNAL_ID`
+- Busca la liga en DB por `external_id`
+- Retorna partidos FINISHED con `regulation_time_only=True`, ordenados ASC por fecha
+- Incluye `selectinload` para `home_team` y `away_team`
+
+#### `dependencies.py` — Nueva Dependencia
+```python
+async def require_admin_key(x_admin_key: str = Header(..., alias="X-Admin-Key")) -> str:
+```
+- Valida header `X-Admin-Key` contra `settings.ADMIN_API_KEY`
+- Retorna 403 si la key es inválida, 503 si no está configurada
+
+#### `config.py` — Nuevo Setting
+```python
+ADMIN_API_KEY: str = ""
+```
+
+#### `routes/v1/backtesting.py` — Nuevo Endpoint
+```
+POST /api/v1/backtesting/{league_key}?season=2024
+```
+- Requiere `X-Admin-Key` header (solo admin)
+- Carga partidos desde Supabase via `MatchRepository.get_all_finished_matches()`
+- Convierte ORM → dicts para el paquete ML
+- Ejecuta `run_full_backtest()` y retorna resultado
+- Valida mínimo 30 partidos
+
+#### `routes/v1/router.py` — Registro
+```python
+api_router.include_router(backtesting.router)
+```
+
+### 6. Tests de Integración (`tests/test_backtest_runner.py`)
+
+**19 tests organizados en 5 clases:**
+
+| Clase | Tests | Cobertura |
+|-------|-------|-----------|
+| `TestLeagueCalibrator` | 8 | calibrate_league (suficiente/insuficiente/unknown), validate_lambda (within/exceeds/below/unknown), baselines |
+| `TestWalkforwardSimulation` | 3 | simulación completa, datos insuficientes, dataclass BacktestMatch |
+| `TestMetrics` | 5 | Brier Score, ROI, calibration curve, generate_full_report, empty report |
+| `TestRunner` | 2 | run_full_backtest completo, datos insuficientes |
+| `TestReportGenerator` | 1 | format_report_as_text |
+
+**Datos mock:** `_build_mock_matches(50)` genera 50 partidos round-robin con 10 equipos y seed determinístico (42).
+
+### 7. Resultados de Tests
+
+```
+tests/test_backtest_runner.py: 19 passed
+tests/test_full_analysis.py:    4 passed
+tests/test_poisson_engine.py:   4 passed
+Total:                         27 passed
+```
+
+### 8. Archivos Creados (7)
+
+| Archivo | Descripción |
+|---------|-------------|
+| `packages/ml/betmind_ml/calibration/__init__.py` | Exporta calibrate_league, validate_lambda |
+| `packages/ml/betmind_ml/calibration/league_calibrator.py` | Calibración por liga con baselines históricos |
+| `packages/ml/betmind_ml/backtesting/simulator.py` | Walk-forward validation + dataclasses |
+| `packages/ml/betmind_ml/backtesting/metrics.py` | Brier Score, ROI, Hit Rate, Calibration Curve |
+| `packages/ml/betmind_ml/backtesting/report_generator.py` | Formateo de reportes |
+| `packages/ml/betmind_ml/backtesting/runner.py` | Entry point async del backtesting |
+| `apps/api/routes/v1/backtesting.py` | Endpoint POST /api/v1/backtesting/{league_key} |
+
+### 9. Archivos Modificados (5)
+
+| Archivo | Cambio |
+|---------|--------|
+| `packages/ml/betmind_ml/models/poisson_engine.py` | validate_lambda() integrado post-clamp en calculate_lambdas() |
+| `apps/api/repositories/match_repository.py` | Nuevo método get_all_finished_matches() + LEAGUE_KEY_TO_EXTERNAL_ID |
+| `apps/api/dependencies.py` | Nueva dependencia require_admin_key |
+| `apps/api/config.py` | Nuevo setting ADMIN_API_KEY |
+| `apps/api/routes/v1/router.py` | Registrado router de backtesting |
+
+### 10. Verificación
+- ✅ Calibración: validate_lambda clampea correctamente lambdas fuera de rango
+- ✅ Walk-forward: simulación sin leakage de datos futuros
+- ✅ Métricas: Brier Score, ROI, Hit Rate, Calibration Curve funcionando
+- ✅ Runner: flujo completo calibración → simulación → métricas → reporte
+- ✅ Endpoint: POST /api/v1/backtesting/{league_key} con auth admin
+- ✅ Tests: 27/27 pasando (19 nuevos + 8 existentes)
+- ✅ FastAPI startup: sin errores
 
 ---
 
@@ -2140,5 +2423,9 @@ Cliente API → FastAPI → PredictionOrchestrator
 - [ ] Probar flujo completo del agente con Liga BetPlay 2026.
 - [ ] Implementar modelos de tarjetas y córneres (`cards_model.py`, `corners_model.py`) para probabilidades cuantitativas.
 - [ ] Implementar generador de player_props_narrative para props de jugadores individuales.
-- [ ] Calibrar lambdas de Poisson (actualmente λ_home=5.084 es inusualmente alto para Liga BetPlay ~1.3 goles/partido).
+- [x] Calibrar lambdas de Poisson (actualmente λ_home=5.084 es inusualmente alto para Liga BetPlay ~1.3 goles/partido). ✅ Completado — validate_lambda() con rangos históricos por liga.
+- [x] Implementar Motor de Backtesting Walk-Forward: simulación, métricas (Brier Score, ROI, Hit Rate), calibración y reportería. ✅ Completado.
+- [x] Configurar 11 ligas activas prioritarias con baselines históricos y IDs de API-Football. ✅ Completado.
+- [ ] Ejecutar backtesting con datos reales de Supabase (temporada 2024) para validar calidad del modelo.
+- [ ] Implementar Frontend (Next.js) — solo después de confirmar model_quality_score > 60 en backtesting.
 - [ ] Agregar métricas de monitoreo: uso de caché, costos de API, tiempo de respuesta.
