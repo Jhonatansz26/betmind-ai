@@ -247,3 +247,53 @@ class MatchRepository:
             await self._session.flush()
             await self._session.refresh(match)
             return match
+
+    async def get_matches_by_date(
+        self,
+        target_date,
+        league_keys: list[str] | None = None,
+    ) -> list[Match]:
+        """
+        Obtiene partidos programados para una fecha específica en zona horaria COT.
+        Filtra por league_keys si se proveen.
+        """
+        from zoneinfo import ZoneInfo
+        from datetime import datetime, time, timezone
+
+        COT = ZoneInfo("America/Bogota")
+
+        start_dt = datetime.combine(target_date, time.min, tzinfo=COT)
+        end_dt = datetime.combine(target_date, time.max, tzinfo=COT)
+
+        start_utc = start_dt.astimezone(timezone.utc)
+        end_utc = end_dt.astimezone(timezone.utc)
+
+        conditions = [
+            Match.match_date >= start_utc,
+            Match.match_date <= end_utc,
+            Match.status.in_(["SCHEDULED", "INPLAY"]),
+        ]
+
+        if league_keys:
+            external_ids = [LEAGUE_KEY_TO_EXTERNAL_ID.get(k) for k in league_keys]
+            external_ids = [eid for eid in external_ids if eid is not None]
+            if external_ids:
+                league_stmt = select(League.id).where(League.external_id.in_(external_ids))
+                league_result = await self._session.execute(league_stmt)
+                league_ids = [row[0] for row in league_result]
+                if league_ids:
+                    conditions.append(Match.league_id.in_(league_ids))
+
+        stmt = (
+            select(Match)
+            .where(and_(*conditions))
+            .order_by(Match.match_date.asc())
+            .options(
+                selectinload(Match.home_team),
+                selectinload(Match.away_team),
+                selectinload(Match.league),
+            )
+        )
+
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())

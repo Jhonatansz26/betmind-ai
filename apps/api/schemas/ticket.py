@@ -1,0 +1,52 @@
+from pydantic import BaseModel, Field
+from enum import Enum
+
+
+class TicketMode(str, Enum):
+    EDGE = "edge"
+    VALUE = "value"
+    BOLD = "bold"
+
+
+class TicketLegSchema(BaseModel):
+    match_id: int
+    home_team: str
+    away_team: str
+    league: str
+    market_name: str
+    market_label: str
+    our_probability: float
+    bookmaker_odds: float
+    implied_probability: float
+    edge_percentage: float
+    expected_value: float
+    match_time_cot: str
+
+
+class GeneratedTicket(BaseModel):
+    mode: TicketMode
+    mode_label: str
+    legs: list[TicketLegSchema]
+    combined_odds: float
+    average_ev: float
+    confidence_score: int
+    correlation_validated: bool
+    tactical_summary: str
+    pros: list[str]
+    cons: list[str]
+    staking_suggestion: str
+
+
+class TicketGenerateRequest(BaseModel):
+    modes: list[TicketMode] = Field(
+        default=[TicketMode.EDGE, TicketMode.VALUE, TicketMode.BOLD]
+    )
+    league_filter: list[str] | None = None
+    date: str | None = None
+
+
+class TicketGenerateResponse(BaseModel):
+    generated_at: str
+    tickets: list[GeneratedTicket]
+    total_ev_opportunities: int
+    matches_analyzed: int

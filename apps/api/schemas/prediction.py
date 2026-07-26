@@ -45,6 +45,7 @@ class EVAnalysis(BaseModel):
     market: str
     our_probability: float = Field(..., ge=0, le=1)
     bookmaker_implied_probability: float | None = Field(None, ge=0, le=1)
+    bookmaker_odds: float | None = Field(None, gt=1.0)
     edge_percentage: float | None = None
     expected_value: float | None = None
     verdict: Verdict

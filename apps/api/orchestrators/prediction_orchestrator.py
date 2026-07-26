@@ -44,7 +44,7 @@ class PredictionOrchestrator:
     async def get_prediction(
         self,
         match_id: int,
-        odds: OddsInput,
+        odds: OddsInput | None = None,
     ) -> PredictionResponse:
         cache_key = f"prediction:{match_id}"
 
@@ -336,6 +336,7 @@ class PredictionOrchestrator:
                     market=market.market_name,
                     our_probability=market.our_probability,
                     bookmaker_implied_probability=market.implied_probability,
+                    bookmaker_odds=market.bookmaker_odds,
                     edge_percentage=market.edge,
                     expected_value=market.expected_value,
                     verdict=Verdict.POSITIVE_VALUE if market.expected_value and market.expected_value > 0.05 else Verdict.NO_VALUE,
