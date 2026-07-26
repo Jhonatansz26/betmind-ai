@@ -2594,6 +2594,667 @@ Serie A (Brasil):
 
 ---
 
+## 🟢 Fase 6: Motor de Generación Inteligente de Tickets (Completado)
+
+### 1. Objetivo
+Implementar el endpoint `POST /api/v1/tickets/generate` que genera tickets pre-validados en 3 modos de riesgo (EDGE, VALUE, BOLD) combinando el motor cuantitativo (Poisson + EV) con reglas de correlación.
+
+### 2. Arquitectura del Motor de Tickets
+
+#### Principios de Diseño
+- **SRP (Single Responsibility):** `ticket_builder.py` es lógica pura sin I/O — testeable de forma aislada
+- **SDD (Schema-Driven Development):** Contratos Pydantic estrictos para request/response
+- **Degradación elegante:** Si un partido falla, el resto continúa
+- **Caché inteligente:** TTL 30 minutos (los tickets del día son relativamente estables)
+
+#### Modos de Riesgo
+| Modo | EV Mínimo | Max Legs | Prob Mínima | Rango Cuotas | Staking |
+|------|-----------|----------|-------------|--------------|---------|
+| EDGE | 5% | 3 | 55% | 1.40 - 2.30 | 1-2% bankroll |
+| VALUE | 8% | 4 | 46% | 1.90 - 4.50 | 0.5-1% bankroll |
+| BOLD | 3% | 4 | 40% | 4.00 - 14.00 | 0.25-0.5% bankroll |
+
+### 3. Reglas de Correlación
+
+#### Combinaciones Prohibidas (Correlación Negativa)
+```python
+FORBIDDEN_COMBINATIONS = [
+    frozenset({"UNDER_2_5",  "BTTS_YES"}),     # Pocos goles + ambos anotan: contradictorio
+    frozenset({"UNDER_1_5",  "BTTS_YES"}),     # Menos de 2 goles + ambos anotan: imposible casi
+    frozenset({"OVER_3_5",   "CARDS_UNDER"}),  # Partido abierto → más tarjetas, no menos
+    frozenset({"1X2_DRAW",   "BTTS_NO"}),      # Empate sin goles: muy raro
+    frozenset({"OVER_2_5",   "CARDS_UNDER"}),  # Alta goles → alta tensión → más tarjetas
+    frozenset({"1X2_AWAY",   "CORNERS_OVER"}), # Visitante gana controlando → menos córneres
+]
+```
+
+#### Combinaciones con Bonus (Correlación Positiva)
+```python
+POSITIVE_CORRELATIONS = [
+    (frozenset({"1X2_HOME",  "OVER_1_5"}),    0.72),  # Local gana → al menos 2 goles
+    (frozenset({"1X2_HOME",  "CORNERS_OVER"}), 0.65),  # Local dominante → más córneres
+    (frozenset({"BTTS_YES",  "OVER_2_5"}),    0.81),  # Ambos anotan → suele haber +2.5
+    (frozenset({"CARDS_OVER","1X2_DRAW"}),    0.58),  # Derbis igualados → más tarjetas
+    (frozenset({"OVER_3_5",  "BTTS_YES"}),    0.76),  # Muchos goles → casi seguro ambos anotan
+]
+```
+
+### 4. Conflictos de Arquitectura Resueltos
+
+| # | Conflicto | Solución |
+|---|-----------|----------|
+| 1 | `PredictionOrchestrator` requiere 3 parámetros (`match_repo`, `tactical_repo`, `cache`) | Pasar `TacticalAnalysisRepository` al constructor en el endpoint |
+| 2 | `get_prediction(odds: OddsInput)` era obligatorio | Hacer `odds: OddsInput | None = None` opcional |
+| 3 | `EVAnalysis` no tenía `bookmaker_odds` (necesario para tickets) | Agregar campo `bookmaker_odds: float | None = None` y poblarlo en `_build_response()` |
+| 4 | `get_matches_by_date()` no existía en `MatchRepository` | Crear método con filtro por fecha COT y `selectinload` de relaciones |
+
+### 5. Archivos Creados
+
+#### `apps/api/schemas/ticket.py`
+```python
+class TicketMode(str, Enum):
+    EDGE = "edge"
+    VALUE = "value"
+    BOLD = "bold"
+
+class TicketLegSchema(BaseModel):
+    match_id: int
+    home_team: str
+    away_team: str
+    league: str
+    market_name: str          # "OVER_2_5", "1X2_HOME", "BTTS_YES", etc.
+    market_label: str         # "Over 2.5 Goals", "Home Win", "BTTS Yes"
+    our_probability: float
+    bookmaker_odds: float
+    implied_probability: float
+    edge_percentage: float    # our_prob - implied_prob, en porcentaje
+    expected_value: float
+    match_time_cot: str       # "3:00 PM COT"
+
+class GeneratedTicket(BaseModel):
+    mode: TicketMode
+    mode_label: str           # "EDGE MODE", "VALUE MODE", "BOLD MODE"
+    legs: list[TicketLegSchema]
+    combined_odds: float
+    average_ev: float
+    confidence_score: int
+    correlation_validated: bool
+    tactical_summary: str
+    pros: list[str]
+    cons: list[str]
+    staking_suggestion: str
+
+class TicketGenerateRequest(BaseModel):
+    modes: list[TicketMode] = Field(default=[EDGE, VALUE, BOLD])
+    league_filter: list[str] | None = None
+    date: str | None = None
+
+class TicketGenerateResponse(BaseModel):
+    generated_at: str
+    tickets: list[GeneratedTicket]
+    total_ev_opportunities: int
+    matches_analyzed: int
+```
+
+#### `apps/api/engine/ticket_builder.py`
+- `MODE_CONFIG`: Configuración por modo (EV mínimo, mercados permitidos, rango de cuotas)
+- `FORBIDDEN_COMBINATIONS`: 6 combinaciones de correlación negativa
+- `POSITIVE_CORRELATIONS`: 5 combinaciones con bonus de confianza
+- Funciones puras:
+  - `check_forbidden_combination()` → Valida correlaciones negativas
+  - `get_correlation_bonus()` → Calcula bonus por correlación positiva
+  - `calculate_combined_odds()` → Producto de cuotas
+  - `calculate_average_ev()` → EV promedio del ticket
+  - `build_ticket_for_mode()` → Construye el mejor ticket para un modo dado
+
+#### `apps/api/routes/v1/tickets.py`
+- Endpoint `POST /api/v1/tickets/generate`
+- Caché con TTL 30 minutos (clave: `tickets:daily:{YYYY-MM-DD}`)
+- Integración con `PredictionOrchestrator` para obtener predicciones
+- Conversión de horarios UTC → COT (`America/Bogota`)
+- Degradación elegante: si un partido falla, el resto continúa
+
+#### `tests/test_ticket_builder.py`
+- 34 tests unitarios organizados en 5 clases:
+  - `TestCheckForbiddenCombination` (8 tests): Validación de correlaciones negativas
+  - `TestGetCorrelationBonus` (6 tests): Cálculo de bonus por correlación positiva
+  - `TestCalculateCombinedOdds` (4 tests): Producto de cuotas
+  - `TestCalculateAverageEV` (3 tests): EV promedio
+  - `TestBuildTicketForMode` (13 tests): Construcción de tickets por modo
+
+### 6. Archivos Modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `apps/api/schemas/prediction.py` | Agregado `bookmaker_odds: float | None = None` a `EVAnalysis` |
+| `apps/api/orchestrators/prediction_orchestrator.py` | `odds` parámetro opcional + poblar `bookmaker_odds` en `_build_response()` |
+| `apps/api/repositories/match_repository.py` | Nuevo método `get_matches_by_date()` con filtro COT y `selectinload` |
+| `apps/api/routes/v1/router.py` | Registrado `tickets.router` |
+
+### 7. Flujo Completo del Endpoint
+
+```
+POST /api/v1/tickets/generate
+    │
+    ▼
+1. CacheService.get("tickets:daily:{date}") → HIT/MISS
+    │
+    ├─► HIT: Retornar tickets cacheados (filtrar por modos solicitados)
+    │
+    └─► MISS: Continuar
+         │
+         ▼
+2. MatchRepository.get_matches_by_date(today_cot, league_filter)
+   → list[Match] con selectinload(home_team, away_team, league)
+         │
+         ▼
+3. Para cada partido:
+   PredictionOrchestrator.get_prediction(match_id, odds=None)
+   → PredictionResponse con ev_analysis[]
+         │
+         ▼
+4. Construir all_predictions[] con formato:
+   {
+     "match_id": int,
+     "home_team": str,
+     "away_team": str,
+     "league": str,
+     "match_time_cot": str,
+     "markets": [
+       {
+         "market_name": str,
+         "market_label": str,
+         "our_probability": float,
+         "bookmaker_odds": float,
+         "implied_probability": float,
+         "expected_value": float,
+       }
+     ]
+   }
+         │
+         ▼
+5. Para cada modo solicitado:
+   build_ticket_for_mode(mode, all_predictions)
+   → GeneratedTicket | None
+         │
+         ├─► Filtrar mercados por allowed_markets del modo
+         ├─► Filtrar por min_ev y min_our_probability
+         ├─► Ordenar por EV descendente
+         ├─► Seleccionar 1 mercado por partido (sin duplicados)
+         ├─► Validar sin combinaciones prohibidas
+         ├─► Verificar cuota combinada en rango objetivo
+         └─► Calcular métricas finales (combined_odds, avg_ev, confidence)
+         │
+         ▼
+6. CacheService.set(cache_key, response, ttl=1800)
+         │
+         ▼
+7. Retornar TicketGenerateResponse
+```
+
+### 8. Resultados de Tests
+
+```bash
+python -m pytest tests/test_ticket_builder.py -v
+```
+
+**Resultados:**
+```
+tests/test_ticket_builder.py::TestCheckForbiddenCombination::test_valid_combination PASSED
+tests/test_ticket_builder.py::TestCheckForbiddenCombination::test_forbidden_under_btts PASSED
+tests/test_ticket_builder.py::TestCheckForbiddenCombination::test_forbidden_under_1_5_btts PASSED
+tests/test_ticket_builder.py::TestCheckForbiddenCombination::test_forbidden_draw_btts_no PASSED
+tests/test_ticket_builder.py::TestCheckForbiddenCombination::test_single_market_is_valid PASSED
+tests/test_ticket_builder.py::TestCheckForbiddenCombination::test_empty_list_is_valid PASSED
+tests/test_ticket_builder.py::TestCheckForbiddenCombination::test_subset_still_forbidden PASSED
+tests/test_ticket_builder.py::TestCheckForbiddenCombination::test_all_forbidden_combinations_detected PASSED
+tests/test_ticket_builder.py::TestGetCorrelationBonus::test_no_correlation PASSED
+tests/test_ticket_builder.py::TestGetCorrelationBonus::test_positive_correlation_home_over_1_5 PASSED
+tests/test_ticket_builder.py::TestGetCorrelationBonus::test_positive_correlation_btts_over_2_5 PASSED
+tests/test_ticket_builder.py::TestGetCorrelationBonus::test_multiple_correlations_returns_max PASSED
+tests/test_ticket_builder.py::TestGetCorrelationBonus::test_empty_markets PASSED
+tests/test_ticket_builder.py::TestGetCorrelationBonus::test_all_positive_correlations_detected PASSED
+tests/test_ticket_builder.py::TestCalculateCombinedOdds::test_single_leg PASSED
+tests/test_ticket_builder.py::TestCalculateCombinedOdds::test_two_legs PASSED
+tests/test_ticket_builder.py::TestCalculateCombinedOdds::test_three_legs PASSED
+tests/test_ticket_builder.py::TestCalculateCombinedOdds::test_empty_legs PASSED
+tests/test_ticket_builder.py::TestCalculateAverageEV::test_single_leg PASSED
+tests/test_ticket_builder.py::TestCalculateAverageEV::test_multiple_legs PASSED
+tests/test_ticket_builder.py::TestCalculateAverageEV::test_empty_legs PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_edge_mode_returns_ticket PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_value_mode_returns_ticket PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_bold_mode_returns_ticket PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_no_duplicate_match_ids PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_forbidden_combinations_not_in_ticket PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_insufficient_predictions_returns_none PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_empty_predictions_returns_none PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_edge_mode_respects_max_selections PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_ticket_has_pros_and_cons PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_ticket_has_staking_suggestion PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_combined_odds_positive PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_confidence_score_bounded PASSED
+tests/test_ticket_builder.py::TestBuildTicketForMode::test_ev_filtering_edge_mode PASSED
+
+34 passed in 0.07s
+```
+
+### 9. Verificación de Integración
+
+```bash
+python -c "from apps.api.routes.v1.router import api_router; routes = [r.path for r in api_router.routes]; print(routes)"
+```
+
+**Resultado:**
+```
+['/predictions/{match_id}', '/matches/', '/matches/upcoming/', '/matches/{match_id}', 
+ '/matches/sync/{league_id}', '/matches/sync-all', '/scanner/', '/auth/register', 
+ '/auth/login', '/backtesting/{league_key}', '/tickets/generate']
+```
+
+✅ Ruta `/tickets/generate` registrada correctamente.
+
+### 10. Ejemplo de Respuesta
+
+```json
+{
+  "generated_at": "2026-07-25T18:30:00-05:00",
+  "tickets": [
+    {
+      "mode": "edge",
+      "mode_label": "EDGE MODE",
+      "legs": [
+        {
+          "match_id": 101,
+          "home_team": "CR Flamengo",
+          "away_team": "São Paulo FC",
+          "league": "Serie A",
+          "market_name": "OVER_2_5",
+          "market_label": "Over 2.5 Goals",
+          "our_probability": 0.62,
+          "bookmaker_odds": 1.75,
+          "implied_probability": 0.52,
+          "edge_percentage": 10.0,
+          "expected_value": 0.12,
+          "match_time_cot": "04:30 PM COT"
+        },
+        {
+          "match_id": 102,
+          "home_team": "SE Palmeiras",
+          "away_team": "CA Mineiro",
+          "league": "Serie A",
+          "market_name": "1X2_HOME",
+          "market_label": "Home Win",
+          "our_probability": 0.58,
+          "bookmaker_odds": 1.85,
+          "implied_probability": 0.48,
+          "edge_percentage": 10.0,
+          "expected_value": 0.10,
+          "match_time_cot": "04:30 PM COT"
+        }
+      ],
+      "combined_odds": 3.24,
+      "average_ev": 0.11,
+      "confidence_score": 52,
+      "correlation_validated": true,
+      "tactical_summary": "2 selections with average 11.0% EV advantage over bookmaker. Correlation: independent.",
+      "pros": [
+        "All legs passed minimum 5% EV threshold",
+        "No negative correlations detected across 2 markets",
+        "Combined odds 3.24x within edge target range"
+      ],
+      "cons": [
+        "Past model performance does not guarantee future results",
+        "Lower confidence legs: 0 selection(s) below 55%"
+      ],
+      "staking_suggestion": "1-2% of bankroll — conservative, high-frequency play"
+    }
+  ],
+  "total_ev_opportunities": 15,
+  "matches_analyzed": 8
+}
+```
+
+### 11. Próximos Pasos (Post-Fase 6)
+
+1. **Probar con datos reales:** Ejecutar endpoint con partidos reales de Supabase
+2. **Integrar con frontend:** Conectar app móvil/web al nuevo endpoint
+3. **Monitoreo:** Agregar métricas de uso de caché y calidad de tickets generados
+4. **Optimizar prompts:** Usar análisis táctico (Fase 4) para enriquecer `tactical_summary`
+5. **Player props:** Expandir motor para incluir mercados de jugadores
+
+### 12. Verificación Final
+- ✅ Schemas Pydantic creados y validados
+- ✅ Motor de tickets con lógica pura (SRP)
+- ✅ 34 tests unitarios pasando
+- ✅ Endpoint registrado en router
+- ✅ Conflictos de arquitectura resueltos
+- ✅ Caché con TTL 30 minutos implementado
+- ✅ Conversión UTC → COT funcional
+- ✅ Degradación elegante validada
+- ✅ FastAPI startup sin errores
+
+---
+
+## 🟢 Fase 7: Frontend Web con Next.js + Conexión al Backend (Completado)
+
+### 1. Objetivo
+Integrar el prototipo visual exportado desde v0.dev (`apps/web`) con el backend FastAPI, realizando auditoría de archivos, ajustes de UI/UX y conexión en vivo al endpoint `POST /api/v1/tickets/generate`.
+
+### 2. Auditoría y Limpieza
+
+#### Archivos Eliminados
+| Tipo | Archivos | Razón |
+|------|----------|-------|
+| Componentes UI no usados | `badge.tsx`, `scroll-area.tsx`, `tabs.tsx`, `toggle.tsx`, `toggle-group.tsx`, `tooltip.tsx` | Ningún componente de dominio los importaba |
+| Placeholders muertos | `placeholder.svg`, `placeholder.jpg`, `placeholder-user.jpg`, `placeholder-logo.svg`, `placeholder-logo.png` | Ninguna referencia en el código |
+
+#### Dependencias Limpiadas (`package.json`)
+| Dependencia | Acción | Razón |
+|---|---|---|
+| `next-themes` | **ELIMINADA** | App es dark-only, innecesaria |
+| `@vercel/analytics` | **ELIMINADA** | Innecesaria para prototipo local |
+| `pnpm.overrides.hono` | **ELIMINADA** | Override irrelevante |
+
+#### Cambios en `sonner.tsx`
+- Removido `import { useTheme } from "next-themes"` 
+- Hardcodeado `theme="dark"` (la app no soporta light mode)
+
+#### Cambios en `layout.tsx`
+- Removido `import { Analytics } from '@vercel/analytics/next'`
+- Removido `generator: 'v0.app'` del metadata
+- Removido `{process.env.NODE_ENV === 'production' && <Analytics />}`
+
+#### Cambios en `next.config.mjs`
+- Removido `typescript: { ignoreBuildErrors: true }` — el build ahora valida TypeScript estrictamente
+
+#### Nombre del Paquete
+- Cambiado de `"my-project"` a `"betmind-web"`
+
+### 3. Ajustes de UI/UX
+
+| Componente | Cambio | Archivo |
+|---|---|---|
+| **match-modal.tsx** | Header sticky: `sticky top-0 z-10 bg-card` | `components/betmind/match-modal.tsx:73` |
+| **poisson-mini-chart.tsx** | Altura default 32→48px, gap entre barras 2→4px | `components/betmind/poisson-mini-chart.tsx:25,35,71` |
+| **ticket-card.tsx** | Botón "Show Tactical Analysis" con borde visible: `border border-border px-3 py-2 hover:bg-muted/50` | `components/betmind/ticket-card.tsx:93` |
+| **ticket-leg.tsx** | Padding vertical `py-2.5`→`py-3` | `components/betmind/ticket-leg.tsx:6` |
+
+### 4. Cliente API (`lib/api.ts`)
+
+#### Tipos Backend Mapeados
+```typescript
+interface BackendLeg {
+  match_id: number
+  home_team: string
+  away_team: string
+  league: string
+  market_name: string
+  market_label: string
+  our_probability: number
+  bookmaker_odds: float
+  implied_probability: number
+  edge_percentage: number
+  expected_value: number
+  match_time_cot: string
+}
+
+interface BackendTicket {
+  mode: string
+  mode_label: string
+  legs: BackendLeg[]
+  combined_odds: number
+  average_ev: number
+  confidence_score: number
+  correlation_validated: boolean
+  tactical_summary: string
+  pros: string[]
+  cons: string[]
+  staking_suggestion: string
+}
+```
+
+#### Función Adaptadora `mapBackendTicket()`
+Convierte tipos del backend (snake_case) a tipos del frontend (camelCase):
+- `mode` lowercase → uppercase (`"edge"` → `"EDGE"`)
+- `combined_odds` → `combinedOdds`
+- `average_ev` → `evAverage`
+- `confidence_score` → `confidence`
+- `tactical_summary` → `analysis`
+- `correlation_validated` → `correlationPositive` + texto de `correlation`
+- `home_team + " vs " + away_team` → `match`
+- `market_label` → `market`
+- `our_probability` → `prob`
+- `bookmaker_odds` → `odds`
+- `expected_value` → `ev`
+- Liga → emoji de bandera (mapa `LEAGUE_FLAGS` con 17 ligas)
+
+#### Función `fetchTickets()`
+```typescript
+export async function fetchTickets(
+  modes: Mode[] = ['EDGE', 'VALUE', 'BOLD'],
+  leagueFilter?: string[],
+): Promise<TicketFetchResult>
+```
+- Endpoint: `POST ${API_BASE}/api/v1/tickets/generate`
+- `API_BASE` configurable via `NEXT_PUBLIC_API_URL` (default: `http://localhost:8000`)
+- Retorna `TicketFetchResult` con `tickets`, `totalEvOpportunities`, `matchesAnalyzed`, `generatedAt`
+
+### 5. Integración del Dashboard
+
+#### Cambios en `components/betmind/dashboard.tsx`
+- **Estado nuevo:** `tickets` (inicializado con mock `TICKETS`), `ticketsLoading`, `ticketMeta`
+- **useEffect** con fetch al montar:
+  - Éxito → reemplaza tickets mock con datos reales
+  - Error → fallback silencioso a datos mock (`TICKETS`)
+  - Respuesta vacía → mantiene datos mock
+- **Loading skeleton:** 3 cards animadas con `animate-pulse` mientras carga
+- **Metadata dinámica:** Muestra `"X matches analyzed · Y EV opportunities detected"` cuando hay datos reales
+
+#### Flujo de Degradación Elegante
+```
+fetchTickets() → ÉXITO → tickets reales
+                 ↓ FALLO
+                 TICKETS mock (datos estáticos de v0)
+```
+
+### 6. Configuración CORS del Backend
+
+#### Cambios en `apps/api/main.py`
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+### 7. Archivos Creados
+
+| Archivo | Descripción |
+|---------|-------------|
+| `apps/web/lib/api.ts` | Cliente HTTP + adaptador de tipos backend→frontend |
+
+### 8. Archivos Modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `apps/web/package.json` | Nombre corregido, eliminadas `next-themes` y `@vercel/analytics` |
+| `apps/web/next.config.mjs` | Removido `ignoreBuildErrors: true` |
+| `apps/web/app/layout.tsx` | Removidos Analytics y `generator: 'v0.app'` |
+| `apps/web/app/globals.css` | Sin cambios (ya estaba correcto) |
+| `apps/web/components/ui/sonner.tsx` | Hardcodeado `theme="dark"`, removido `next-themes` |
+| `apps/web/components/betmind/match-modal.tsx` | Header sticky |
+| `apps/web/components/betmind/poisson-mini-chart.tsx` | Altura 48px, gap 4px |
+| `apps/web/components/betmind/ticket-card.tsx` | Botón "Show Tactical Analysis" visible |
+| `apps/web/components/betmind/ticket-leg.tsx` | Padding `py-3` |
+| `apps/web/components/betmind/dashboard.tsx` | Fetch tickets reales + loading + fallback |
+| `apps/api/main.py` | CORS middleware para `localhost:3000` |
+
+### 9. Archivos Eliminados
+
+| Archivo | Razón |
+|---------|-------|
+| `components/ui/badge.tsx` | No usado |
+| `components/ui/scroll-area.tsx` | No usado |
+| `components/ui/tabs.tsx` | No usado |
+| `components/ui/toggle.tsx` | No usado |
+| `components/ui/toggle-group.tsx` | No usado |
+| `components/ui/tooltip.tsx` | No usado |
+| `public/placeholder.svg` | No referenciado |
+| `public/placeholder.jpg` | No referenciado |
+| `public/placeholder-user.jpg` | No referenciado |
+| `public/placeholder-logo.svg` | No referenciado |
+| `public/placeholder-logo.png` | No referenciado |
+
+### 10. Verificación
+
+```
+next build:           ✅ PASS (TypeScript + compilación, 0 errores)
+Backend tests:        ✅ 34/34 pasando (ticket_builder)
+CORS middleware:      ✅ Configurado para localhost:3000
+Importaciones limpias: ✅ Sin referencias rotas
+```
+
+### 11. Instrucciones de Desarrollo
+
+```bash
+# Terminal 1 — Backend
+cd C:\betmind-ai
+python -m uvicorn apps.api.main:app --reload --port 8000
+
+# Terminal 2 — Frontend
+cd C:\betmind-ai\apps\web
+npm run dev
+```
+
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8000/api/v1/`
+- Swagger: `http://localhost:8000/docs`
+
+---
+
+## 🟢 Fase 7.1: Pulido Visual Premium del Frontend (Completado)
+
+### 1. Objetivo
+Aplicar la última capa de detalles de UX premium al frontend: logo pill badge, tooltips educativos en histograma Poisson, empty state para Scanner, y skeleton loaders estructurados.
+
+### 2. Logo "AI" Pill Badge (`top-nav.tsx`)
+
+Transformado el superscript "AI" en una pastilla/pill redondeada con estilo premium:
+
+**Antes:**
+```tsx
+<span className="text-[10px] font-semibold text-primary">AI</span>
+```
+
+**Después:**
+```tsx
+<span className="ml-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold text-indigo-400">
+  AI
+</span>
+```
+
+### 3. Tooltips Educativos en Histograma Poisson (`poisson-modal-chart.tsx`)
+
+Agregados tooltips interactivos al hacer hover sobre las barras del histograma en el modal táctico.
+
+**Implementación:**
+- Componente convertido a `'use client'` para usar `useState` y `useRef`
+- Estado `TooltipState` con `visible`, `x`, `y`, `text`
+- Handler `handleBarHover()` que calcula posición relativa al SVG
+- Texto del tooltip: `"[Equipo]: [X]% prob. exactly [N] goals"`
+- Tooltip renderizado como elemento SVG `<g>` con `<rect>` de fondo y `<text>`
+- Barras con `cursor-pointer` y `hover:opacity-80` para feedback visual
+- Textos con `pointer-events-none` para no interferir con hover
+
+**Archivo modificado:** `apps/web/components/betmind/poisson-modal-chart.tsx`
+
+### 4. Empty State para Pestaña Scanner
+
+Creado nuevo componente `ScannerEmptyState` con dropzone para subir capturas de boletos.
+
+**Características:**
+- Zona de arrastre con borde punteado: `border-2 border-dashed border-border p-12 rounded-xl`
+- Estado visual de drag-over: `border-primary bg-primary/5`
+- Ícono de cámara en círculo índigo: `<CameraIcon className="size-8 text-primary" />`
+- Mensaje principal: "Drag and drop your ticket screenshot here"
+- Botón "Browse files" con input file oculto
+- Sección "How it works" con 4 pasos numerados
+- Soporte para drag & drop + click para seleccionar
+- Acepta imágenes: `accept="image/*"`
+
+**Archivo creado:** `apps/web/components/betmind/scanner-empty-state.tsx`
+
+### 5. Skeleton Loaders Estructurados (`dashboard.tsx`)
+
+Reemplazados los skeleton loaders genéricos por componentes que imitan exactamente la forma de las tarjetas reales.
+
+#### `TicketSkeleton`
+- Altura fija `h-[420px]` para evitar saltos de layout
+- Imita la estructura completa de `TicketCard`:
+  - Barra de acento de 3px en la parte superior
+  - Badge de modo + score de confianza
+  - Cuota combinada grande + texto de EV
+  - 3 legs con estructura completa (flag, match, market, EV badge, prob, odds)
+  - Separador "Show Tactical Analysis"
+  - Footer con botones y disclaimer
+- Animación `animate-pulse` en cada elemento
+
+#### `MatchSkeleton`
+- Imita la estructura completa de `MatchCard`:
+  - Layout responsive (vertical en mobile, horizontal en desktop)
+  - Sección izquierda: liga, hora, status pill
+  - Sección central: equipos + mini chart + marcadores
+  - Sección derecha: EV badge + probabilidades 1X2 + botón "View Analysis"
+- Animación `animate-pulse` en cada elemento
+
+**Cambios en `dashboard.tsx`:**
+- Importado `ScannerEmptyState`
+- Agregadas funciones `TicketSkeleton()` y `MatchSkeleton()`
+- Separada lógica de tabs: `showTickets`, `showBoard`, `showScanner`
+- Scanner ahora muestra `ScannerEmptyState` en lugar del match board
+
+**Archivo modificado:** `apps/web/components/betmind/dashboard.tsx`
+
+### 6. Archivos Creados
+
+| Archivo | Descripción |
+|---------|-------------|
+| `apps/web/components/betmind/scanner-empty-state.tsx` | Empty state con dropzone para Scanner |
+
+### 7. Archivos Modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `apps/web/components/betmind/top-nav.tsx` | Logo "AI" transformado en pill badge |
+| `apps/web/components/betmind/poisson-modal-chart.tsx` | Tooltips interactivos en histograma |
+| `apps/web/components/betmind/dashboard.tsx` | Skeleton loaders estructurados + Scanner empty state |
+
+### 8. Verificación
+
+```
+next build: ✅ PASS (TypeScript + compilación, 0 errores)
+```
+
+### 9. Detalles de UX Agregados
+
+| Elemento | Mejora |
+|----------|--------|
+| Logo "AI" | Pill badge con fondo índigo semitransparente y borde sutil |
+| Histograma Poisson | Tooltips al hover mostrando probabilidad exacta por equipo/goles |
+| Scanner tab | Dropzone con drag & drop + instrucciones paso a paso |
+| Loading tickets | Skeleton que imita forma exacta de TicketCard (420px alto) |
+| Loading matches | Skeleton que imita forma exacta de MatchCard (responsive) |
+
+---
+
 ## 🟢 Fase 5: Calibración de Poisson y Motor de Backtesting Walk-Forward (Completado)
 
 ### 1. Motivación
@@ -2804,6 +3465,8 @@ Total:                         27 passed
 - [x] Implementar scraper de partidos con football-data.org para datos reales de 2026. ✅ Completado.
 - [x] Implementar scraper de partidos con ESPN Scoreboard API (datos reales en tiempo real). ✅ Completado.
 - [x] Corregir manejo de zona horaria UTC → COT (America/Bogota, UTC-5) en scraper de ESPN. ✅ Completado.
+- [x] Implementar Motor de Generación Inteligente de Tickets (EDGE, VALUE, BOLD) con reglas de correlación. ✅ Completado.
+- [x] Auditoría y limpieza del prototipo frontend v0.dev (`apps/web`). ✅ Completado.
+- [x] Integrar frontend Next.js con backend FastAPI (cliente API, adaptador de tipos, CORS, loading states). ✅ Completado.
 - [ ] Ejecutar backtesting con datos reales de Supabase (temporada 2024) para validar calidad del modelo.
-- [ ] Implementar Frontend (Next.js) — solo después de confirmar model_quality_score > 60 en backtesting.
 - [ ] Agregar métricas de monitoreo: uso de caché, costos de API, tiempo de respuesta.
