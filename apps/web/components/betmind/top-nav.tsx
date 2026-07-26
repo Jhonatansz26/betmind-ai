@@ -1,13 +1,20 @@
 'use client'
 
+import { CalendarIcon, ScanIcon, TicketIcon } from 'lucide-react'
 import { MenuIcon } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-export const NAV_TABS = ["Boletos de Hoy", 'Cartelera', 'Escáner'] as const
+export const NAV_TABS = ['Boletos', 'Partidos', 'Escáner'] as const
 export type NavTab = (typeof NAV_TABS)[number]
+
+const NAV_ICONS: Record<NavTab, React.ReactNode> = {
+  Boletos: <TicketIcon className="size-4" aria-hidden />,
+  Partidos: <CalendarIcon className="size-4" aria-hidden />,
+  Escáner: <ScanIcon className="size-4" aria-hidden />,
+}
 
 interface TopNavProps {
   active: NavTab
@@ -49,12 +56,13 @@ export function TopNav({ active, onChange, onToggleSidebar }: TopNavProps) {
               onClick={() => onChange(tab)}
               aria-current={active === tab ? 'page' : undefined}
               className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
+                'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
                 active === tab
                   ? 'bg-muted text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
+              {NAV_ICONS[tab]}
               {tab}
             </button>
           ))}
@@ -90,10 +98,11 @@ export function BottomNav({ active, onChange }: { active: NavTab; onChange: (tab
           onClick={() => onChange(tab)}
           aria-current={active === tab ? 'page' : undefined}
           className={cn(
-            'px-2 py-3 text-[11px] font-medium transition-colors',
+            'flex flex-col items-center gap-1 px-2 py-2.5 text-[10px] font-medium transition-colors',
             active === tab ? 'text-primary' : 'text-muted-foreground',
           )}
         >
+          {NAV_ICONS[tab]}
           {tab}
         </button>
       ))}

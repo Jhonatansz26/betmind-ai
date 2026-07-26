@@ -39,6 +39,7 @@ export interface Match {
   leagueId: string
   leagueExternalId: number | null
   league: string
+  leagueCountry: string | null
   flag: string
   time: string
   status: MatchStatus

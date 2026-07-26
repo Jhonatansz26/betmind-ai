@@ -4506,3 +4506,267 @@ Ninguno (todas las mejoras fueron en archivos existentes).
 - [x] Implementar resiliencia de CacheService ante fallos de Redis (fallback graceful). ✅ Completado.
 - [ ] Ejecutar backtesting con datos reales de Supabase (temporada 2024) para validar calidad del modelo.
 - [ ] Agregar métricas de monitoreo: uso de caché, costos de API, tiempo de respuesta.
+
+---
+
+## 🟢 Fase 10: Auditoría de Limpieza y Purga de Mock Data (Completado)
+
+### 📋 Objetivo
+Eliminar todo código muerto, datos ficticios (mock/fake data) y componentes desconectados del proyecto para que la plataforma opere 100% con datos reales de la API y Supabase.
+
+### 1. Auditoría Frontend (`apps/web`)
+
+#### Mock Data Eliminado
+- **`lib/betmind.ts`**: Reducido de 657 → 239 líneas. Eliminados:
+  - `LEAGUES` (11 ligas con conteos fake de partidos)
+  - `TICKETS` (3 boletos parlays completos con nombres de equipos y cuotas inventadas)
+  - `REFEREES` (4 perfiles de árbitros con estadísticas falsas)
+  - `MATCHES` (8 partidos completos con lambdas, odds, pros/cons y summaries ficticios)
+  - `MODEL_HEALTH` (métricas brier/hitRate/opportunities hardcodeadas)
+- Conservadas: interfaces TypeScript, `MODE_META`, helpers matemáticos (`goalDistribution`, `impliedProbability`, `expectedValue`, etc.)
+
+#### Componentes Reconectados
+- **`dashboard.tsx`**: Eliminado `useState(TICKETS)` (mock init). Eliminados fallbacks en `catch` y condicionales que revertían a `TICKETS`. Ahora: si API vacía → `[]`.
+- **`league-sidebar.tsx`**: Reescrito completamente. Importa `fetchLeagues()` desde `lib/api.ts`. Sidebar con datos reales de Supabase, agrupados por región con conteo real de partidos activos, loading skeletons.
+- **`api.ts`**: Agregado `fetchLeagues()`, `Match.leagueExternalId` para filtrado correcto. `mapBackendMatch` ahora propaga odds reales desde el backend enriquecido.
+
+### 2. Auditoría Backend (`apps/api`)
+
+#### 6 Archivos de Código Muerto Eliminados
+| Archivo | Líneas | Motivo |
+|---------|:------:|--------|
+| `engine/poisson_model.py` | 57 | Duplicado redundante; pipeline real usa `betmind_ml.models.poisson_engine` |
+| `engine/value_calculator.py` | 245 | Duplicado de `betmind_ml.ev.ev_calculator`; nunca importado |
+| `engine/feature_builder.py` | 79 | Huérfano; solo importado por value_calculator (también muerto) |
+| `services/gemini_service.py` | 42 | Nunca importado; la app usa Groq, no Gemini |
+| `repositories/prediction_repository.py` | 39 | Nunca importado; tabla predictions existe pero vacía |
+| `repositories/user_repository.py` | 22 | Nunca importado; auth endpoints devuelven 501 |
+
+#### Endpoints Creados
+- **`GET /api/v1/leagues/`** (`routes/v1/leagues.py`): JOIN real con `matches` para conteo de partidos activos (`SCHEDULED` + `LIVE`). 13 ligas con conteos reales.
+- **`GET /api/v1/matches/`** enriquecido: ahora incluye `odds` (home/draw/away/over25/btts) desde `bookmaker_odds` vía `_fetch_odds_for_matches()`.
+
+#### Configuración Limpiada
+- **`config.py`**: Eliminado `GEMINI_API_KEY` (dependencia muerta).
+- **`.env.example`**: Actualizado con variables reales (`FOOTBALL_DATA_KEY`, `GROQ_API_KEYS`, `ANTHROPIC_API_KEY`, `ADMIN_API_KEY`).
+- **`package-lock.json`**: Eliminado (conflicto con `pnpm-lock.yaml`, el proyecto usa pnpm).
+
+### 3. Batch de Predicciones Poisson
+- **Script creado**: `scripts/batch_predict.py` — ejecuta pipeline Poisson para todos los partidos `SCHEDULED` contra Supabase.
+- **Fix en orquestador**: `_build_bookmaker_odds` ahora maneja `odds=None` correctamente (antes crash con `'NoneType' has no attribute 'home_win'`).
+- **Resultado**: 53/53 partidos procesados exitosamente en modo cuantitativo (sin LLM).
+
+### 4. Verificación
+- **TypeScript**: `tsc --noEmit` pasa limpio (0 errores).
+- **Python**: Todos los archivos modificados compilan sin errores de sintaxis.
+- **Frontend**: Cartelera muestra datos reales desde API, sidebar con ligas reales y conteo de partidos.
+
+---
+
+## 🟢 Fase 11: Deduplicación de Equipos y Partidos en Supabase (Completado)
+
+### 📋 Problema
+360 equipos con 42 duplicados (variantes de nombre: "Atlético Tucumán" vs "Atletico Tucuman", "Liverpool" vs "Liverpool FC"). 53 partidos SCHEDULED con 7 duplicados (misma fecha/hora, equipos equivalentes con diferentes IDs). Causa: 3 rutas de ingesta independientes (API-Football, football-data.org, ESPN scraper) sin canonicalización de nombres.
+
+### 1. Limpieza SQL en Supabase
+Migración `deduplicate_teams_and_matches` aplicada en 4 etapas transaccionales:
+
+| Métrica | Antes | Después |
+|---------|:---:|:---:|
+| Equipos totales | 360 | **318** (-42) |
+| Equipos únicos normalizados | 318 | 318 (=) |
+| Partidos SCHEDULED | 53 | **46** (-7) |
+| Fixtures únicos | 46 | 46 (0 duplicados) |
+
+### 2. Módulo de Normalización
+- **Creado** `services/team_normalizer.py` con `canonical_team_name()`:
+  - Descompone acentos (NFKD) → lowercase → elimina sufijos (`FC`, `SC`, `CF`, `AC`, `CD`, `SA`, `DE`) → elimina puntuación.
+  - Ej: `"Atlético Tucumán"` → `"atletico tucuman"`, `"Liverpool FC"` → `"liverpool"`.
+
+### 3. TeamRepository con Cross-Provider Matching
+- **`upsert()` actualizado**: 3 niveles de búsqueda:
+  1. `get_by_external_id()` — fast path (misma fuente de datos)
+  2. `_find_by_normalized_name()` — busca por nombre canonicalizado (cross-provider)
+  3. Insert — solo si no existe por ningún criterio
+- Si encuentra match por nombre canonicalizado, actualiza el registro existente en lugar de crear duplicado.
+
+### 4. Reparación de `sync_today_matches.py`
+- **hash(team_name) → `hashlib.md5(name).hexdigest()[:8]`**: IDs determinísticos entre ejecuciones.
+- **Inserción directa `session.add(Team(...))` → `team_repo.upsert(Team(...))`**: Ahora pasa por canonicalización.
+- **Búsqueda por nombre exacto → `team_repo._find_by_normalized_name()`**: Cross-provider matching.
+
+---
+
+## 🟢 Fase 12: Calibración de Boletos y 4 Fixes Críticos (Completado)
+
+### 📋 Problema Inicial
+Solo se generaban 2 boletos con cuotas irreales (@3.80 × @4.60 × @4.75 = 83.03x), partidos pasados se incluían, VALUE y BOLD eran idénticos, y el análisis táctico llegaba vacío.
+
+### 1. Calibración de Umbrales (`ticket_builder.py`)
+
+| Modo | Cuota combinada | Cuota individual máx | Prob mínima | Patas |
+|------|:---:|:---:|:---:|:---:|
+| **EDGE** | 1.50–3.50 | ≤2.10 | 0.40 | 2 |
+| **VALUE** | 2.50–12.00 | ≤4.00 | 0.30 | 2-3 |
+| **BOLD** | 8.00–30.00 | ≤8.00 | 0.22 | 3-4 |
+
+- **Enforcement estricto**: Si combined fuera de rango después de corrección → `return None`. No se publican boletos con cuotas desproporcionadas.
+- **`max_individual_odds`**: Descarta patas individuales que excedan el límite del modo.
+- **`exclude_match_ids`**: Parámetro opcional para cross-mode dedup.
+
+### 2. Partidos Futuros Exclusivamente (`match_repository.py`)
+- `get_matches_by_date()`: Añadido `Match.match_date > now_utc` — solo partidos estrictamente futuros.
+- `get_by_id()`: Añadido `selectinload(Match.league)` — evita crash por lazy load de `match.league.external_id`.
+
+### 3. Desduplicación Cross-Mode (`tickets.py`)
+- `used_match_ids` acumulativo entre modos: EDGE → VALUE → BOLD.
+- Cada boleto usa partidos DIFERENTES (7 match_ids distintos entre los 3 boletos).
+
+### 4. Análisis Táctico Enriquecido (`prediction_orchestrator.py`)
+- `_build_minimal_tactical_analysis()`: Ahora construye `MarketNarrative` completo con:
+  - λ_local, λ_visitante (expectativa de goles Poisson)
+  - Probabilidades 1X2, Over 2.5, Over 1.5
+  - Favorito del partido con probabilidad
+  - Recomendación de mercado (Over/Under)
+  - `ProConPoint` con peso HIGH/MEDIUM/LOW
+  - `SignalStrength` MODERATE/WEAK
+- `_build_tactical_narrative()` y `_build_tactical_analysis_response()`: Protegidos para dicts y Pydantic models.
+- `_to_serializable()`: Helper que maneja `.model_dump()` para Pydantic y dicts nativos.
+
+### 5. Partidos sin Bookmaker Odds (`tickets.py`)
+- `_derive_markets_from_probabilities()`: Para partidos sin odds reales, deriva 5 mercados (1X2_HOME, DRAW, AWAY, OVER_2_5, OVER_1_5) desde probabilidades Poisson con overround sintético del 8%.
+- Resultado: **218 oportunidades +EV** (antes solo 11 con odds reales).
+
+### 6. Fix de Bug en Orquestador de Predicciones
+- **Bug**: `PredictionNotAvailableException` para TODOS los partidos porque `get_by_id()` no cargaba `Match.league`.
+- **Fix**: Agregado `selectinload(Match.league)` en `get_by_id()`.
+
+### 7. Verificación Final
+```
+POST /api/v1/tickets/generate → 3 boletos generados
+
+=== EDGE MODE ===
+  Legs: 2 | Odds: 2.0x | EV: 8.0% | Conf: 42
+  Liga Profesional: Atletico Tucuman vs Independiente Rivadavia | Gana Local | P=97.0% odds=@1.11
+  Liga 1: UTC vs Deportivo Moquegua | Empate | P=59.9% odds=@1.80
+
+=== VALUE MODE ===
+  Legs: 2 | Odds: 8.94x | EV: 40.2% | Conf: 95
+  Primera A: Internacional de Bogota vs America de Cali | Gana Local | P=47.6% odds=@2.98
+  Primera A: Águilas Doradas vs Independiente Santa Fe | Empate | P=46.2% odds=@3.00
+
+=== BOLD MODE ===
+  Legs: 4 | Odds: 25.41x | EV: 16.8% | Conf: 87
+  Primera A: Alianza FC vs Fortaleza CEIF | Empate | odds=@3.10
+  Liga Profesional: Atletico Tucuman vs Independ. Rivadavia | Gana Local | odds=@2.53
+  Liga Pro: Aucas vs Macará | Empate | odds=@1.80
+  Liga Pro: Delfín vs Leones | Empate | odds=@1.80
+
+✓ Cuotas coherentes por modo (no solapadas)
+✓ Partidos estrictamente futuros (46 matches > NOW)
+✓ 7 partidos distintos entre los 3 boletos
+✓ Análisis táctico con datos Poisson (λ, probabilidades, favorito)
+✓ TypeScript: OK | Python: OK
+```
+
+### 8. Archivos Modificados en esta Fase
+| Archivo | Cambio |
+|---------|--------|
+| `ticket_builder.py` | MODE_CONFIG recalibrado, max_individual_odds, exclude_match_ids, enforcement estricto |
+| `match_repository.py` | `match_date > now_utc`, `selectinload(Match.league)` en get_by_id |
+| `tickets.py` | Cross-mode dedup, `_derive_markets_from_probabilities`, include_tactical_analysis |
+| `prediction_orchestrator.py` | `_build_minimal_tactical_analysis` enriquecido, `_to_serializable`, protección para dict/Pydantic |
+| `team_repository.py` | `upsert()` con canonical matching, `_find_by_normalized_name()` |
+| `team_normalizer.py` | NUEVO: `canonical_team_name()` con NFKD + sufijos + puntuación |
+| `sync_today_matches.py` | hash→md5, raw SQL→team_repo.upsert, Team import top-level |
+| `routes/v1/leagues.py` | NUEVO: GET /api/v1/leagues/ con JOIN y conteo real de partidos |
+| `routes/v1/matches.py` | `_fetch_odds_for_matches()`, odds en `_match_to_dict_full` |
+| `config.py` | Eliminado `GEMINI_API_KEY` |
+| `.env.example` | Actualizado con variables reales (GROQ_API_KEYS, ANTHROPIC_API_KEY, ADMIN_API_KEY) |
+| `betmind.ts` | Reducido 657→239 líneas (solo interfaces + helpers + MODE_META) |
+| `dashboard.tsx` | Sin mock fallbacks, leaguePills desde API, fetchLeagues |
+| `league-sidebar.tsx` | Reescrito con fetchLeagues reales, loading skeletons |
+| `api.ts` | fetchLeagues, leagueExternalId, odds desde backend enriquecido |
+| `routes/v1/router.py` | Registrado nuevo router de leagues |
+
+---
+
+## 🟢 Fase 13: Rediseño FinTech (Estilo Betano), Aislamiento de Vistas, Desambiguación de Ligas & Blindaje Tipográfico (Completado)
+
+### 📋 Problema & Objetivos de la Sesión
+1. **Sobrecarga Visual ("Neon AI Template"):** La interfaz lucía como una plantilla oscura genérica. Se requería una transición hacia una experiencia SaaS FinTech limpia, compacta y profesional tomando como referencia visual los boletos de apuestas de Betano.
+2. **Ambigüedad en Nombres de Ligas y Banderas Incorrectas:** Ligas homónimas como "Serie A" no especificaban su país (Italia vs Brasil). Además, partidos brasileños estaban saliendo etiquetados erróneamente con el código ISO `IT` (Italia) debido a un diccionario estático incompleto en el frontend.
+3. **Flujo de Navegación Intrusionante:** El modal flotante para ver el detalle de partido rompía la experiencia en móviles y generaba problemas de scroll.
+4. **Contaminación Tipográfica Global:** En algunos navegadores, los números de las cuotas y marcadores se renderizaban con tipografía serif/curvada (`Playfair Display`) sobreescribiendo las variables numéricas de Tailwind.
+
+---
+
+### 1. 🏗️ Arquitectura & Refactorización de Backend (`apps/api`)
+- **Propagación del País de Origen (`routes/v1/matches.py`):** En `_match_to_dict_full()`, se serializó explícitamente el campo `"league_country": m.league.country` desde la base de datos hacia el payload JSON de la API. Esto independiza al frontend de adivinar el país por el nombre de la liga.
+- **Estabilidad de Rutas & ORM:** Se mantuvo la integridad transaccional y se verificó que el endpoint `/api/v1/matches/` devuelva correctamente la relación del país para las 11 ligas objetivo.
+
+---
+
+### 2. 🎨 Refactorización Frontend & UI/UX FinTech (`apps/web`)
+- **Desambiguación Dinámica de Ligas & Banderas (`lib/api.ts` & `lib/betmind.ts`):**
+  - Se eliminó el diccionario estático `LEAGUE_FLAGS` que causaba colisiones en ligas homónimas.
+  - Se integró `leagueCountry: string | null` en la interfaz `Match` (`betmind.ts`) y `league_country` en `BackendMatch` (`api.ts`).
+  - Se implementó la tabla de búsqueda `COUNTRY_ISO` para transformar nombres de país en inglés (ej. `Brazil`, `England`, `Spain`, `Colombia`) a códigos ISO-3166-1 alfa-2 o alfa-3 (`BR`, `GB-ENG`, `ES`, `CO`).
+  - Se creó el generador algorítmico Unicode `isoToFlagEmoji(code)` y la función `flagForCountry(country, fallbackLeague)`, garantizando un 100% de precisión regional sin banderas incorrectas.
+  - Se desarrolló `formatCompositeLeagueName(name, country)`, que transforma dinámicamente nombres genéricos en etiquetas compuestas inequívocas (ej. **`Serie A · Brazil`**, **`Serie A · Italia`**).
+- **Rediseño Estilo Betano en Boletos (`ticket-card.tsx`, `ticket-leg.tsx`, `odds-pill.tsx`):**
+  - **Cuota Total Combinada:** Renderizada en el header de cada boleto bajo el formato estilizado **`@ 2.07`** (con espacio intermedio) utilizando tipografía monospaciada de alto contraste.
+  - **Limpieza de Relleno:** Eliminado el texto estático *"Todas las selecciones pasaron la validación de correlación negativa"*, liberando espacio para destacar el **EV Promedio** y la barra de confianza.
+  - **Filas de Selección (`TicketLeg`):** Separadas con divisores horizontales suaves (`border-border-subtle`). Truncado y padding mejorados para que los nombres de los equipos y mercados no sufran puntos suspensivos innecesarios.
+  - **Cajitas de Cuotas (`OddsPill`):** Se creó el componente dedicado `odds-pill.tsx` replicando el diseño de Betano: contenedor inset oscuro (`bg-slate-800/90`), borde sutil (`border-slate-700/60`), texto claro y tipografía monospaciada inline resistente a sobreescrituras (`ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas...`).
+  - **Acciones del Footer:** Se eliminó por completo el botón `Copiar`, dejando como llamada a la acción única el botón **"⭐ Seguir"** (ancho completo o centrado) conectado al sistema de tracking.
+- **Aislamiento Arquitectónico de Vistas (`dashboard.tsx`):**
+  - Refactorización de la navegación por pestañas (`Boletos`, `Partidos`, `Escáner`).
+  - La pestaña **Boletos** se convirtió en una vista aislada que renderiza únicamente la grilla de boletos y el `<TrackingPanel />`. Se eliminó la lista secundaria de partidos de esta pestaña para evitar confusión visual y mejorar la velocidad de carga.
+- **Página de Detalle a Pantalla Completa (`app/partidos/[id]/page.tsx`):**
+  - Se eliminó el antiguo modal flotante (`match-modal.tsx`) que interceptaba la vista principal.
+  - Se construyó la ruta de página completa `/partidos/[id]` con cabecera sticky de navegación, botón de retroceso (*Volver a Partidos*) y organización vertical en 5 bloques modulares: Cabecera con marcadores en vivo, Gráfico y Matriz de Poisson, Desglose de Valor Esperado (+EV), Análisis Táctico LLM (Groq/Gemini) y Perfil del Árbitro.
+- **Barra Lateral de Ligas (`league-sidebar.tsx`):**
+  - Corregido un bug en la precedencia de operadores lógicos de la función `resolveRegion()`.
+  - Ahora clasifica correctamente las competiciones utilizando `country` y muestra etiquetas compuestas con bandera (ej. `🇧🇷 Serie A · Brasil`, `🇬🇧 Premier League`).
+
+---
+
+### 3. 🛡️ Blindaje Tipográfico en Tailwind CSS v4 (`app/globals.css`)
+- **Resolución de Contaminación Serif:** Se identificó que `@theme inline` no tenía definida explícitamente la variable monospaciada, haciendo que números y cuotas heredaran propiedades serif en ciertas resoluciones.
+- **Solución Canónica Implementada:**
+  - Se registró explícitamente `--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;` dentro del `@theme inline`.
+  - Se actualizaron las reglas `.tabular` en `@layer base` y `@utility num` añadiendo la propiedad `font-family: var(--font-mono);`, garantizando que todos los elementos financieros y numéricos de la plataforma utilicen una fuente técnica, limpia y alineada tabularmente.
+
+---
+
+### 4. 🧪 Verificación & Control de Calidad
+- **Frontend TypeScript Check:** Ejecutado `npx tsc --noEmit` sobre `apps/web` con **0 errores de compilación**.
+- **Backend Import & Syntax Check:** Verificado mediante CLI de Python (`python -c "import apps.api.main; print('API OK')"`) arrojando **API OK**.
+- **Inspección de Datos en Vivo:** Confirmada la correcta serialización de `league_country` y la resolución visual del formato compuesto para la Serie A brasileña y colombiana.
+
+---
+
+### 5. 📋 Resumen de Archivos Modificados en la Sesión
+| Archivo | Cambio |
+|---------|--------|
+| `apps/api/routes/v1/matches.py` | Exposición del atributo `league_country: m.league.country` en `_match_to_dict_full`. |
+| `apps/web/lib/betmind.ts` | Adición de `leagueCountry: string | null` en la interfaz `Match`. |
+| `apps/web/lib/api.ts` | Creación de `COUNTRY_ISO`, `isoToFlagEmoji`, `flagForCountry`, `formatCompositeLeagueName` y actualización de `mapBackendMatch`. |
+| `apps/web/components/betmind/odds-pill.tsx` | Recreación del componente estilo Betano con font-family monospaciado inline inmutable. |
+| `apps/web/components/betmind/ticket-card.tsx` | Rediseño limpio, formato `@ 2.07`, remoción de texto de relleno y eliminación del botón *Copiar*. |
+| `apps/web/components/betmind/ticket-leg.tsx` | Divisores horizontales sutiles, espaciado optimizado y adopción de `<OddsPill />`. |
+| `apps/web/components/betmind/dashboard.tsx` | Aislamiento de pestañas: Boletos sin partidos inferiores, integración limpia del tracking. |
+| `apps/web/components/betmind/league-sidebar.tsx` | Fix en `resolveRegion()` y renderizado de nombres compuestos con bandera. |
+| `apps/web/app/partidos/[id]/page.tsx` | Creación de página dedicada de detalle a pantalla completa (reemplazo del modal). |
+| `apps/web/app/globals.css` | Blindaje canónico de `--font-mono` y asignación en `.tabular` y `@utility num`. |
+
+---
+
+### 6. 🗺️ Roadmap Priorizado & Deuda Técnica Pendiente (Siguientes Pasos)
+1. **📍 Fase 14 (Inmediata): Persistencia Real del Tracking Panel en Supabase**
+   - *Deuda Actual:* El componente `<TrackingPanel />` guarda el estado en `window.localStorage` (límite de 10 boletos). Si el usuario cambia de navegador o entra desde el móvil, pierde su historial y estados (`PENDING`, `LIVE`, `WON`, `LOST`).
+   - *Plan:* Crear la tabla `user_tracked_tickets` en Supabase y construir endpoints CRUD en FastAPI (`GET/POST/PATCH/DELETE /api/v1/tracking/`). Conectar el frontend con `useSWR` o llamadas fetch asíncronas con Optimistic Updates.
+2. **📍 Fase 15 (Mediano Plazo): Asincronía Predictiva & Calibración Nocturna**
+   - *Deuda Actual:* Al generar un análisis por primera vez, el orquestador dispara 3 llamadas paralelas a Gemini 2.0 Flash (`asyncio.gather`), bloqueando la respuesta del endpoint unos 5-6 segundos.
+   - *Plan:* Migrar la generación cualitativa LLM a tareas de fondo (Background Tasks / Celery / Arq). Al consultar un partido sin caché, devolver de inmediato los cálculos matemáticos de Poisson (+EV) y notificar al frontend cuando la narrativa LLM termine de generarse en segundo plano. Implementar además un Cron Job nocturno para evaluar y cambiar automáticamente a `WON` / `LOST` los boletos seguidos según los marcadores de 90 minutos.

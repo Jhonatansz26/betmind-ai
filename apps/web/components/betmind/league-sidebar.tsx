@@ -4,58 +4,29 @@ import * as React from 'react'
 import { CheckCircle2Icon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { fetchLeagues } from '@/lib/api'
+import { fetchLeagues, flagForCountry, formatCompositeLeagueName } from '@/lib/api'
 import type { LeagueData } from '@/lib/api'
 
-const LEAGUE_FLAGS: Record<string, string> = {
-  'Premier League': '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}',
-  'LaLiga': '\u{1F1EA}\u{1F1F8}',
-  'Bundesliga': '\u{1F1E9}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}',
-  'Serie A': '\u{1F1EE}\u{1F1F9}',
-  'Ligue 1': '\u{1F1EB}\u{1F1F7}',
-  'Liga BetPlay Dimayor': '\u{1F1E8}\u{1F1F4}',
-  'Primera A': '\u{1F1E8}\u{1F1F4}',
-  'Serie A (Brazil)': '\u{1F1E7}\u{1F1F7}',
-  'Brasileirão': '\u{1F1E7}\u{1F1F7}',
-  'Liga Profesional': '\u{1F1E6}\u{1F1F7}',
-  'Liga MX': '\u{1F1F2}\u{1F1FD}',
-  'Major League Soccer': '\u{1F1FA}\u{1F1F8}',
-  'MLS': '\u{1F1FA}\u{1F1F8}',
-  'Primera División': '\u{1F1E8}\u{1F1F1}',
-  'Liga Pro': '\u{1F1EA}\u{1F1E8}',
-  'Liga 1': '\u{1F1F5}\u{1F1EA}',
-  'Allsvenskan': '\u{1F1F8}\u{1F1EA}',
-  'Superliga': '\u{1F1E9}\u{1F1F0}',
-  'Super League': '\u{1F1E8}\u{1F1ED}',
-}
+const AMERICAS_COUNTRIES = new Set([
+  'Brazil', 'Brasil', 'Colombia', 'Argentina', 'USA', 'United States',
+  'Mexico', 'México', 'Chile', 'Ecuador', 'Peru', 'Perú', 'Uruguay', 'Paraguay', 'Bolivia', 'Venezuela'
+])
 
-const REGION_MAP: Record<string, 'EUROPE' | 'AMERICAS'> = {
-  'England': 'EUROPE',
-  'Spain': 'EUROPE',
-  'Germany': 'EUROPE',
-  'Italy': 'EUROPE',
-  'France': 'EUROPE',
-  'Sweden': 'EUROPE',
-  'Denmark': 'EUROPE',
-  'Switzerland': 'EUROPE',
-  'Portugal': 'EUROPE',
-  'Brasil': 'AMERICAS',
-  'Colombia': 'AMERICAS',
-  'Argentina': 'AMERICAS',
-  'USA': 'AMERICAS',
-  'Chile': 'AMERICAS',
-  'Ecuador': 'AMERICAS',
-  'Peru': 'AMERICAS',
-}
-
-function resolveFlag(leagueName: string): string {
-  return LEAGUE_FLAGS[leagueName] ?? '\u{1F3C1}'
+function resolveFlag(league: LeagueData): string {
+  return flagForCountry(league.country, league.name)
 }
 
 function resolveRegion(country: string | null, name: string): 'EUROPE' | 'AMERICAS' {
-  if (country && REGION_MAP[country]) return REGION_MAP[country]
-  if (name.includes('MLS') || name.includes('Liga') || name.includes('Serie A') && country !== 'Italy') return 'AMERICAS'
+  if (country) {
+    if (AMERICAS_COUNTRIES.has(country)) return 'AMERICAS'
+    return 'EUROPE'
+  }
+  if (name.includes('MLS') || name.includes('Liga') || name.includes('BetPlay') || name.includes('Brasileir') || (name.includes('Serie A') && !name.includes('Italy'))) return 'AMERICAS'
   return 'EUROPE'
+}
+
+function formatLeagueName(league: LeagueData): string {
+  return formatCompositeLeagueName(league.name, league.country)
 }
 
 interface LeagueSidebarProps {
@@ -95,9 +66,9 @@ function LeagueGroup({
             )}
           >
             <span aria-hidden className="text-sm leading-none">
-              {resolveFlag(league.name)}
+              {resolveFlag(league)}
             </span>
-            <span className="flex-1 truncate text-xs text-foreground">{league.name}</span>
+            <span className="flex-1 truncate text-xs text-foreground">{formatLeagueName(league)}</span>
             <span className="num rounded-sm bg-muted/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
               {league.active_matches}
             </span>

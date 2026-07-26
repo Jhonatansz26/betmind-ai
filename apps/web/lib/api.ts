@@ -2,29 +2,67 @@ import type { Mode, Ticket, TicketLegData, Match, MatchStatus, TacticalFactor, R
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
-const LEAGUE_FLAGS: Record<string, string> = {
-  'Premier League': '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}',
-  'LaLiga': '\u{1F1EA}\u{1F1F8}',
-  'Bundesliga': '\u{1F1E9}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}',
-  'Serie A': '\u{1F1EE}\u{1F1F9}',
-  'Ligue 1': '\u{1F1EB}\u{1F1F7}',
-  'Liga BetPlay Dimayor': '\u{1F1E8}\u{1F1F4}',
-  'Liga BetPlay': '\u{1F1E8}\u{1F1F4}',
-  'Serie A (Brazil)': '\u{1F1E7}\u{1F1F7}',
-  'Brasileir\u00E3o': '\u{1F1E7}\u{1F1F7}',
-  'Liga Profesional': '\u{1F1E6}\u{1F1F7}',
-  'Liga MX': '\u{1F1F2}\u{1F1FD}',
-  'Major League Soccer': '\u{1F1FA}\u{1F1F8}',
-  'MLS': '\u{1F1FA}\u{1F1F8}',
-  'Primera Divisi\u00F3n': '\u{1F1E8}\u{1F1F1}',
-  'Liga Pro': '\u{1F1EA}\u{1F1E8}',
-  'Liga 1': '\u{1F1F5}\u{1F1EA}',
-  'Allsvenskan': '\u{1F1F8}\u{1F1EA}',
-  'Superliga': '\u{1F1E9}\u{1F1F0}',
-  'Super League': '\u{1F1E8}\u{1F1ED}',
+export const COUNTRY_ISO: Record<string, string> = {
+  'England': 'GB-ENG',
+  'Spain': 'ES',
+  'Germany': 'DE',
+  'Italy': 'IT',
+  'France': 'FR',
+  'Colombia': 'CO',
+  'Brazil': 'BR',
+  'Argentina': 'AR',
+  'Mexico': 'MX',
+  'USA': 'US',
+  'Chile': 'CL',
+  'Ecuador': 'EC',
+  'Peru': 'PE',
+  'Sweden': 'SE',
+  'Denmark': 'DK',
+  'Switzerland': 'CH',
+  'Portugal': 'PT',
 }
 
-const LEAGUE_ID_MAP: Record<number, string> = {
+export function isoToFlagEmoji(code: string): string {
+  if (code === 'GB-ENG') return '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}'
+  return code
+    .toUpperCase()
+    .split('')
+    .map((c) => String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0)))
+    .join('')
+}
+
+export function flagForCountry(country: string | null | undefined, fallbackLeague?: string): string {
+  if (country && COUNTRY_ISO[country]) {
+    return isoToFlagEmoji(COUNTRY_ISO[country])
+  }
+  if (fallbackLeague) {
+    if (fallbackLeague.includes('Premier League') || fallbackLeague === 'England') return isoToFlagEmoji('GB-ENG')
+    if (fallbackLeague.includes('LaLiga') || fallbackLeague.includes('Spain')) return isoToFlagEmoji('ES')
+    if (fallbackLeague.includes('Bundesliga') || fallbackLeague.includes('Germany')) return isoToFlagEmoji('DE')
+    if (fallbackLeague.includes('Ligue 1') || fallbackLeague.includes('France')) return isoToFlagEmoji('FR')
+    if (fallbackLeague.includes('BetPlay') || fallbackLeague.includes('Colombia')) return isoToFlagEmoji('CO')
+    if (fallbackLeague.includes('Serie A') && fallbackLeague.includes('Brazil')) return isoToFlagEmoji('BR')
+    if (fallbackLeague.includes('Brazil') || fallbackLeague.includes('Brasileir')) return isoToFlagEmoji('BR')
+    if (fallbackLeague.includes('Profesional') || fallbackLeague.includes('Argentina')) return isoToFlagEmoji('AR')
+    if (fallbackLeague.includes('MX') || fallbackLeague.includes('Mexico')) return isoToFlagEmoji('MX')
+    if (fallbackLeague.includes('MLS') || fallbackLeague.includes('Major League Soccer') || fallbackLeague.includes('USA')) return isoToFlagEmoji('US')
+    if (fallbackLeague.includes('Serie A')) return isoToFlagEmoji('IT')
+  }
+  return '\u{1F3C1}'
+}
+
+export function formatCompositeLeagueName(name: string, country?: string | null): string {
+  if (country) {
+    if (name.toLowerCase().includes(country.toLowerCase())) {
+      return name
+    }
+    return `${name} · ${country}`
+  }
+  if (name === 'Serie A') return 'Serie A · Italia'
+  return name
+}
+
+export const LEAGUE_ID_MAP: Record<number, string> = {
   39: 'epl',
   140: 'laliga',
   78: 'bundesliga',
@@ -85,13 +123,9 @@ interface BackendResponse {
   matches_analyzed: number
 }
 
-function flagForLeague(league: string): string {
-  return LEAGUE_FLAGS[league] ?? '\u{1F3C1}'
-}
-
 function mapLeg(leg: BackendLeg): TicketLegData {
   return {
-    flag: flagForLeague(leg.league),
+    flag: flagForCountry(null, leg.league),
     match: `${leg.home_team} vs ${leg.away_team}`,
     market: leg.market_label,
     prob: leg.our_probability,
@@ -163,6 +197,7 @@ interface BackendMatch {
   league_id: number
   league_name: string
   league_external_id: number | null
+  league_country: string | null
   home_team_id: number
   home_team_name: string
   away_team_id: number
@@ -189,7 +224,7 @@ interface BackendMatchesResponse {
 function mapBackendMatch(raw: BackendMatch): Match {
   const leagueId = LEAGUE_ID_MAP[raw.league_external_id ?? raw.league_id] ?? 'other'
   const leagueName = raw.league_name
-  const flag = flagForLeague(leagueName)
+  const flag = flagForCountry(raw.league_country, leagueName)
 
   const statusMap: Record<string, MatchStatus> = {
     SCHEDULED: 'UPCOMING',
@@ -226,7 +261,8 @@ function mapBackendMatch(raw: BackendMatch): Match {
     id: String(raw.id),
     leagueId,
     leagueExternalId: raw.league_external_id,
-    league: leagueName,
+    league: formatCompositeLeagueName(leagueName, raw.league_country),
+    leagueCountry: raw.league_country,
     flag,
     time: timeStr,
     status: matchStatus,

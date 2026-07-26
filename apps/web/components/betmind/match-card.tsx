@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { ArrowRightIcon } from 'lucide-react'
 
 import { Card } from '@/components/ui/card'
@@ -28,7 +29,7 @@ function StatusPill({ match }: { match: Match }) {
   )
 }
 
-export function MatchCard({ match, onOpen }: { match: Match; onOpen: (match: Match) => void }) {
+export function MatchCard({ match }: { match: Match }) {
   const model = buildModel(match.lambdaHome, match.lambdaAway)
   const rows = marketRows(match, model)
   const best = bestOpportunity(rows)
@@ -83,7 +84,7 @@ export function MatchCard({ match, onOpen }: { match: Match; onOpen: (match: Mat
           </div>
         </div>
 
-        {/* RIGHT — edge + 1X2 */}
+        {/* RIGHT — edge + 1X2 + link */}
         <div className="flex flex-col gap-2 border-t border-border pt-3 lg:w-[30%] lg:border-t-0 lg:pt-0 lg:pl-6">
           {best ? (
             <span className="num inline-flex w-fit items-center gap-2 rounded-md border border-positive/30 bg-gradient-to-b from-positive/20 to-positive/5 px-2.5 py-1 text-sm font-semibold text-positive">
@@ -104,21 +105,21 @@ export function MatchCard({ match, onOpen }: { match: Match; onOpen: (match: Mat
             ).map(([label, value]) => (
               <span
                 key={label}
-                className="num rounded-sm border border-border bg-background/50 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                className="num rounded-sm border border-border bg-surface-inset px-1.5 py-0.5 text-[11px] text-muted-foreground"
               >
                 {`${label}: ${(value * 100).toFixed(1)}%`}
               </span>
             ))}
           </div>
 
-          <button
-            type="button"
-            onClick={() => onOpen(match)}
+          {/* Link to full-page analysis — replaces modal trigger */}
+          <Link
+            href={`/partidos/${match.id}`}
             className="inline-flex w-fit items-center gap-1 text-sm font-medium text-primary transition-opacity hover:opacity-80"
           >
             Ver Análisis
             <ArrowRightIcon className="size-3.5" aria-hidden />
-          </button>
+          </Link>
         </div>
       </div>
     </Card>

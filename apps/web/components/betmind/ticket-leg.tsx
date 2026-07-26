@@ -1,27 +1,34 @@
 import type { TicketLegData } from '@/lib/betmind'
-import { EVBadge } from './ev-badge'
+import { cn } from '@/lib/utils'
+import { OddsPill } from './odds-pill'
 
-export function TicketLeg({ leg }: { leg: TicketLegData }) {
+const SPORT_ICON = '⚽'
+
+export function TicketLeg({ leg, index = 0 }: { leg: TicketLegData; index?: number }) {
+  const evPositive = leg.ev > 0
+  const evText = `${evPositive ? '+' : ''}${(leg.ev * 100).toFixed(1)}% EV`
+
   return (
-    <li className="flex flex-col gap-1.5 rounded-md border border-border bg-background/40 px-3 py-3">
-      <div className="flex items-center gap-2">
-        <span aria-hidden className="text-sm leading-none">
-          {leg.flag}
-        </span>
-        <span className="truncate text-xs text-muted-foreground">{leg.match}</span>
+    <li
+      className="grid grid-cols-[20px_1fr_auto] items-center gap-3 border-b border-border-subtle py-3 last:border-b-0"
+      style={{ animationDelay: `${index * 80}ms` }}
+    >
+      {/* Sport icon */}
+      <span aria-hidden className="text-base leading-none">
+        {SPORT_ICON}
+      </span>
+
+      {/* Center: market name / teams / EV on separate lines */}
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-foreground">{leg.market}</p>
+        <p className="truncate text-xs text-muted-foreground">{leg.match}</p>
+        <p className={cn('text-[11px] font-medium', evPositive ? 'text-positive' : 'text-negative')}>
+          {evText}
+        </p>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium text-foreground">{leg.market}</span>
-        <EVBadge value={leg.ev} />
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="num rounded-sm border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
-          {`P: ${(leg.prob * 100).toFixed(1)}%`}
-        </span>
-        <span className="num text-[11px] text-muted-foreground">
-          {`@ ${leg.odds.toFixed(2)}`}
-        </span>
-      </div>
+
+      {/* Odds pill — right anchored */}
+      <OddsPill value={leg.odds} />
     </li>
   )
 }
