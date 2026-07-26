@@ -18,8 +18,14 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+_cache_service_instance: CacheService | None = None
+
+
 def get_cache_service() -> CacheService:
-    return CacheService(settings.REDIS_URL)
+    global _cache_service_instance
+    if _cache_service_instance is None:
+        _cache_service_instance = CacheService(settings.REDIS_URL)
+    return _cache_service_instance
 
 
 async def require_admin_key(

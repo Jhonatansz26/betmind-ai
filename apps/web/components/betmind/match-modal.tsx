@@ -79,11 +79,11 @@ export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
             {match.status === 'LIVE' ? (
               <span className="num inline-flex items-center gap-1.5 rounded-sm border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[11px] font-medium text-positive">
                 <span className="live-dot size-1.5 rounded-full bg-positive" aria-hidden />
-                {`LIVE ${match.minute}'`}
+                {`EN VIVO ${match.minute}'`}
               </span>
             ) : (
               <span className="rounded-sm border border-border bg-muted/60 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                {match.status}
+                {match.status === 'UPCOMING' ? 'POR JUGAR' : match.status}
               </span>
             )}
           </p>
@@ -136,7 +136,7 @@ export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
         <div className="flex flex-col gap-6 p-5">
           {/* SECTION 1 — Poisson */}
           <section className="flex flex-col gap-3">
-            <SectionTitle>Goal Probability Model (Poisson Bivariate)</SectionTitle>
+            <SectionTitle>Modelo de Probabilidad de Goles (Poisson)</SectionTitle>
             <PoissonModalChart
               lambdaHome={match.lambdaHome}
               lambdaAway={match.lambdaAway}
@@ -145,7 +145,7 @@ export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
             />
             <div className="flex flex-col gap-2 rounded-lg border border-border bg-background/40 p-3">
               <p className="text-xs font-medium tracking-wide text-subtle uppercase">
-                Most Likely Scores
+                Marcadores Más Probables
               </p>
               <ul className="flex flex-col gap-1">
                 {model.topScores.map((line) => (
@@ -165,16 +165,16 @@ export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
 
           {/* SECTION 2 — EV */}
           <section className="flex flex-col gap-3">
-            <SectionTitle>Expected Value Analysis</SectionTitle>
+            <SectionTitle>Análisis de Valor Esperado (+EV)</SectionTitle>
             <MarketTable rows={rows} />
             <p className="text-sm text-muted-foreground">
               {best ? (
                 <>
-                  <span className="font-medium text-foreground">Best opportunity: </span>
-                  {`${best.label} · +${(best.edge * 100).toFixed(1)}% edge over implied market probability`}
+                  <span className="font-medium text-foreground">Mejor oportunidad: </span>
+                  {`${best.label} · +${(best.edge * 100).toFixed(1)}% edge sobre probabilidad implícita del mercado`}
                 </>
               ) : (
-                'No market clears the 3% edge threshold on this fixture.'
+                'Ningún mercado supera el umbral de 3% de edge en este partido.'
               )}
             </p>
           </section>
@@ -187,11 +187,11 @@ export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
               badge={
                 <span className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   <SparklesIcon className="size-3" aria-hidden />
-                  Powered by Groq · Llama 3.3
+                  Potenciado por Groq · Llama 3.3
                 </span>
               }
             >
-              Tactical Analysis
+              Análisis Táctico
             </SectionTitle>
             <TacticalPanel match={match} />
           </section>
@@ -205,7 +205,7 @@ export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
                 <span className="text-xs text-muted-foreground">{match.referee.name}</span>
               }
             >
-              Referee Profile
+              Perfil del Árbitro
             </SectionTitle>
             <RefereeWidget referee={match.referee} />
           </section>
@@ -214,7 +214,7 @@ export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
 
           {/* SECTION 5 — Add to ticket */}
           <section className="flex flex-col gap-3">
-            <SectionTitle>Select a Market</SectionTitle>
+            <SectionTitle>Seleccionar Mercado</SectionTitle>
             {selectable.length > 0 ? (
               <ul className="flex flex-col gap-2">
                 {selectable.map((row) => {
@@ -251,7 +251,7 @@ export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
               </ul>
             ) : (
               <p className="rounded-md border border-border bg-background/40 p-3 text-sm text-muted-foreground">
-                No positive-edge markets available for this fixture.
+                No hay mercados con edge positivo disponibles para este partido.
               </p>
             )}
 
@@ -262,13 +262,13 @@ export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
               disabled={!selectedMarket}
               onClick={() => {
                 const row = rows.find((r) => r.key === selectedMarket)
-                toast.success('Added to ticket', {
-                  description: `${row?.label} · ${match.home} vs ${match.away} · ${mode} MODE`,
+                toast.success('Añadido al boleto', {
+                  description: `${row?.label} · ${match.home} vs ${match.away} · modo ${mode}`,
                 })
                 onOpenChange(false)
               }}
             >
-              Add to Ticket
+              Añadir al Boleto
             </Button>
           </section>
         </div>

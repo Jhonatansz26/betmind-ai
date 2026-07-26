@@ -2,12 +2,12 @@ import type { Referee } from '@/lib/betmind'
 
 export function RefereeWidget({ referee }: { referee: Referee }) {
   const stats = [
-    { label: 'Avg Yellow Cards', value: referee.yellows.toFixed(1) },
-    { label: 'Avg Red Cards', value: referee.reds.toFixed(2) },
-    { label: 'Avg Fouls Called', value: referee.fouls.toFixed(1) },
-    { label: 'Strictness Index', value: `${referee.strictness}/100` },
-    { label: 'High-Stakes Avg', value: referee.highStakes.toFixed(1) },
-    { label: 'Recent Trend', value: referee.trend },
+    { label: 'Prom. Tarjetas Amarillas', value: referee.yellows.toFixed(1) },
+    { label: 'Prom. Tarjetas Rojas', value: referee.reds.toFixed(2) },
+    { label: 'Prom. Faltas Cobradas', value: referee.fouls.toFixed(1) },
+    { label: 'Índice de Estrictez', value: `${referee.strictness}/100` },
+    { label: 'Prom. Partidos Clave', value: referee.highStakes.toFixed(1) },
+    { label: 'Tendencia Reciente', value: referee.trend },
   ]
 
   return (
@@ -26,7 +26,7 @@ export function RefereeWidget({ referee }: { referee: Referee }) {
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Strictness meter</span>
+          <span>Medidor de estrictez</span>
           <span className="num">{referee.strictness}</span>
         </div>
         <div
@@ -35,7 +35,7 @@ export function RefereeWidget({ referee }: { referee: Referee }) {
           aria-valuenow={referee.strictness}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label={`${referee.name} strictness index`}
+          aria-label={`Índice de estrictez de ${referee.name}`}
         >
           <div
             className="h-full rounded-full bg-gradient-to-r from-primary to-warning"

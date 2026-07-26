@@ -1,13 +1,19 @@
 import logging
-from datetime import datetime
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from apps.api.config import settings
 from apps.api.dependencies import get_async_session
 from apps.api.models.match import Match
+from apps.api.models.league import League
+from apps.api.models.team import Team
+from apps.api.models.bookmaker_odd import BookmakerOdd
+from apps.api.models.prediction import Prediction
 from apps.api.services.api_football import APIFootballService
 from apps.api.services.data_ingestion import DataIngestionService
 
@@ -15,18 +21,68 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+COT = ZoneInfo("America/Bogota")
+
 
 @router.get("/")
 async def list_matches(
     skip: int = 0,
-    limit: int = 20,
+    limit: int = 100,
+    date_str: str | None = Query(None, alias="date", description="Fecha en formato YYYY-MM-DD (zona COT)"),
+    include_upcoming: bool = Query(True, description="Incluir partidos programados"),
+    include_finished: bool = Query(False, description="Incluir partidos finalizados"),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """Lista partidos almacenados en la base de datos."""
-    stmt = select(Match).offset(skip).limit(limit)
+    """Lista partidos almacenados en la base de datos con datos de equipos y liga."""
+    conditions = []
+    
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid date format. Use YYYY-MM-DD",
+            )
+        
+        start_dt = datetime.combine(target_date, datetime.min.time(), tzinfo=COT)
+        end_dt = datetime.combine(target_date, datetime.max.time(), tzinfo=COT)
+        conditions.append(and_(Match.match_date >= start_dt, Match.match_date <= end_dt))
+    
+    status_filter = []
+    if include_upcoming:
+        status_filter.extend(["SCHEDULED", "LIVE", "INPLAY"])
+    if include_finished:
+        status_filter.append("FINISHED")
+    
+    if status_filter:
+        conditions.append(Match.status.in_(status_filter))
+    
+    stmt = (
+        select(Match)
+        .options(
+            selectinload(Match.home_team),
+            selectinload(Match.away_team),
+            selectinload(Match.league),
+        )
+        .order_by(Match.match_date.asc())
+        .offset(skip)
+        .limit(limit)
+    )
+    
+    if conditions:
+        stmt = stmt.where(and_(*conditions))
+    
     result = await db.execute(stmt)
     matches = result.scalars().all()
-    return {"matches": [_match_to_dict(m) for m in matches], "total": len(matches)}
+
+    match_ids = [m.id for m in matches]
+    odds_map = await _fetch_odds_for_matches(db, match_ids)
+
+    return {
+        "matches": [_match_to_dict_full(m, odds_map.get(m.id, {})) for m in matches],
+        "total": len(matches),
+    }
 
 
 @router.get("/upcoming/")
@@ -157,6 +213,21 @@ async def sync_all_target_leagues(
         )
 
 
+async def _fetch_odds_for_matches(db: AsyncSession, match_ids: list[int]) -> dict[int, dict[str, float]]:
+    """Fetch bookmaker odds grouped by match_id."""
+    if not match_ids:
+        return {}
+    stmt = select(BookmakerOdd).where(
+        BookmakerOdd.match_id.in_(match_ids),
+        BookmakerOdd.bookmaker_name == "api_football",
+    )
+    result = await db.execute(stmt)
+    odds_grouped: dict[int, dict[str, float]] = {}
+    for row in result.scalars().all():
+        odds_grouped.setdefault(row.match_id, {})[row.market_name] = row.odds_value
+    return odds_grouped
+
+
 def _match_to_dict(m: Match) -> dict:
     """Convierte modelo Match a diccionario para respuesta API."""
     return {
@@ -171,3 +242,39 @@ def _match_to_dict(m: Match) -> dict:
         "away_score": m.away_score,
         "regulation_time_only": m.regulation_time_only,
     }
+
+
+def _match_to_dict_full(m: Match, odds: dict[str, float] | None = None) -> dict:
+    """Convierte modelo Match a diccionario con datos completos de equipos, liga y odds."""
+    home_team_name = m.home_team.name if m.home_team else "Unknown"
+    away_team_name = m.away_team.name if m.away_team else "Unknown"
+    league_name = m.league.name if m.league else "Unknown"
+    league_external_id = m.league.external_id if m.league else None
+
+    result = {
+        "id": m.id,
+        "external_id": m.external_id,
+        "league_id": m.league_id,
+        "league_name": league_name,
+        "league_external_id": league_external_id,
+        "home_team_id": m.home_team_id,
+        "home_team_name": home_team_name,
+        "away_team_id": m.away_team_id,
+        "away_team_name": away_team_name,
+        "match_date": str(m.match_date),
+        "status": m.status,
+        "home_score": m.home_score,
+        "away_score": m.away_score,
+        "regulation_time_only": m.regulation_time_only,
+    }
+
+    if odds:
+        result["odds"] = {
+            "home": odds.get("1X2_HOME"),
+            "draw": odds.get("1X2_DRAW"),
+            "away": odds.get("1X2_AWAY"),
+            "over25": odds.get("OVER_2_5"),
+            "btts": odds.get("BTTS_YES"),
+        }
+
+    return result

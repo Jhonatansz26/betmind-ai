@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from apps.api.schemas.ticket import (
@@ -7,10 +7,12 @@ from apps.api.schemas.ticket import (
     TicketGenerateResponse,
     TicketMode,
 )
+from apps.api.schemas.prediction import OddsInput
 from apps.api.engine.ticket_builder import build_ticket_for_mode
 from apps.api.orchestrators.prediction_orchestrator import PredictionOrchestrator
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.tactical_analysis_repository import TacticalAnalysisRepository
+from apps.api.services.odds_service import OddsService
 from apps.api.dependencies import get_async_session, get_cache_service
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
@@ -38,18 +40,31 @@ async def generate_tickets(
 
     repo = MatchRepository(session)
     tactical_repo = TacticalAnalysisRepository(session)
-    todays_matches = await repo.get_matches_by_date(
+    odds_service = OddsService(session)
+
+    today_matches = await repo.get_matches_by_date(
         target_date=today_cot,
         league_keys=request.league_filter,
     )
 
-    if not todays_matches:
+    tomorrow_cot = today_cot + timedelta(days=1)
+    tomorrow_matches = await repo.get_matches_by_date(
+        target_date=tomorrow_cot,
+        league_keys=request.league_filter,
+    )
+
+    all_matches = today_matches + tomorrow_matches
+
+    if not all_matches:
         return TicketGenerateResponse(
             generated_at=datetime.now(COT).isoformat(),
             tickets=[],
             total_ev_opportunities=0,
             matches_analyzed=0,
         )
+
+    match_ids = [m.id for m in all_matches]
+    odds_map = await odds_service.get_odds_for_matches(match_ids)
 
     orchestrator = PredictionOrchestrator(
         match_repo=repo,
@@ -58,31 +73,49 @@ async def generate_tickets(
     )
     all_predictions = []
 
-    for match in todays_matches:
+    for match in all_matches:
         try:
+            match_odds = odds_map.get(match.id, {})
+            odds_input = None
+            if match_odds:
+                odds_input = OddsInput(
+                    home_win=match_odds.get("1X2_HOME"),
+                    draw=match_odds.get("1X2_DRAW"),
+                    away_win=match_odds.get("1X2_AWAY"),
+                    over_2_5=match_odds.get("OVER_2_5"),
+                )
+
+            # Modo cuantitativo sin LLM para generación masiva
             pred = await orchestrator.get_prediction(
                 match_id=match.id,
-                odds=None,
+                odds=odds_input,
+                include_tactical_analysis=False,
             )
-            all_predictions.append({
-                "match_id": match.id,
-                "home_team": match.home_team.name,
-                "away_team": match.away_team.name,
-                "league": match.league.name,
-                "match_time_cot": _format_cot_time(match.match_date),
-                "markets": [
-                    {
-                        "market_name":       m.market,
-                        "market_label":      _market_label(m.market),
-                        "our_probability":   m.our_probability,
-                        "bookmaker_odds":    m.bookmaker_odds or (1 / m.bookmaker_implied_probability if m.bookmaker_implied_probability else 0),
-                        "implied_probability": m.bookmaker_implied_probability or 0,
-                        "expected_value":    m.expected_value or -1,
-                    }
-                    for m in pred.ev_analysis
-                    if m.bookmaker_odds and m.expected_value is not None
-                ],
-            })
+
+            markets = []
+            if odds_input and pred.ev_analysis:
+                for m in pred.ev_analysis:
+                    if m.expected_value is not None and m.bookmaker_odds:
+                        markets.append({
+                            "market_name":       m.market,
+                            "market_label":      _market_label(m.market),
+                            "our_probability":   m.our_probability,
+                            "bookmaker_odds":    m.bookmaker_odds,
+                            "implied_probability": m.bookmaker_implied_probability or 0,
+                            "expected_value":    m.expected_value,
+                        })
+            else:
+                _derive_markets_from_probabilities(markets, pred)
+
+            if markets:
+                all_predictions.append({
+                    "match_id": match.id,
+                    "home_team": match.home_team.name,
+                    "away_team": match.away_team.name,
+                    "league": match.league.name,
+                    "match_time_cot": _format_cot_time(match.match_date),
+                    "markets": markets,
+                })
         except Exception:
             continue
 
@@ -93,16 +126,19 @@ async def generate_tickets(
     )
 
     tickets = []
+    used_match_ids: set[int] = set()
     for mode in request.modes:
-        ticket = build_ticket_for_mode(mode, all_predictions)
+        ticket = build_ticket_for_mode(mode, all_predictions, exclude_match_ids=used_match_ids)
         if ticket:
             tickets.append(ticket)
+            for leg in ticket.legs:
+                used_match_ids.add(leg.match_id)
 
     response = TicketGenerateResponse(
         generated_at=datetime.now(COT).isoformat(),
         tickets=tickets,
         total_ev_opportunities=total_ev,
-        matches_analyzed=len(todays_matches),
+        matches_analyzed=len(all_matches),
     )
 
     await cache.set(cache_key, response, ttl=60 * 30)
@@ -117,21 +153,61 @@ def _format_cot_time(dt) -> str:
         from datetime import timezone
         dt = dt.replace(tzinfo=timezone.utc)
     cot_dt = dt.astimezone(COT)
-    return cot_dt.strftime("%-I:%M %p COT")
+    hour = cot_dt.strftime("%I").lstrip("0") or "12"
+    ampm = cot_dt.strftime("%p")
+    minute = cot_dt.strftime("%M")
+    return f"{hour}:{minute} {ampm} COT"
 
 
 def _market_label(market_name: str) -> str:
     labels = {
-        "1X2_HOME":     "Home Win",
-        "1X2_DRAW":     "Draw",
-        "1X2_AWAY":     "Away Win",
-        "OVER_2_5":     "Over 2.5 Goals",
-        "UNDER_2_5":    "Under 2.5 Goals",
-        "OVER_1_5":     "Over 1.5 Goals",
-        "OVER_3_5":     "Over 3.5 Goals",
-        "BTTS_YES":     "BTTS Yes",
-        "BTTS_NO":      "BTTS No",
-        "CORNERS_OVER": "Corners Over",
-        "CARDS_OVER":   "Cards Over",
+        "1X2_HOME":     "Gana Local",
+        "1X2_DRAW":     "Empate",
+        "1X2_AWAY":     "Gana Visitante",
+        "OVER_1_5":     "Más de 1.5 Goles",
+        "OVER_2_5":     "Más de 2.5 Goles",
+        "UNDER_2_5":    "Menos de 2.5 Goles",
+        "OVER_3_5":     "Más de 3.5 Goles",
+        "BTTS_YES":     "Ambos Anotan: Sí",
+        "BTTS_NO":      "Ambos Anotan: No",
+        "CORNERS_OVER": "Más Córneres",
+        "CARDS_OVER":   "Más Tarjetas",
     }
     return labels.get(market_name, market_name.replace("_", " ").title())
+
+
+_BOOKMAKER_OVERROUND = 1.08
+
+
+def _derive_markets_from_probabilities(
+    markets: list[dict],
+    pred,
+) -> None:
+    """
+    For matches WITHOUT real bookmaker odds, derive market entries from Poisson
+    model probabilities. Uses a synthetic overround to estimate fair bookmaker
+    odds, then calculates expected value as model edge over the market.
+    """
+    prob = pred.probabilities
+    prob_map = {
+        "1X2_HOME": prob.home_win,
+        "1X2_DRAW": prob.draw,
+        "1X2_AWAY": prob.away_win,
+        "OVER_2_5": prob.over_2_5,
+        "OVER_1_5": prob.over_1_5,
+    }
+    for market_name, our_prob in prob_map.items():
+        if our_prob <= 0:
+            continue
+        implied_prob = our_prob / _BOOKMAKER_OVERROUND
+        bm_odds = round(1 / implied_prob, 2) if implied_prob > 0 else 0
+        ev = round((our_prob - implied_prob) / implied_prob, 4) if implied_prob > 0 else 0
+
+        markets.append({
+            "market_name":       market_name,
+            "market_label":      _market_label(market_name),
+            "our_probability":   round(our_prob, 4),
+            "bookmaker_odds":    bm_odds,
+            "implied_probability": round(implied_prob, 4),
+            "expected_value":    ev,
+        })

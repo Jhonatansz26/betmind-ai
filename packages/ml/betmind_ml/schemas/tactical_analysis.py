@@ -70,9 +70,9 @@ class TacticalAnalysis(BaseModel):
     goals_narrative: MarketNarrative | None = None
     cards_narrative: MarketNarrative | None = None
     corners_narrative: MarketNarrative | None = None
-    player_props_narratives: list[MarketNarrative] = Field(default_factory=list)
+    player_props_narratives: list[MarketNarrative] | None = Field(default_factory=list)
 
-    bet_builder_suggestions: list[BetBuilderCombination] = Field(
+    bet_builder_suggestions: list[BetBuilderCombination] | None = Field(
         default_factory=list, max_length=3
     )
 

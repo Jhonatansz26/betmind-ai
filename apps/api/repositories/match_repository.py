@@ -41,13 +41,14 @@ class MatchRepository:
         self._session = session
 
     async def get_by_id(self, match_id: int) -> Match:
-        """Retorna un partido con sus equipos. Lanza excepción si no existe."""
+        """Retorna un partido con sus equipos y liga. Lanza excepción si no existe."""
         stmt = (
             select(Match)
             .where(Match.id == match_id)
             .options(
                 selectinload(Match.home_team),
                 selectinload(Match.away_team),
+                selectinload(Match.league),
             )
         )
         result = await self._session.execute(stmt)
@@ -267,10 +268,12 @@ class MatchRepository:
 
         start_utc = start_dt.astimezone(timezone.utc)
         end_utc = end_dt.astimezone(timezone.utc)
+        now_utc = datetime.now(timezone.utc)
 
         conditions = [
             Match.match_date >= start_utc,
             Match.match_date <= end_utc,
+            Match.match_date > now_utc,
             Match.status.in_(["SCHEDULED", "INPLAY"]),
         ]
 

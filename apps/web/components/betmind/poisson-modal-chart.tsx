@@ -74,7 +74,7 @@ export function PoissonModalChart({
       visible: true,
       x: svgX / scaleX,
       y: svgY / scaleY - 12,
-      text: `${team}: ${(prob * 100).toFixed(1)}% prob. exactly ${goals} goals`,
+      text: `${team}: ${(prob * 100).toFixed(1)}% prob. exact. ${goals} goles`,
     })
   }
 
@@ -205,9 +205,9 @@ export function PoissonModalChart({
           <span className="size-2.5 rounded-sm bg-warning" aria-hidden />
           {awayLabel}
         </span>
-        <span className="text-subtle">goals scored</span>
+        <span className="text-subtle">goles anotados</span>
         <span className="num ml-auto text-subtle">
-          {`Expected Goals — Home: λ ${lambdaHome.toFixed(2)} · Away: λ ${lambdaAway.toFixed(2)}`}
+          {`Goles Esperados — Local: λ ${lambdaHome.toFixed(2)} · Visitante: λ ${lambdaAway.toFixed(2)}`}
         </span>
       </div>
     </div>

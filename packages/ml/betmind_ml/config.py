@@ -10,7 +10,7 @@ MODEL_VERSION = "poisson_v1.0"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # ── Modelo Narrativo (LLM) ────────────────────────────────────────────────────
-NARRATIVE_MODEL = "llama-3.3-70b-versatile"
+NARRATIVE_MODEL = "llama-3.1-8b-instant"
 
 # ── Parámetros del Feature Engineering ────────────────────────────────────────
 

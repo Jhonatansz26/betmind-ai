@@ -17,13 +17,13 @@ function StatusPill({ match }: { match: Match }) {
     return (
       <span className="num inline-flex items-center gap-1.5 rounded-sm border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[11px] font-medium text-positive">
         <span className="live-dot size-1.5 rounded-full bg-positive" aria-hidden />
-        {`LIVE ${match.minute}'`}
+        {`EN VIVO ${match.minute}'`}
       </span>
     )
   }
   return (
     <span className="inline-flex items-center rounded-sm border border-border bg-muted/60 px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-      {match.status}
+      {match.status === 'UPCOMING' ? 'POR JUGAR' : match.status}
     </span>
   )
 }
@@ -64,7 +64,7 @@ export function MatchCard({ match, onOpen }: { match: Match; onOpen: (match: Mat
             <PoissonMiniChart lambdaHome={match.lambdaHome} lambdaAway={match.lambdaAway} />
             <div className="flex flex-col gap-0.5">
               <span className="num text-[11px] text-subtle">
-                {`Most likely: ${model.mostLikely.score} (${(model.mostLikely.probability * 100).toFixed(1)}%)`}
+                {`Más probable: ${model.mostLikely.score} (${(model.mostLikely.probability * 100).toFixed(1)}%)`}
               </span>
               <span className="num text-[11px] text-subtle">
                 {`λ ${match.lambdaHome.toFixed(2)} · ${match.lambdaAway.toFixed(2)}`}
@@ -91,7 +91,7 @@ export function MatchCard({ match, onOpen }: { match: Match; onOpen: (match: Mat
               <span className="text-xs font-medium">{`+${(best.edge * 100).toFixed(1)}%`}</span>
             </span>
           ) : (
-            <span className="w-fit text-xs font-medium tracking-wide text-subtle">NO EDGE</span>
+            <span className="w-fit text-xs font-medium tracking-wide text-subtle">SIN EDGE</span>
           )}
 
           <div className="flex flex-wrap gap-1.5">
@@ -116,7 +116,7 @@ export function MatchCard({ match, onOpen }: { match: Match; onOpen: (match: Mat
             onClick={() => onOpen(match)}
             className="inline-flex w-fit items-center gap-1 text-sm font-medium text-primary transition-opacity hover:opacity-80"
           >
-            View Analysis
+            Ver Análisis
             <ArrowRightIcon className="size-3.5" aria-hidden />
           </button>
         </div>

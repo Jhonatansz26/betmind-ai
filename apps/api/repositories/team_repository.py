@@ -1,9 +1,13 @@
+import logging
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models.team import Team
+from apps.api.services.team_normalizer import canonical_team_name
+
+logger = logging.getLogger(__name__)
 
 
 class TeamRepository:
@@ -33,13 +37,43 @@ class TeamRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def _find_by_normalized_name(self, name: str) -> Optional[Team]:
+        """
+        Busca equipo existente por nombre canonicalizado (cross-provider matching).
+        Carga todos los equipos y compara en memoria con canonical_team_name().
+        """
+        norm_target = canonical_team_name(name)
+        if not norm_target:
+            return None
+
+        stmt = select(Team).limit(5000)
+        result = await self._session.execute(stmt)
+        all_teams = result.scalars().all()
+
+        for team in all_teams:
+            if canonical_team_name(team.name) == norm_target:
+                logger.debug(
+                    "Cross-provider match: '%s' (ext=%s) → canonical '%s' (ext=%s, id=%s)",
+                    name, None, team.name, team.external_id, team.id,
+                )
+                return team
+
+        return None
+
     async def upsert(self, team: Team) -> Team:
         """
-        Inserta o actualiza un equipo.
-        Si existe por external_id, actualiza. Si no, inserta.
+        Inserta o actualiza un equipo con deduplicación cross-provider.
+
+        Estrategia:
+        1. Buscar por external_id (fast path — misma fuente de datos).
+        2. Si no existe por external_id, buscar por nombre canonicalizado
+           para detectar duplicados de otras fuentes (ej. football-data.org
+           vs API-Football).
+        3. Si se encuentra por nombre, actualizar los campos del registro
+           existente sin crear duplicado.
+        4. Si no existe en absoluto, insertar nuevo.
         """
         existing = await self.get_by_external_id(team.external_id)
-        
         if existing:
             existing.name = team.name
             existing.logo_url = team.logo_url
@@ -47,11 +81,20 @@ class TeamRepository:
             await self._session.flush()
             await self._session.refresh(existing)
             return existing
-        else:
-            self._session.add(team)
+
+        canonical_match = await self._find_by_normalized_name(team.name)
+        if canonical_match:
+            canonical_match.name = team.name
+            canonical_match.logo_url = team.logo_url or canonical_match.logo_url
+            canonical_match.country = team.country or canonical_match.country
             await self._session.flush()
-            await self._session.refresh(team)
-            return team
+            await self._session.refresh(canonical_match)
+            return canonical_match
+
+        self._session.add(team)
+        await self._session.flush()
+        await self._session.refresh(team)
+        return team
 
     async def create_or_update(
         self,

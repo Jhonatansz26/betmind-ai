@@ -336,6 +336,36 @@ class APIFootballService:
         )
         return fixtures
 
+    async def get_odds_for_fixture(
+        self,
+        fixture_id: int,
+    ) -> list[dict[str, Any]]:
+        """
+        Obtiene cuotas de casas de apuestas para un fixture específico.
+        Endpoint: GET /odds?fixture={fixture_id}
+        """
+        params = {"fixture": fixture_id}
+        data = await self._request("odds", params)
+        return data.get("response", [])
+
+    async def get_fixtures_by_date(
+        self,
+        date_str: str,
+        league: int | None = None,
+        season: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Obtiene fixtures para una fecha específica (YYYY-MM-DD).
+        Opcionalmente filtra por liga. Requiere season si se filtra por liga.
+        """
+        params = {"date": date_str}
+        if league:
+            params["league"] = league
+        if season:
+            params["season"] = season
+        data = await self._request("fixtures", params)
+        return data.get("response", [])
+
     def parse_fixture_to_match_data(self, fixture: dict) -> dict[str, Any]:
         """
         Convierte respuesta de fixture de API-Football a formato interno.

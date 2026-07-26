@@ -31,7 +31,8 @@ async def run_full_analysis(
     all_league_matches: list[dict],
     h2h_matches: list[dict],
     context: MatchContext,
-    groq_api_key: str,
+    groq_api_key: str | None = None,
+    groq_api_keys: list[str] | None = None,
     referee: RefereeProfile | None = None,
     home_fouls_avg: float = 0.0,
     away_fouls_avg: float = 0.0,
@@ -66,7 +67,10 @@ async def run_full_analysis(
 
     h2h_stats = _compute_h2h_stats(h2h_matches)
 
-    orchestrator = NarrativeOrchestrator(groq_api_key=groq_api_key)
+    orchestrator = NarrativeOrchestrator(
+        groq_api_key=groq_api_key,
+        groq_api_keys=groq_api_keys,
+    )
     tactical_output = await orchestrator.generate_full_analysis(
         match_output=quant_output,
         home_strength=_extract_home_strength(quant_output),

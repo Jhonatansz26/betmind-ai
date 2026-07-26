@@ -43,51 +43,97 @@ class NarrativeOrchestrator:
         - Semáforo de máximo 1 petición en paralelo
         - Pausa de 1 segundo entre llamadas para evitar rate limits
         - Reintentos automáticos con retardo exponencial para errores 429
+        - Rotación de API keys si se proporciona lista
     """
 
-    def __init__(self, groq_api_key: str) -> None:
-        self._client = Groq(api_key=groq_api_key)
+    def __init__(self, groq_api_key: str | None = None, groq_api_keys: list[str] | None = None) -> None:
+        # Soporte para múltiples API keys con rotación
+        self._api_keys = groq_api_keys or []
+        if groq_api_key and groq_api_key not in self._api_keys:
+            self._api_keys.insert(0, groq_api_key)
+        
+        if not self._api_keys:
+            logger.warning("No Groq API keys provided. LLM narratives will use fallback.")
+        
+        self._current_key_index = 0
+        self._client = Groq(api_key=self._api_keys[0]) if self._api_keys else None
         self._model = NARRATIVE_MODEL
         self._semaphore = asyncio.Semaphore(1)
         self._rate_limit_delay = 1.0
 
+    def _rotate_api_key(self) -> bool:
+        """
+        Rota a la siguiente API key disponible.
+        Retorna True si se rotó exitosamente, False si no hay más keys.
+        """
+        if len(self._api_keys) <= 1:
+            return False
+        
+        self._current_key_index = (self._current_key_index + 1) % len(self._api_keys)
+        new_key = self._api_keys[self._current_key_index]
+        self._client = Groq(api_key=new_key)
+        logger.info(f"Rotated to Groq API key #{self._current_key_index + 1}/{len(self._api_keys)}")
+        return True
+
     async def _execute_with_retry(self, func, *args, max_retries=3, **kwargs):
         """
         Ejecuta una función con control de concurrencia y reintentos.
+        Rota API keys si se alcanza rate limit.
         
         Args:
             func: Función a ejecutar
-            max_retries: Número máximo de reintentos (default: 3)
+            max_retries: Número máximo de reintentos por key (default: 3)
             *args, **kwargs: Argumentos para la función
         
         Returns:
             Resultado de la función o None si falla después de todos los reintentos
         """
-        for attempt in range(max_retries + 1):
-            try:
-                async with self._semaphore:
-                    result = await asyncio.to_thread(func, *args, **kwargs)
-                    # Pausa entre llamadas para evitar rate limits
-                    await asyncio.sleep(self._rate_limit_delay)
-                    return result
-            except Exception as e:
-                if _is_rate_limit_error(e) and attempt < max_retries:
-                    # Retardo exponencial: 5s, 10s, 20s
-                    wait_time = 5 * (2 ** attempt)
-                    logger.warning(
-                        f"Rate limit alcanzado (429). Reintentando en {wait_time}s... "
-                        f"(intento {attempt + 1}/{max_retries})"
-                    )
-                    await asyncio.sleep(wait_time)
-                else:
+        total_keys = len(self._api_keys)
+        keys_tried = 0
+        
+        while keys_tried < total_keys:
+            for attempt in range(max_retries + 1):
+                try:
+                    if not self._client:
+                        logger.warning("No Groq client available, using fallback")
+                        return None
+                    
+                    async with self._semaphore:
+                        result = await asyncio.to_thread(func, *args, groq_client=self._client, **kwargs)
+                        # Pausa entre llamadas para evitar rate limits
+                        await asyncio.sleep(self._rate_limit_delay)
+                        return result
+                except Exception as e:
                     if _is_rate_limit_error(e):
-                        logger.error(
-                            f"Rate limit persistente después de {max_retries} reintentos. "
-                            f"Función: {func.__name__}. Error: {e}"
-                        )
+                        if attempt < max_retries:
+                            # Retardo exponencial: 5s, 10s, 20s
+                            wait_time = 5 * (2 ** attempt)
+                            logger.warning(
+                                f"Rate limit alcanzado (429). Reintentando en {wait_time}s... "
+                                f"(intento {attempt + 1}/{max_retries})"
+                            )
+                            await asyncio.sleep(wait_time)
+                        else:
+                            # Se agotaron reintentos con esta key, intentar rotar
+                            logger.warning(
+                                f"Groq Key límite alcanzado, cambiando a siguiente clave... "
+                                f"(key {self._current_key_index + 1}/{total_keys})"
+                            )
+                            if self._rotate_api_key():
+                                keys_tried += 1
+                                break  # Salir del loop de reintentos, intentar con nueva key
+                            else:
+                                logger.error(
+                                    f"Todas las API keys agotadas. "
+                                    f"Función: {func.__name__}. Error: {e}"
+                                )
+                                return None
                     else:
                         logger.error(f"Error ejecutando {func.__name__}: {e}")
-                    return None
+                        return None
+        
+        logger.error(f"Todas las API keys agotadas después de {keys_tried} intentos")
+        return None
 
     async def generate_full_analysis(
         self,

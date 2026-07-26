@@ -121,5 +121,62 @@ def generate_goals_narrative(
         return narrative
 
     except Exception as e:
-        logger.error("Error generando GoalsNarrative: %s", e)
-        return None
+        logger.warning("Error generando GoalsNarrative con LLM, usando fallback: %s", e)
+        return _generate_fallback_narrative(
+            home_team=home_team_name,
+            away_team=away_team_name,
+            league=league_name,
+            match_date=match_date,
+            lambda_home=match_output.lambda_home,
+            lambda_away=match_output.lambda_away,
+            p_over_25=over_25.our_probability,
+            p_btts=btts.our_probability if btts else 0.0,
+            most_likely_score=match_output.score_matrix.most_likely_score,
+            most_likely_prob=match_output.score_matrix.most_likely_prob,
+        )
+
+
+def _generate_fallback_narrative(
+    home_team: str,
+    away_team: str,
+    league: str,
+    match_date: str,
+    lambda_home: float,
+    lambda_away: float,
+    p_over_25: float,
+    p_btts: float,
+    most_likely_score: str,
+    most_likely_prob: float,
+) -> MarketNarrative:
+    """Genera narrativa de respaldo basada en probabilidades de Poisson."""
+    from betmind_ml.schemas.tactical_analysis import NarrativeSignal
+    
+    expected_goals = lambda_home + lambda_away
+    recommendation = "Over 2.5" if p_over_25 > 0.55 else "Under 2.5" if p_over_25 < 0.45 else "Mercado neutral"
+    
+    summary = (
+        f"Según el modelo Poisson, {home_team} vs {away_team} tiene un marcador más probable de "
+        f"{most_likely_score} ({most_likely_prob*100:.0f}%). Los goles esperados son {expected_goals:.1f} "
+        f"(λ_home={lambda_home:.2f}, λ_away={lambda_away:.2f}). "
+        f"La probabilidad de Over 2.5 es {p_over_25*100:.1f}% y BTTS es {p_btts*100:.1f}%."
+    )
+    
+    return MarketNarrative(
+        market_name="Over/Under 2.5 goles",
+        recommendation=recommendation,
+        tactical_summary=summary,
+        pros=[
+            f"Goles esperados: {expected_goals:.1f} (λ_home={lambda_home:.2f}, λ_away={lambda_away:.2f})",
+            f"Probabilidad Over 2.5: {p_over_25*100:.1f}%",
+            f"Marcador más probable: {most_likely_score} ({most_likely_prob*100:.0f}%)",
+        ],
+        cons=[
+            "Análisis basado únicamente en modelo estadístico Poisson",
+            "Sin datos contextuales de lesiones, clima o motivación",
+        ] if p_over_25 < 0.55 else [
+            f"Probabilidad BTTS: {p_btts*100:.1f}%",
+            "Análisis basado en modelo estadístico",
+        ],
+        signal_strength=NarrativeSignal.MEDIUM,
+        featured_player=None,
+    )

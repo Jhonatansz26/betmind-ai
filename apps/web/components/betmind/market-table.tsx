@@ -9,11 +9,11 @@ import {
 import type { MarketRow } from '@/lib/betmind'
 import { cn } from '@/lib/utils'
 
-const VERDICT_META: Record<MarketRow['verdict'], { icon: string; className: string }> = {
-  'EV+': { icon: '✅', className: 'text-positive' },
-  MARGINAL: { icon: '⚪', className: 'text-muted-foreground' },
-  'NO EDGE': { icon: '❌', className: 'text-subtle' },
-  AVOID: { icon: '❌', className: 'text-negative' },
+const VERDICT_META: Record<MarketRow['verdict'], { icon: string; className: string; label: string }> = {
+  'EV+': { icon: '✅', className: 'text-positive', label: 'VALOR (+EV)' },
+  MARGINAL: { icon: '⚪', className: 'text-muted-foreground', label: 'MARGINAL' },
+  'NO EDGE': { icon: '❌', className: 'text-subtle', label: 'SIN EDGE' },
+  AVOID: { icon: '❌', className: 'text-negative', label: 'EVITAR' },
 }
 
 export function MarketTable({ rows }: { rows: MarketRow[] }) {
@@ -22,13 +22,13 @@ export function MarketTable({ rows }: { rows: MarketRow[] }) {
       <Table className="min-w-[560px]">
         <TableHeader>
           <TableRow className="border-border">
-            <TableHead className="text-xs text-subtle">Market</TableHead>
-            <TableHead className="text-right text-xs text-subtle">Our Prob.</TableHead>
-            <TableHead className="text-right text-xs text-subtle">Odds</TableHead>
-            <TableHead className="text-right text-xs text-subtle">Implied</TableHead>
+            <TableHead className="text-xs text-subtle">Mercado</TableHead>
+            <TableHead className="text-right text-xs text-subtle">Nuestra Prob.</TableHead>
+            <TableHead className="text-right text-xs text-subtle">Cuota</TableHead>
+            <TableHead className="text-right text-xs text-subtle">Implícita</TableHead>
             <TableHead className="text-right text-xs text-subtle">Edge</TableHead>
-            <TableHead className="text-right text-xs text-subtle">EV</TableHead>
-            <TableHead className="text-right text-xs text-subtle">Verdict</TableHead>
+            <TableHead className="text-right text-xs text-subtle">VE</TableHead>
+            <TableHead className="text-right text-xs text-subtle">Veredicto</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -63,7 +63,7 @@ export function MarketTable({ rows }: { rows: MarketRow[] }) {
                   {`${row.ev >= 0 ? '+' : ''}${row.ev.toFixed(2)}`}
                 </TableCell>
                 <TableCell className={cn('text-right text-xs font-medium', verdict.className)}>
-                  <span aria-hidden>{verdict.icon}</span> {row.verdict}
+                  <span aria-hidden>{verdict.icon}</span> {verdict.label}
                 </TableCell>
               </TableRow>
             )

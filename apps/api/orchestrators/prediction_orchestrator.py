@@ -45,6 +45,7 @@ class PredictionOrchestrator:
         self,
         match_id: int,
         odds: OddsInput | None = None,
+        include_tactical_analysis: bool = True,
     ) -> PredictionResponse:
         cache_key = f"prediction:{match_id}"
 
@@ -57,69 +58,160 @@ class PredictionOrchestrator:
         logger.info("Cache MISS para match_id=%s — consultando DB", match_id)
         match = await self._match_repo.get_by_id(match_id)
 
-        # 3. Verificar si existe análisis táctico reciente en DB (cache de 6 horas)
-        tactical_output = await self._get_cached_tactical_analysis(match_id)
-        
-        if tactical_output:
-            logger.info("TacticalAnalysis cache HIT para match_id=%s (DB)", match_id)
-            # Solo necesitamos el output cuantitativo
-            quant_output = await self._run_quantitative_analysis(match, odds)
-        else:
-            logger.info("TacticalAnalysis cache MISS para match_id=%s — ejecutando pipeline completo", match_id)
-            # 4. Cargar forma reciente y H2H
-            home_form = await self._match_repo.get_recent_form(match.home_team_id, last_n=10)
-            away_form = await self._match_repo.get_recent_form(match.away_team_id, last_n=10)
-            h2h = await self._match_repo.get_h2h(match.home_team_id, match.away_team_id, last_n=6)
-            league_matches = await self._match_repo.get_league_matches(match.league_id)
+        # 3. Cargar forma reciente y H2H
+        home_form = await self._match_repo.get_recent_form(match.home_team_id, last_n=10)
+        away_form = await self._match_repo.get_recent_form(match.away_team_id, last_n=10)
+        h2h = await self._match_repo.get_h2h(match.home_team_id, match.away_team_id, last_n=6)
+        league_matches = await self._match_repo.get_league_matches(match.league_id)
 
-            # 5. Convertir a formato dict para el pipeline ML
-            home_matches = [self._match_repo.match_to_dict(m) for m in home_form]
-            away_matches = [self._match_repo.match_to_dict(m) for m in away_form]
-            h2h_matches = [self._match_repo.match_to_dict(m) for m in h2h]
-            all_league_matches = [self._match_repo.match_to_dict(m) for m in league_matches]
+        # 4. Convertir a formato dict para el pipeline ML
+        home_matches = [self._match_repo.match_to_dict(m) for m in home_form]
+        away_matches = [self._match_repo.match_to_dict(m) for m in away_form]
+        h2h_matches = [self._match_repo.match_to_dict(m) for m in h2h]
+        all_league_matches = [self._match_repo.match_to_dict(m) for m in league_matches]
 
-            # 6. Construir contexto del partido
-            context = self._build_match_context(match)
+        # 5. Construir cuotas para el pipeline ML
+        bookmaker_odds = self._build_bookmaker_odds(odds)
 
-            # 7. Construir cuotas para el pipeline ML
-            bookmaker_odds = self._build_bookmaker_odds(odds)
-
-            # 8. Ejecutar pipeline completo (Fase 3 + Fase 4)
-            try:
-                quant_output, tactical_output = await run_full_analysis(
-                    match_id=match.id,
-                    home_team_id=match.home_team_id,
-                    home_team_name=match.home_team.name,
-                    away_team_id=match.away_team_id,
-                    away_team_name=match.away_team.name,
-                    league_id=match.league_id,
-                    league_key=self._get_league_key(match.league),
-                    league_name=match.league.name,
-                    season=match.match_date.year,
-                    match_date=str(match.match_date.date()),
-                    home_matches=home_matches,
-                    away_matches=away_matches,
-                    all_league_matches=all_league_matches,
-                    h2h_matches=h2h_matches,
-                    context=context,
-                    groq_api_key=settings.GROQ_API_KEY,
-                    bookmaker_odds=bookmaker_odds,
-                )
+        # 6. Ejecutar pipeline
+        try:
+            if include_tactical_analysis:
+                # Verificar si existe análisis táctico reciente en DB (cache de 6 horas)
+                tactical_output = await self._get_cached_tactical_analysis(match_id)
                 
-                # 9. Persistir análisis táctico en DB
-                await self._persist_tactical_analysis(match.id, tactical_output)
-                
-            except Exception as e:
-                logger.error("Error ejecutando pipeline ML para match_id=%s: %s", match_id, e)
-                raise PredictionNotAvailableException(match_id) from e
+                if tactical_output:
+                    logger.info("TacticalAnalysis cache HIT para match_id=%s (DB)", match_id)
+                    quant_output = await self._run_quantitative_analysis(match, odds)
+                else:
+                    logger.info("TacticalAnalysis cache MISS para match_id=%s — ejecutando pipeline completo", match_id)
+                    context = self._build_match_context(match)
+                    
+                    quant_output, tactical_output = await run_full_analysis(
+                        match_id=match.id,
+                        home_team_id=match.home_team_id,
+                        home_team_name=match.home_team.name,
+                        away_team_id=match.away_team_id,
+                        away_team_name=match.away_team.name,
+                        league_id=match.league_id,
+                        league_key=self._get_league_key(match.league),
+                        league_name=match.league.name,
+                        season=match.match_date.year,
+                        match_date=str(match.match_date.date()),
+                        home_matches=home_matches,
+                        away_matches=away_matches,
+                        all_league_matches=all_league_matches,
+                        h2h_matches=h2h_matches,
+                        context=context,
+                        groq_api_keys=settings.get_groq_api_keys(),
+                        bookmaker_odds=bookmaker_odds,
+                    )
+                    
+                    # Persistir análisis táctico en DB
+                    await self._persist_tactical_analysis(match.id, tactical_output)
+            else:
+                # Modo cuantitativo solamente (sin LLM)
+                logger.info("Modo cuantitativo para match_id=%s — sin análisis táctico", match_id)
+                quant_output = await self._run_quantitative_analysis(match, odds)
+                tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
+            
+        except Exception as e:
+            logger.error("Error ejecutando pipeline ML para match_id=%s: %s", match_id, e)
+            raise PredictionNotAvailableException(match_id) from e
 
-        # 10. Construir respuesta
+        # 7. Construir respuesta
         response = self._build_response(match, quant_output, tactical_output)
 
-        # 11. Persistir en caché
+        # 8. Persistir en caché
         await self._cache.set(cache_key, response, ttl=_CACHE_TTL_SECONDS)
 
         return response
+
+    def _build_minimal_tactical_analysis(
+        self,
+        match: Match,
+        quant_output: MatchPredictionOutput,
+    ) -> TacticalAnalysis:
+        """Construye análisis táctico mínimo sin LLM para generación masiva."""
+        from betmind_ml.schemas.tactical_analysis import TacticalAnalysis, MarketNarrative, ProConPoint, SignalStrength
+
+        markets_by_name = {m.market_name: m for m in quant_output.markets}
+
+        home_1x2 = markets_by_name.get("1X2_HOME")
+        draw = markets_by_name.get("1X2_DRAW")
+        away_1x2 = markets_by_name.get("1X2_AWAY")
+        over_25 = markets_by_name.get("OVER_2_5")
+        over_15 = markets_by_name.get("OVER_1_5")
+
+        lambda_home = getattr(quant_output, 'lambda_home', 0) or 0
+        lambda_away = getattr(quant_output, 'lambda_away', 0) or 0
+
+        p_home = home_1x2.our_probability if home_1x2 else 0
+        p_draw = draw.our_probability if draw else 0
+        p_away = away_1x2.our_probability if away_1x2 else 0
+        p_over_25 = over_25.our_probability if over_25 else 0
+        p_over_15 = over_15.our_probability if over_15 else 0
+
+        if p_home >= p_draw and p_home >= p_away:
+            favorite = match.home_team.name
+            favorite_prob = p_home
+        elif p_away >= p_draw:
+            favorite = match.away_team.name
+            favorite_prob = p_away
+        else:
+            favorite = "Empate"
+            favorite_prob = p_draw
+
+        if p_over_25 > 0.55:
+            goals_rec = "Over 2.5"
+            signal = "MODERATE"
+        elif p_over_15 > 0.55:
+            goals_rec = "Over 1.5"
+            signal = "MODERATE"
+        elif p_over_25 < 0.45:
+            goals_rec = "Under 2.5"
+            signal = "MODERATE"
+        else:
+            goals_rec = "Mercado neutral"
+            signal = "WEAK"
+
+        headline = f"{match.home_team.name} vs {match.away_team.name}: {goals_rec} según modelo Poisson"
+
+        goals_narrative = MarketNarrative(
+            market_name="Goles (Over/Under)",
+            our_probability=round(p_over_25, 4) if p_over_25 > 0 else 0.5,
+            recommendation=goals_rec,
+            pros=[
+                ProConPoint(factor="Poisson Model", description=f"\u03BB_local={lambda_home:.2f}", weight="HIGH"),
+                ProConPoint(factor="Market Analysis", description=f"Over 2.5 probability: {p_over_25:.1%}", weight="MEDIUM"),
+            ],
+            cons=[ProConPoint(factor="Data Quality", description=f"\u03BB_visitante={lambda_away:.2f} bajo", weight="LOW")],
+            signal_strength=SignalStrength.MODERATE if signal == "MODERATE" else SignalStrength.WEAK,
+            key_risk="Datos insuficientes" if lambda_home < 0.5 else "Bajo riesgo",
+            tactical_summary=(
+                f"Modelo Poisson: \u03BB_local={lambda_home:.2f}, \u03BB_visitante={lambda_away:.2f}. "
+                f"Probabilidad Over 2.5: {p_over_25:.1%}. "
+                f"Favorito: {favorite} ({favorite_prob:.1%}). "
+                f"Recomendación: {goals_rec}."
+            ),
+            featured_player=None,
+        )
+
+        return TacticalAnalysis(
+            match_id=match.id,
+            model_version="poisson_v1.0",
+            goals_narrative=goals_narrative,
+            cards_narrative=None,
+            corners_narrative=None,
+            player_props_narratives=None,
+            bet_builder_suggestions=None,
+            overall_confidence=quant_output.confidence_score,
+            match_preview_headline=headline,
+            llm_model_used="none",
+            generation_tokens_used=0,
+            data_completeness_score=round(
+                (1 if lambda_home > 0 else 0.5) * 0.6 + (1 if p_over_25 > 0 else 0.5) * 0.4, 2
+            ),
+        )
 
     def _build_match_context(self, match: Match) -> MatchContext:
         """Construye el contexto del partido para el Cerebro Táctico."""
@@ -131,8 +223,10 @@ class PredictionOrchestrator:
             stadium_altitude_masl=0.0,
         )
 
-    def _build_bookmaker_odds(self, odds: OddsInput) -> dict[str, float] | None:
+    def _build_bookmaker_odds(self, odds: OddsInput | None) -> dict[str, float] | None:
         """Convierte las cuotas de la API al formato del pipeline ML."""
+        if odds is None:
+            return None
         result = {}
         if odds.home_win:
             result["1X2_HOME"] = odds.home_win
@@ -163,11 +257,17 @@ class PredictionOrchestrator:
             await self._tactical_repo.upsert(
                 match_id=match_id,
                 model_version=tactical.model_version,
-                goals_narrative=tactical.goals_narrative.model_dump() if tactical.goals_narrative else None,
-                cards_narrative=tactical.cards_narrative.model_dump() if tactical.cards_narrative else None,
-                corners_narrative=tactical.corners_narrative.model_dump() if tactical.corners_narrative else None,
-                player_props_narratives=[n.model_dump() for n in tactical.player_props_narratives] if tactical.player_props_narratives else None,
-                bet_builder_suggestions=[b.model_dump() for b in tactical.bet_builder_suggestions] if tactical.bet_builder_suggestions else None,
+                goals_narrative=self._to_serializable(tactical.goals_narrative),
+                cards_narrative=self._to_serializable(tactical.cards_narrative),
+                corners_narrative=self._to_serializable(tactical.corners_narrative),
+                player_props_narratives=(
+                    [self._to_serializable(n) for n in tactical.player_props_narratives]
+                    if tactical.player_props_narratives else None
+                ),
+                bet_builder_suggestions=(
+                    [self._to_serializable(b) for b in tactical.bet_builder_suggestions]
+                    if tactical.bet_builder_suggestions else None
+                ),
                 overall_confidence=tactical.overall_confidence,
                 match_preview_headline=tactical.match_preview_headline,
                 llm_model_used=tactical.llm_model_used,
@@ -176,7 +276,15 @@ class PredictionOrchestrator:
             )
             logger.info("Análisis táctico persistido para match_id=%s", match_id)
         except Exception as e:
-            logger.error("Error persistiendo análisis táctico para match_id=%s: %s", match_id, e)
+            logger.warning(
+                "Error o timeout al guardar análisis táctico para match %s: %s. "
+                "Continuando sin persistir el análisis.",
+                match_id, e
+            )
+            try:
+                await self._tactical_repo._session.rollback()
+            except Exception as rollback_error:
+                logger.error("Error durante rollback: %s", rollback_error)
 
     async def _get_cached_tactical_analysis(
         self,
@@ -366,26 +474,59 @@ class PredictionOrchestrator:
         parts = [tactical.match_preview_headline]
         
         if tactical.goals_narrative:
-            parts.append(f"\n\nGoles: {tactical.goals_narrative.tactical_summary}")
+            summary = (
+                tactical.goals_narrative.tactical_summary
+                if hasattr(tactical.goals_narrative, 'tactical_summary')
+                else tactical.goals_narrative.get("tactical_summary", "")
+            )
+            if summary:
+                parts.append(f"\n\nGoles: {summary}")
         
         if tactical.cards_narrative:
-            parts.append(f"\n\nTarjetas: {tactical.cards_narrative.tactical_summary}")
+            summary = (
+                tactical.cards_narrative.tactical_summary
+                if hasattr(tactical.cards_narrative, 'tactical_summary')
+                else tactical.cards_narrative.get("tactical_summary", "")
+            )
+            if summary:
+                parts.append(f"\n\nTarjetas: {summary}")
         
         if tactical.corners_narrative:
-            parts.append(f"\n\nCórneres: {tactical.corners_narrative.tactical_summary}")
+            summary = (
+                tactical.corners_narrative.tactical_summary
+                if hasattr(tactical.corners_narrative, 'tactical_summary')
+                else tactical.corners_narrative.get("tactical_summary", "")
+            )
+            if summary:
+                parts.append(f"\n\nCórneres: {summary}")
         
         return "".join(parts)
+
+    def _to_serializable(self, narrative):
+        if narrative is None:
+            return None
+        if hasattr(narrative, 'model_dump'):
+            return narrative.model_dump()
+        if isinstance(narrative, dict):
+            return narrative
+        return str(narrative)
 
     def _build_tactical_analysis_response(self, tactical: TacticalAnalysis) -> TacticalAnalysisResponse:
         """Construye la respuesta del análisis táctico completo."""
         return TacticalAnalysisResponse(
             match_id=tactical.match_id,
             model_version=tactical.model_version,
-            goals_narrative=tactical.goals_narrative.model_dump() if tactical.goals_narrative else None,
-            cards_narrative=tactical.cards_narrative.model_dump() if tactical.cards_narrative else None,
-            corners_narrative=tactical.corners_narrative.model_dump() if tactical.corners_narrative else None,
-            player_props_narratives=[n.model_dump() for n in tactical.player_props_narratives] if tactical.player_props_narratives else [],
-            bet_builder_suggestions=[b.model_dump() for b in tactical.bet_builder_suggestions] if tactical.bet_builder_suggestions else [],
+            goals_narrative=self._to_serializable(tactical.goals_narrative),
+            cards_narrative=self._to_serializable(tactical.cards_narrative),
+            corners_narrative=self._to_serializable(tactical.corners_narrative),
+            player_props_narratives=(
+                [self._to_serializable(n) for n in tactical.player_props_narratives]
+                if tactical.player_props_narratives else []
+            ),
+            bet_builder_suggestions=(
+                [self._to_serializable(b) for b in tactical.bet_builder_suggestions]
+                if tactical.bet_builder_suggestions else []
+            ),
             overall_confidence=tactical.overall_confidence,
             match_preview_headline=tactical.match_preview_headline,
             llm_model_used=tactical.llm_model_used,

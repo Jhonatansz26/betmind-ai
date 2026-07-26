@@ -1,0 +1,112 @@
+import logging
+from datetime import datetime, timezone
+
+from sqlalchemy import select, delete, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from apps.api.models.bookmaker_odd import BookmakerOdd
+
+logger = logging.getLogger(__name__)
+
+
+class BookmakerOddsRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def upsert_odds(
+        self,
+        match_id: int,
+        odds_list: list[dict],
+        bookmaker_name: str = "api_football",
+    ) -> int:
+        count = 0
+        for odd_data in odds_list:
+            market_name = odd_data["market_name"]
+            odds_value = odd_data["odds_value"]
+            external_fixture_id = odd_data.get("external_fixture_id")
+
+            stmt = select(BookmakerOdd).where(
+                and_(
+                    BookmakerOdd.match_id == match_id,
+                    BookmakerOdd.market_name == market_name,
+                    BookmakerOdd.bookmaker_name == bookmaker_name,
+                )
+            )
+            result = await self._session.execute(stmt)
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                existing.odds_value = odds_value
+                existing.external_fixture_id = external_fixture_id
+                existing.fetched_at = datetime.now(timezone.utc)
+            else:
+                new_odd = BookmakerOdd(
+                    match_id=match_id,
+                    market_name=market_name,
+                    bookmaker_name=bookmaker_name,
+                    odds_value=odds_value,
+                    external_fixture_id=external_fixture_id,
+                )
+                self._session.add(new_odd)
+            count += 1
+
+        await self._session.flush()
+        logger.info(f"Upserted {count} odds for match_id={match_id}")
+        return count
+
+    async def get_odds_for_match(
+        self,
+        match_id: int,
+        bookmaker_name: str = "api_football",
+    ) -> list[BookmakerOdd]:
+        stmt = (
+            select(BookmakerOdd)
+            .where(
+                and_(
+                    BookmakerOdd.match_id == match_id,
+                    BookmakerOdd.bookmaker_name == bookmaker_name,
+                )
+            )
+            .order_by(BookmakerOdd.market_name)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_odds_for_matches(
+        self,
+        match_ids: list[int],
+        bookmaker_name: str = "api_football",
+    ) -> dict[int, list[BookmakerOdd]]:
+        if not match_ids:
+            return {}
+
+        stmt = (
+            select(BookmakerOdd)
+            .where(
+                and_(
+                    BookmakerOdd.match_id.in_(match_ids),
+                    BookmakerOdd.bookmaker_name == bookmaker_name,
+                )
+            )
+            .order_by(BookmakerOdd.match_id, BookmakerOdd.market_name)
+        )
+        result = await self._session.execute(stmt)
+        odds = list(result.scalars().all())
+
+        grouped: dict[int, list[BookmakerOdd]] = {}
+        for odd in odds:
+            grouped.setdefault(odd.match_id, []).append(odd)
+        return grouped
+
+    async def delete_stale_odds(
+        self,
+        older_than_hours: int = 12,
+    ) -> int:
+        cutoff = datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=older_than_hours)
+        stmt = delete(BookmakerOdd).where(BookmakerOdd.fetched_at < cutoff)
+        result = await self._session.execute(stmt)
+        await self._session.flush()
+        deleted = result.rowcount
+        if deleted:
+            logger.info(f"Deleted {deleted} stale odds older than {older_than_hours}h")
+        return deleted

@@ -3,40 +3,42 @@ from apps.api.schemas.ticket import TicketMode, TicketLegSchema, GeneratedTicket
 
 MODE_CONFIG = {
     TicketMode.EDGE: {
-        "min_ev":              0.05,
-        "max_selections":      3,
-        "min_our_probability": 0.55,
-        "target_odds_min":     1.40,
-        "target_odds_max":     2.30,
+        "min_ev":              0.005,
+        "max_selections":      2,
+        "min_our_probability": 0.40,
+        "target_odds_min":     1.50,
+        "target_odds_max":     3.50,
+        "max_individual_odds": 2.10,
         "allowed_markets": {
-            "1X2_HOME", "1X2_AWAY",
+            "1X2_HOME", "1X2_DRAW",
             "OVER_2_5", "OVER_1_5",
             "BTTS_YES",
         },
         "staking": "1-2% of bankroll — conservative, high-frequency play",
     },
     TicketMode.VALUE: {
-        "min_ev":              0.08,
-        "max_selections":      4,
-        "min_our_probability": 0.46,
-        "target_odds_min":     1.90,
-        "target_odds_max":     4.50,
+        "min_ev":              0.005,
+        "max_selections":      3,
+        "min_our_probability": 0.30,
+        "target_odds_min":     2.50,
+        "target_odds_max":     12.00,
+        "max_individual_odds": 4.00,
         "allowed_markets": {
             "1X2_HOME", "1X2_AWAY", "1X2_DRAW",
-            "OVER_2_5", "OVER_1_5", "OVER_3_5",
+            "OVER_2_5", "OVER_1_5",
             "BTTS_YES",
-            "CORNERS_OVER", "CARDS_OVER",
         },
         "staking": "0.5-1% of bankroll — medium frequency, higher EV target",
     },
     TicketMode.BOLD: {
-        "min_ev":              0.03,
+        "min_ev":              0.005,
         "max_selections":      4,
-        "min_our_probability": 0.40,
-        "target_odds_min":     4.00,
-        "target_odds_max":     14.00,
+        "min_our_probability": 0.22,
+        "target_odds_min":     8.00,
+        "target_odds_max":     30.00,
+        "max_individual_odds": 8.00,
         "allowed_markets":     None,
-        "require_correlation": True,
+        "require_correlation": False,
         "staking": "0.25-0.5% of bankroll — low frequency, high variance",
     },
 }
@@ -92,10 +94,39 @@ def calculate_average_ev(legs: list[TicketLegSchema]) -> float:
     return round(sum(leg.expected_value for leg in legs) / len(legs), 4)
 
 
+def _build_mode_label(mode: TicketMode) -> str:
+    return {
+        TicketMode.EDGE:  "EDGE MODE",
+        TicketMode.VALUE: "VALUE MODE",
+        TicketMode.BOLD:  "BOLD MODE",
+    }[mode]
+
+
+def _build_cons(selected: list[TicketLegSchema], avg_ev: float, combined: float) -> list[str]:
+    cons = ["Past model performance does not guarantee future results"]
+    low_conf = sum(1 for l in selected if l.our_probability < 0.50)
+    if low_conf > 0:
+        cons.append(f"Lower confidence legs: {low_conf} selection(s) below 50%")
+    if combined > 8.0:
+        cons.append("High combined odds — expect high variance outcomes")
+    return cons
+
+
+def _build_pros(mode: TicketMode, selected: list[TicketLegSchema], avg_ev: float, combined: float) -> list[str]:
+    config = MODE_CONFIG[mode]
+    return [
+        f"All legs passed +EV threshold ({config['min_ev']*100:.0f}%)",
+        f"No negative correlations across {len(selected)} markets",
+        f"Combined odds {combined}x within {mode.value} target range",
+    ]
+
+
 def build_ticket_for_mode(
     mode: TicketMode,
     available_predictions: list[dict],
+    exclude_match_ids: set[int] | None = None,
 ) -> GeneratedTicket | None:
+    exclude = exclude_match_ids or set()
     config = MODE_CONFIG[mode]
     allowed = config.get("allowed_markets")
     min_ev = config["min_ev"]
@@ -103,25 +134,35 @@ def build_ticket_for_mode(
     max_legs = config["max_selections"]
     target_min = config["target_odds_min"]
     target_max = config["target_odds_max"]
+    max_individual_odds = config.get("max_individual_odds", 999)
 
     candidates: list[TicketLegSchema] = []
 
     for pred in available_predictions:
+        if pred["match_id"] in exclude:
+            continue
+
         for mkt in pred.get("markets", []):
             mkt_name = mkt["market_name"]
 
             if allowed and mkt_name not in allowed:
                 continue
 
-            if mkt.get("expected_value", 0) < min_ev:
+            prob = mkt.get("our_probability", 0)
+            bm_odds = mkt.get("bookmaker_odds", 0)
+            implied = mkt.get("implied_probability", 0)
+            ev = mkt.get("expected_value", -1)
+
+            if prob < min_prob:
+                continue
+            if bm_odds <= 1.0:
+                continue
+            if bm_odds > max_individual_odds:
+                continue
+            if ev < min_ev:
                 continue
 
-            if mkt.get("our_probability", 0) < min_prob:
-                continue
-
-            edge_pct = round(
-                (mkt["our_probability"] - mkt["implied_probability"]) * 100, 2
-            )
+            edge_pct = round((prob - implied) * 100, 2) if implied else 0
 
             candidates.append(TicketLegSchema(
                 match_id=pred["match_id"],
@@ -130,11 +171,11 @@ def build_ticket_for_mode(
                 league=pred["league"],
                 market_name=mkt_name,
                 market_label=mkt["market_label"],
-                our_probability=mkt["our_probability"],
-                bookmaker_odds=mkt["bookmaker_odds"],
-                implied_probability=mkt["implied_probability"],
+                our_probability=prob,
+                bookmaker_odds=bm_odds,
+                implied_probability=implied,
                 edge_percentage=edge_pct,
-                expected_value=mkt["expected_value"],
+                expected_value=ev,
                 match_time_cot=pred["match_time_cot"],
             ))
 
@@ -150,7 +191,6 @@ def build_ticket_for_mode(
     for candidate in candidates:
         if len(selected) >= max_legs:
             break
-
         if candidate.match_id in selected_match_ids:
             continue
 
@@ -167,10 +207,34 @@ def build_ticket_for_mode(
         return None
 
     combined = calculate_combined_odds(selected)
+
+    if combined < target_min and len(selected) < max_legs:
+        remaining = [c for c in candidates if c.match_id not in selected_match_ids]
+        for c in remaining:
+            if len(selected) >= max_legs:
+                break
+            test_markets = selected_market_names + [c.market_name]
+            is_valid, _ = check_forbidden_combination(test_markets)
+            if is_valid:
+                selected.append(c)
+                selected_match_ids.add(c.match_id)
+                selected_market_names.append(c.market_name)
+        combined = calculate_combined_odds(selected)
+
+    if combined > target_max and len(selected) > 2:
+        sorted_by_odds = sorted(selected, key=lambda x: x.bookmaker_odds)
+        for trim_to in range(len(selected) - 1, 1, -1):
+            trial = sorted_by_odds[:trim_to]
+            trial_combined = calculate_combined_odds(trial)
+            if target_min <= trial_combined <= target_max:
+                selected = trial
+                selected_match_ids = {l.match_id for l in selected}
+                selected_market_names = [l.market_name for l in selected]
+                combined = trial_combined
+                break
+
     if not (target_min <= combined <= target_max):
-        if combined > target_max and len(selected) > 2:
-            selected = sorted(selected, key=lambda x: x.bookmaker_odds)[:max_legs - 1]
-            combined = calculate_combined_odds(selected)
+        return None
 
     avg_ev = calculate_average_ev(selected)
     corr_bonus = get_correlation_bonus(selected_market_names)
@@ -178,30 +242,21 @@ def build_ticket_for_mode(
         round(avg_ev * 400 + corr_bonus * 20 + len(selected) * 5), 95
     )
 
-    mode_labels = {
-        TicketMode.EDGE:  "EDGE MODE",
-        TicketMode.VALUE: "VALUE MODE",
-        TicketMode.BOLD:  "BOLD MODE",
-    }
     correlation_status = "positive" if corr_bonus > 0.5 else "independent"
 
     return GeneratedTicket(
         mode=mode,
-        mode_label=mode_labels[mode],
+        mode_label=_build_mode_label(mode),
         legs=selected,
         combined_odds=combined,
         average_ev=avg_ev,
         confidence_score=base_confidence,
         correlation_validated=True,
-        tactical_summary=f"{len(selected)} selections with average {avg_ev*100:.1f}% EV advantage over bookmaker. Correlation: {correlation_status}.",
-        pros=[
-            f"All legs passed minimum {min_ev*100:.0f}% EV threshold",
-            f"No negative correlations detected across {len(selected)} markets",
-            f"Combined odds {combined}x within {mode.value} target range",
-        ],
-        cons=[
-            "Past model performance does not guarantee future results",
-            f"Lower confidence legs: {sum(1 for l in selected if l.our_probability < 0.55)} selection(s) below 55%",
-        ],
+        tactical_summary=(
+            f"{len(selected)} selections with avg {avg_ev*100:.1f}% EV. "
+            f"Correlation: {correlation_status}."
+        ),
+        pros=_build_pros(mode, selected, avg_ev, combined),
+        cons=_build_cons(selected, avg_ev, combined),
         staking_suggestion=config["staking"],
     )

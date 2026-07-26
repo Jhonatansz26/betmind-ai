@@ -24,6 +24,10 @@ else:
     engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
     engine_kwargs["pool_pre_ping"] = True
     engine_kwargs["pool_timeout"] = settings.DB_POOL_TIMEOUT
+    engine_kwargs["connect_args"] = {
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+    }
 
 engine: AsyncEngine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
 
@@ -35,7 +39,7 @@ async_session_factory = async_sessionmaker(
 
 
 async def init_db() -> None:
-    from apps.api.models import Base, Team, League, Match, Prediction, User
+    from apps.api.models import Base, Team, League, Match, Prediction, User, BookmakerOdd
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -51,9 +55,12 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session_factory() as session:
         try:
             yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
+            if session.in_transaction():
+                await session.commit()
+        except Exception as e:
+            logger.warning(f"Error en sesión DB, haciendo rollback: {e}")
+            if session.in_transaction():
+                await session.rollback()
             raise
         finally:
             await session.close()

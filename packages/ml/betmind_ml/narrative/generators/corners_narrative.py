@@ -85,5 +85,35 @@ def generate_corners_narrative(
         narrative: MarketNarrative = MarketNarrative.model_validate_json(response_text)
         return narrative
     except Exception as e:
-        logger.error("Error generando CornersNarrative: %s", e)
-        return None
+        logger.warning("Error generando CornersNarrative con LLM, usando fallback: %s", e)
+        return _generate_fallback_corners_narrative(home_team_name, away_team_name, league_name)
+
+
+def _generate_fallback_corners_narrative(
+    home_team: str,
+    away_team: str,
+    league: str,
+) -> MarketNarrative:
+    """Genera narrativa de respaldo para córneres basada en estadísticas básicas."""
+    from betmind_ml.schemas.tactical_analysis import NarrativeSignal
+    
+    summary = (
+        f"Análisis de córneres para {home_team} vs {away_team} en {league}. "
+        f"Sin datos detallados de estilo de juego, se recomienda prudencia en este mercado."
+    )
+    
+    return MarketNarrative(
+        market_name="Córneres totales",
+        recommendation="Mercado neutral - datos insuficientes",
+        tactical_summary=summary,
+        pros=[
+            "Mercado disponible para análisis",
+        ],
+        cons=[
+            "Sin datos de estilo de juego de los equipos",
+            "Sin historial de córneres de la liga",
+            "Se recomienda evitar apuestas complejas en este mercado",
+        ],
+        signal_strength=NarrativeSignal.LOW,
+        featured_player=None,
+    )

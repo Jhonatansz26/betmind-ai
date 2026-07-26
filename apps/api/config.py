@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     API_FOOTBALL_KEY: str = ""
     FOOTBALL_DATA_KEY: str | None = None
     GROQ_API_KEY: str = ""
-    GEMINI_API_KEY: str = ""
+    GROQ_API_KEYS: str = ""
     ANTHROPIC_API_KEY: str | None = None
 
     SECRET_KEY: str = "change-me-in-production"
@@ -104,6 +104,19 @@ class Settings(BaseSettings):
         super().__init__(**kwargs)
         
         logger.info(f"DATABASE_URL: {self.DATABASE_URL[:80]}...")
+
+    def get_groq_api_keys(self) -> list[str]:
+        """
+        Retorna lista de API keys de Groq.
+        Prioriza GROQ_API_KEYS (lista separada por comas) sobre GROQ_API_KEY.
+        """
+        if self.GROQ_API_KEYS:
+            keys = [k.strip() for k in self.GROQ_API_KEYS.split(",") if k.strip()]
+            if keys:
+                return keys
+        if self.GROQ_API_KEY:
+            return [self.GROQ_API_KEY]
+        return []
 
 
 settings = Settings()

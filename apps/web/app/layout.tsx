@@ -14,9 +14,9 @@ const playfair = Playfair_Display({
 })
 
 export const metadata: Metadata = {
-  title: 'BetMind AI — Sports Betting Intelligence',
+  title: 'BetMind AI — Inteligencia en Apuestas Deportivas',
   description:
-    'Poisson-modelled football probabilities, expected value scanning and AI tactical analysis across 11 leagues.',
+    'Probabilidades de fútbol modeladas con Poisson, escaneo de valor esperado y análisis táctico con IA en 11 ligas.',
   icons: {
     icon: [
       {

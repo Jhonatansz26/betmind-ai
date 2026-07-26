@@ -1,3 +1,4 @@
+import logging
 import sys
 from pathlib import Path
 
@@ -7,12 +8,21 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from apps.api.config import settings
+from apps.api.core.exceptions import (
+    BetMindException,
+    MatchNotFoundException,
+    PredictionNotAvailableException,
+    ExternalAPIException,
+)
 from apps.api.db.database import init_db, dispose_engine, ping_db
 from apps.api.routes.v1.router import api_router
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -41,6 +51,53 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
+
+
+@app.exception_handler(MatchNotFoundException)
+async def match_not_found_handler(request: Request, exc: MatchNotFoundException):
+    return JSONResponse(
+        status_code=404,
+        content={"detail": str(exc), "code": "MATCH_NOT_FOUND", "match_id": exc.match_id},
+    )
+
+
+@app.exception_handler(PredictionNotAvailableException)
+async def prediction_not_available_handler(request: Request, exc: PredictionNotAvailableException):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": str(exc), "code": "PREDICTION_NOT_AVAILABLE", "match_id": exc.match_id},
+    )
+
+
+@app.exception_handler(ExternalAPIException)
+async def external_api_handler(request: Request, exc: ExternalAPIException):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": str(exc), "code": "EXTERNAL_API_ERROR", "service": exc.service},
+    )
+
+
+@app.exception_handler(BetMindException)
+async def betmind_exception_handler(request: Request, exc: BetMindException):
+    logger.error("Unhandled BetMindException: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "code": "BETMIND_ERROR"},
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "code": "INTERNAL_ERROR"},
+    )
+
+
+@app.get("/", tags=["health"])
+async def root():
+    return {"status": "ok", "app": settings.APP_NAME, "version": settings.APP_VERSION}
 
 
 @app.get("/health", tags=["health"])

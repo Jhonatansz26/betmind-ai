@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-export const NAV_TABS = ["Today's Tickets", 'Match Board', 'Scanner'] as const
+export const NAV_TABS = ["Boletos de Hoy", 'Cartelera', 'Escáner'] as const
 export type NavTab = (typeof NAV_TABS)[number]
 
 interface TopNavProps {
@@ -63,10 +63,10 @@ export function TopNav({ active, onChange, onToggleSidebar }: TopNavProps) {
         <div className="ml-auto flex items-center gap-3 md:ml-0">
           <span className="hidden items-center gap-1.5 text-[10px] font-semibold tracking-wide text-positive sm:flex">
             <span className="live-dot size-1.5 rounded-full bg-positive" aria-hidden />
-            LIVE DATA
+            DATOS EN VIVO
           </span>
           <span className="hidden rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-medium tracking-wide text-primary lg:inline-flex">
-            EDGE MEMBER
+            MIEMBRO EDGE
           </span>
           <Avatar className="size-7">
             <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">AM</AvatarFallback>

@@ -1,44 +1,66 @@
 import json
+import logging
 from typing import Any, Optional, Type, TypeVar
 
 import redis.asyncio as redis
 from pydantic import BaseModel
+from redis.exceptions import RedisError
 
 T = TypeVar("T", bound=BaseModel)
-
+logger = logging.getLogger(__name__)
 
 class CacheService:
     def __init__(self, redis_url: str):
         self._redis = redis.from_url(redis_url, decode_responses=True)
 
     async def get(self, key: str, model: Type[T] | None = None) -> Optional[Any]:
-        raw = await self._redis.get(key)
-        if raw is None:
+        try:
+            raw = await self._redis.get(key)
+            if raw is None:
+                return None
+            if model is not None:
+                return model.model_validate_json(raw)
+            return raw
+        except (RedisError, ConnectionError, OSError) as e:
+            logger.warning(f"Redis cache unavailable for GET '{key}': {e}")
             return None
-        if model is not None:
-            return model.model_validate_json(raw)
-        return raw
 
     async def set(self, key: str, value: Any, ttl: int = 300) -> None:
-        if isinstance(value, BaseModel):
-            serialized = value.model_dump_json()
-        elif isinstance(value, (dict, list)):
-            serialized = json.dumps(value)
-        else:
-            serialized = str(value)
-        await self._redis.set(key, serialized, ex=ttl)
+        try:
+            if isinstance(value, BaseModel):
+                serialized = value.model_dump_json()
+            elif isinstance(value, (dict, list)):
+                serialized = json.dumps(value)
+            else:
+                serialized = str(value)
+            await self._redis.set(key, serialized, ex=ttl)
+        except (RedisError, ConnectionError, OSError) as e:
+            logger.warning(f"Redis cache unavailable for SET '{key}': {e}")
 
     async def delete(self, key: str) -> None:
-        await self._redis.delete(key)
+        try:
+            await self._redis.delete(key)
+        except (RedisError, ConnectionError, OSError) as e:
+            logger.warning(f"Redis cache unavailable for DELETE '{key}': {e}")
 
     async def get_json(self, key: str) -> Optional[Any]:
-        raw = await self._redis.get(key)
-        if raw is None:
+        try:
+            raw = await self._redis.get(key)
+            if raw is None:
+                return None
+            return json.loads(raw)
+        except (RedisError, ConnectionError, OSError) as e:
+            logger.warning(f"Redis cache unavailable for GET_JSON '{key}': {e}")
             return None
-        return json.loads(raw)
 
     async def set_json(self, key: str, value: Any, ttl: int = 300) -> None:
-        await self._redis.set(key, json.dumps(value), ex=ttl)
+        try:
+            await self._redis.set(key, json.dumps(value), ex=ttl)
+        except (RedisError, ConnectionError, OSError) as e:
+            logger.warning(f"Redis cache unavailable for SET_JSON '{key}': {e}")
 
     async def close(self) -> None:
-        await self._redis.close()
+        try:
+            await self._redis.close()
+        except (RedisError, ConnectionError, OSError) as e:
+            logger.warning(f"Redis cache unavailable for CLOSE: {e}")

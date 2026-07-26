@@ -27,7 +27,7 @@ export function TicketCard({ ticket }: { ticket: Ticket }) {
       .map((leg) => `${leg.match} — ${leg.market} @ ${leg.odds.toFixed(2)}`)
       .join('\n')
     void navigator.clipboard?.writeText(
-      `BetMind AI · ${meta.label}\n${text}\nCombined odds: ${ticket.combinedOdds.toFixed(2)}`,
+      `BetMind AI · ${meta.label}\n${text}\nCuota combinada: ${ticket.combinedOdds.toFixed(2)}`,
     )
     setCopied(true)
     toast.success('Ticket copied to clipboard ✓')
@@ -64,7 +64,7 @@ export function TicketCard({ ticket }: { ticket: Ticket }) {
             {`× ${ticket.combinedOdds.toFixed(2)}`}
           </p>
           <p className="num text-xs text-positive">
-            {`Expected Value: +${(ticket.evAverage * 100).toFixed(1)}% average`}
+            {`Valor Esperado: +${(ticket.evAverage * 100).toFixed(1)}% promedio`}
           </p>
         </div>
       </CardHeader>
@@ -92,7 +92,7 @@ export function TicketCard({ ticket }: { ticket: Ticket }) {
           aria-expanded={expanded}
           className="flex w-full items-center justify-between rounded-md border border-border px-3 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
         >
-          Show Tactical Analysis
+          Mostrar Análisis Táctico
           <ChevronDownIcon
             className={cn('size-3.5 transition-transform duration-200', expanded && 'rotate-180')}
             aria-hidden
@@ -135,20 +135,20 @@ export function TicketCard({ ticket }: { ticket: Ticket }) {
             ) : (
               <CopyIcon data-icon="inline-start" />
             )}
-            {copied ? 'Copied' : 'Copy Selections'}
+            {copied ? 'Copiado' : 'Copiar Selecciones'}
           </Button>
           <Button
             variant="ghost"
             size="sm"
             className="flex-1"
-            onClick={() => toast('Added to watchlist', { description: `${ticket.legs.length} selections tracked.` })}
+            onClick={() => toast('Añadido a lista de seguimiento', { description: `${ticket.legs.length} selecciones en seguimiento.` })}
           >
             <StarIcon data-icon="inline-start" />
-            Add All to Watchlist
+            Añadir a Seguimiento
           </Button>
         </div>
         <p className="text-xs text-subtle">
-          Model confidence based on 90-min regulation data only. Not financial advice.
+          Confianza del modelo basada únicamente en datos de 90 min reglamentarios. No es asesoría financiera.
         </p>
       </CardFooter>
     </Card>

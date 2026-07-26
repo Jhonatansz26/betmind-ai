@@ -109,5 +109,35 @@ def generate_cards_narrative(
         narrative: MarketNarrative = MarketNarrative.model_validate_json(response_text)
         return narrative
     except Exception as e:
-        logger.error("Error generando CardsNarrative: %s", e)
-        return None
+        logger.warning("Error generando CardsNarrative con LLM, usando fallback: %s", e)
+        return _generate_fallback_cards_narrative(home_team_name, away_team_name, league_name)
+
+
+def _generate_fallback_cards_narrative(
+    home_team: str,
+    away_team: str,
+    league: str,
+) -> MarketNarrative:
+    """Genera narrativa de respaldo para tarjetas basada en promedios de liga."""
+    from betmind_ml.schemas.tactical_analysis import NarrativeSignal
+    
+    summary = (
+        f"Análisis de tarjetas para {home_team} vs {away_team} en {league}. "
+        f"Sin datos detallados del árbitro, se recomienda prudencia en este mercado."
+    )
+    
+    return MarketNarrative(
+        market_name="Tarjetas totales",
+        recommendation="Mercado neutral - datos insuficientes",
+        tactical_summary=summary,
+        pros=[
+            "Mercado disponible para análisis",
+        ],
+        cons=[
+            "Sin datos del árbitro asignado",
+            "Sin historial de tarjetas de los equipos",
+            "Se recomienda evitar apuestas complejas en este mercado",
+        ],
+        signal_strength=NarrativeSignal.LOW,
+        featured_player=None,
+    )

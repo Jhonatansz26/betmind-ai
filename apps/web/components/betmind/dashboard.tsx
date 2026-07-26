@@ -2,8 +2,8 @@
 
 import * as React from 'react'
 
-import { LEAGUES, MATCHES, TICKETS, type Match, type Ticket } from '@/lib/betmind'
-import { fetchTickets } from '@/lib/api'
+import { type Match, type Ticket } from '@/lib/betmind'
+import { fetchTickets, fetchMatches, fetchLeagues } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { LeagueSidebar } from './league-sidebar'
 import { MatchCard } from './match-card'
@@ -11,11 +11,6 @@ import { MatchModal } from './match-modal'
 import { ScannerEmptyState } from './scanner-empty-state'
 import { TicketCard } from './ticket-card'
 import { BottomNav, TopNav, type NavTab } from './top-nav'
-
-const FILTER_PILLS = [
-  { id: 'all', name: 'All Leagues' },
-  ...LEAGUES.filter((l) => l.matches > 0).map((l) => ({ id: l.id, name: l.name })),
-]
 
 function TicketSkeleton() {
   return (
@@ -106,19 +101,22 @@ function MatchSkeleton() {
 }
 
 export function Dashboard() {
-  const [tab, setTab] = React.useState<NavTab>("Today's Tickets")
+  const [tab, setTab] = React.useState<NavTab>("Boletos de Hoy")
   const [league, setLeague] = React.useState('all')
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const [activeMatch, setActiveMatch] = React.useState<Match | null>(null)
   const [modalOpen, setModalOpen] = React.useState(false)
   const [today, setToday] = React.useState('')
-  const [tickets, setTickets] = React.useState<Ticket[]>(TICKETS)
+  const [tickets, setTickets] = React.useState<Ticket[]>([])
   const [ticketsLoading, setTicketsLoading] = React.useState(true)
+  const [matches, setMatches] = React.useState<Match[]>([])
+  const [matchesLoading, setMatchesLoading] = React.useState(true)
   const [ticketMeta, setTicketMeta] = React.useState<{
     matchesAnalyzed: number
     totalEv: number
     generatedAt: string
   } | null>(null)
+  const [leaguePills, setLeaguePills] = React.useState<{ id: string; name: string }[]>([{ id: 'all', name: 'Todas las Ligas' }])
 
   React.useEffect(() => {
     setToday(
@@ -138,7 +136,7 @@ export function Dashboard() {
       try {
         const result = await fetchTickets()
         if (!cancelled) {
-          setTickets(result.tickets.length > 0 ? result.tickets : TICKETS)
+          setTickets(result.tickets)
           setTicketMeta({
             matchesAnalyzed: result.matchesAnalyzed,
             totalEv: result.totalEvOpportunities,
@@ -146,7 +144,7 @@ export function Dashboard() {
           })
         }
       } catch {
-        if (!cancelled) setTickets(TICKETS)
+        if (!cancelled) setTickets([])
       } finally {
         if (!cancelled) setTicketsLoading(false)
       }
@@ -155,9 +153,48 @@ export function Dashboard() {
     return () => { cancelled = true }
   }, [])
 
-  const matches = React.useMemo(
-    () => (league === 'all' ? MATCHES : MATCHES.filter((m) => m.leagueId === league)),
-    [league],
+  React.useEffect(() => {
+    let cancelled = false
+    async function loadMatches() {
+      try {
+        const todayCot = new Date()
+        const dateStr = todayCot.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+        const fetchedMatches = await fetchMatches(dateStr)
+        if (!cancelled) {
+          setMatches(fetchedMatches.length > 0 ? fetchedMatches : [])
+        }
+      } catch {
+        if (!cancelled) setMatches([])
+      } finally {
+        if (!cancelled) setMatchesLoading(false)
+      }
+    }
+    loadMatches()
+    return () => { cancelled = true }
+  }, [])
+
+  React.useEffect(() => {
+    let cancelled = false
+    async function loadLeagues() {
+      try {
+        const data = await fetchLeagues()
+        if (!cancelled && data.length > 0) {
+          setLeaguePills([
+            { id: 'all', name: 'Todas las Ligas' },
+            ...data.filter((l) => l.active_matches > 0).map((l) => ({ id: String(l.external_id), name: l.name })),
+          ])
+        }
+      } catch {
+        // keep default pills
+      }
+    }
+    loadLeagues()
+    return () => { cancelled = true }
+  }, [])
+
+  const filteredMatches = React.useMemo(
+    () => (league === 'all' ? matches : matches.filter((m) => String(m.leagueExternalId ?? '') === league)),
+    [league, matches],
   )
 
   function openMatch(match: Match) {
@@ -168,12 +205,12 @@ export function Dashboard() {
   function selectLeague(id: string) {
     setLeague(id)
     setSidebarOpen(false)
-    if (tab === "Today's Tickets") setTab('Match Board')
+    if (tab === "Boletos de Hoy") setTab('Cartelera')
   }
 
-  const showTickets = tab === "Today's Tickets"
-  const showBoard = tab === "Today's Tickets" || tab === 'Match Board'
-  const showScanner = tab === 'Scanner'
+  const showTickets = tab === "Boletos de Hoy"
+  const showBoard = tab === "Boletos de Hoy" || tab === 'Cartelera'
+  const showScanner = tab === 'Escáner'
 
   return (
     <div className="min-h-svh bg-background pb-16 md:pb-0">
@@ -208,14 +245,14 @@ export function Dashboard() {
               <div className="flex flex-col gap-2">
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <h1 className="font-serif text-2xl italic text-foreground sm:text-3xl">
-                    Today&apos;s Intelligence Report
+                    Informe de Inteligencia de Hoy
                   </h1>
                   <p className="num text-xs text-muted-foreground">{today}</p>
                 </div>
                 <p className="max-w-2xl text-pretty text-sm leading-relaxed text-muted-foreground">
                   {ticketMeta
-                    ? `${ticketMeta.matchesAnalyzed} matches analyzed \u00B7 ${ticketMeta.totalEv} EV opportunities detected`
-                    : '3 pre-built tickets generated by our Poisson model. Each ticket passed correlation and EV validation.'}
+                    ? `${ticketMeta.matchesAnalyzed} partidos analizados · ${ticketMeta.totalEv} oportunidades +EV detectadas`
+                    : 'Consultando datos del modelo...'}
                 </p>
               </div>
 
@@ -240,10 +277,10 @@ export function Dashboard() {
             <section className="flex flex-col gap-4">
               <div className="flex flex-col gap-3">
                 <h2 className="font-serif text-2xl italic text-foreground">
-                  {"Today's Matches"}
+                  {"Partidos de Hoy"}
                 </h2>
                 <div className="no-scrollbar flex items-center gap-2 overflow-x-auto pb-1">
-                  {FILTER_PILLS.map((pill) => (
+                  {leaguePills.map((pill) => (
                     <button
                       key={pill.id}
                       type="button"
@@ -263,13 +300,19 @@ export function Dashboard() {
               </div>
 
               <div className="flex flex-col gap-3">
-                {matches.length > 0 ? (
-                  matches.map((match) => (
+                {matchesLoading ? (
+                  <div className="flex flex-col gap-3">
+                    {[0, 1, 2, 3].map((i) => (
+                      <MatchSkeleton key={i} />
+                    ))}
+                  </div>
+                ) : filteredMatches.length > 0 ? (
+                  filteredMatches.map((match) => (
                     <MatchCard key={match.id} match={match} onOpen={openMatch} />
                   ))
                 ) : (
                   <p className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
-                    No fixtures scheduled for this league today.
+                    No hay partidos programados para esta liga hoy.
                   </p>
                 )}
               </div>
