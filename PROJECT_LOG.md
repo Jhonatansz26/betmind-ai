@@ -5030,3 +5030,158 @@ Total:                            79 passed
 - ✅ Kelly integrado en predicciones individuales y boletos combinados
 - ✅ Filtro Anti-Cáscara descarta favoritos baratos en ligas volátiles
 - ✅ Líneas de tarjetas regionalizadas (3.5 Europa → 5.5 Sudamérica)
+
+---
+
+## 🟢 Fase 17: Dixon-Coles, Binomial Negativa, Player Props y Match Tension Index (Completado)
+
+### 1. Propósito
+Implementar 4 módulos analíticos avanzados para refinar la precisión cuantitativa del motor predictivo: corrección Dixon-Coles para dependencia en marcadores bajos, distribución Binomial Negativa para córneres, validación de Player Props por minutos proyectados, e Índice de Tensión del Partido (MTI) para tarjetas.
+
+### 2. Corrección Dixon-Coles en Motor de Poisson
+
+#### Ubicación
+`packages/ml/betmind_ml/models/poisson_engine.py`
+
+#### Implementación
+Factor de corrección τ(x,y) aplicado a la matriz 9×9 de Poisson con constante ρ = -0.09:
+
+| Celda | Factor τ | Fórmula |
+|-------|----------|---------|
+| (0,0) | τ = 1 - (λ_home × λ_away × ρ) | Captura dependencia en 0-0 |
+| (1,0) | τ = 1 + (λ_away × ρ) | Ajuste local marca 1 |
+| (0,1) | τ = 1 + (λ_home × ρ) | Ajuste visitante marca 1 |
+| (1,1) | τ = 1 - ρ | Dependencia en 1-1 |
+| Otras | τ = 1.0 | Sin corrección |
+
+**Proceso:**
+1. Construir matriz Poisson pura
+2. Aplicar τ(x,y) a las 4 celdas críticas
+3. Renormalizar para que suma = 1.0
+
+**Efecto:** Aumenta P(0-0) respecto a Poisson puro (captura partidos tácticos cerrados que Poisson subestima).
+
+#### Funciones agregadas
+- `_apply_dixon_coles_correction(matrix, lambda_home, lambda_away, rho)` → Matriz corregida
+- `_renormalize_matrix(matrix)` → Matriz normalizada (suma = 1.0)
+
+### 3. Córneres con Distribución Binomial Negativa
+
+#### Nuevo archivo
+`apps/api/engine/corners_model.py`
+
+#### Justificación
+Los córneres tienen **alta varianza** (overdispersion) que Poisson no captura bien. La Binomial Negativa modela mejor esta dispersión con parámetro k = 1.3.
+
+#### Parametrización
+```python
+k = 1.3  # Varianza = k × μ
+p = 1/k ≈ 0.76923
+r = μ / (k - 1) = μ / 0.3
+```
+
+#### Funciones públicas
+| Función | Descripción |
+|---------|-------------|
+| `calculate_corners_probabilities(expected_corners, lines)` | Probabilidades Over/Under para múltiples líneas (7.5, 8.5, 9.5, 10.5) |
+| `calculate_corners_line_probability(expected_corners, line)` | Probabilidad para línea específica |
+| `get_corners_recommendation(expected_corners, line)` | Recomendación "Over/Under" con probabilidad |
+
+#### Ejemplo
+```python
+probs = calculate_corners_probabilities(expected_corners=9.2)
+# probs["over_9.5"] = 0.48, probs["under_9.5"] = 0.52
+```
+
+### 4. Player Props con Validación de Minutos
+
+#### Nuevo archivo
+`apps/api/engine/player_props_model.py`
+
+#### Fórmula
+```
+Remates Esperados = (SoT/90) × (Minutos Proyectados / 90) × Factor Defensivo Rival
+```
+
+#### Reglas de validación
+| Condición | Estado |
+|-----------|--------|
+| Minutos Proyectados < 60 | `NOT_AVAILABLE` |
+| Jugador no confirmado en 11 titular | `NOT_AVAILABLE` |
+| stat_per_90 ≤ 0 | `INSUFFICIENT_DATA` |
+| Condiciones cumplidas | `AVAILABLE` |
+
+#### Modelos Pydantic
+- `PlayerPropStatus`: Enum (AVAILABLE, NOT_AVAILABLE, INSUFFICIENT_DATA)
+- `PlayerPropProjection`: Proyección completa con expected_stat y status
+
+#### Funciones públicas
+- `calculate_player_prop_projection(...)` → PlayerPropProjection
+- `calculate_shots_on_target_line(expected_sot, line)` → {"over": 0.35, "under": 0.65}
+
+### 5. Match Tension Index (MTI) para Tarjetas
+
+#### Nuevo archivo
+`apps/api/engine/match_tension.py`
+
+#### Constantes MTI
+| Contexto | MTI | Descripción |
+|----------|-----|-------------|
+| Regular | 1.00 | Partido estándar |
+| Classification Clash | 1.15 | Duelo por clasificación/cupo internacional |
+| Derby | 1.35 | Clásico regional |
+| Relegation | 1.35 | Partido por descenso |
+
+#### Fórmula
+```
+Tarjetas Proyectadas = Media Base × Strictness Árbitro × MTI
+```
+
+#### Funciones públicas
+- `get_match_tension_index(context_type)` → MTI (float)
+- `calculate_projected_cards(base_avg, strictness, context_type)` → (projected_cards, mti)
+- `get_cards_recommendation_with_mti(...)` → (recommendation, projected, mti)
+- `infer_context_type(is_derby, is_relegation, is_classification)` → MatchContextType
+
+#### Integración con Fase 16
+El MTI se combina con la línea dinámica de tarjetas por liga:
+```python
+projected = base × strictness × MTI
+if projected > league_line + 0.5:
+    recommendation = f"Over {league_line}"
+```
+
+### 6. Archivos Creados
+
+| Archivo | Descripción |
+|---------|-------------|
+| `apps/api/engine/corners_model.py` | Binomial Negativa para córneres (k=1.3) |
+| `apps/api/engine/player_props_model.py` | Player Props con validación xM |
+| `apps/api/engine/match_tension.py` | MTI para tarjetas (1.0/1.15/1.35) |
+| `tests/test_phase17_models.py` | 23 tests: Dixon-Coles (4), Córneres (5), Player Props (5), MTI (9) |
+
+### 7. Archivos Modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `packages/ml/betmind_ml/models/poisson_engine.py` | Dixon-Coles en `build_score_matrix()` + helpers privados |
+
+### 8. Tests
+
+```
+tests/test_phase17_models.py:   23 passed (nuevos)
+tests/test_kelly_and_filters.py: 18 passed
+tests/test_ticket_builder.py:   34 passed
+tests/test_backtest_runner.py:  19 passed
+tests/test_full_analysis.py:     4 passed
+tests/test_poisson_engine.py:    4 passed
+Total:                          102 passed
+```
+
+### 9. Verificación
+- ✅ 102/102 tests pasando (excluyendo test_cache_resilience pre-existente)
+- ✅ Dixon-Coles: matriz suma exactamente 1.0, P(0-0) aumentada
+- ✅ Binomial Negativa: k=1.3 produce varianza = 1.3 × μ
+- ✅ Player Props: validación de minutos (< 60 → NOT_AVAILABLE)
+- ✅ MTI: derby/relegation = 1.35, clasificación = 1.15, regular = 1.00
+- ✅ Integración con Fase 16: MTI × línea dinámica de tarjetas por liga

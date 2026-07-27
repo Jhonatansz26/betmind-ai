@@ -105,18 +105,27 @@ def build_score_matrix(lambda_home: float, lambda_away: float) -> ScoreMatrix:
 
     matrix[i][j] = P(local marca i goles) * P(visitante marca j goles)
 
-    La suma de toda la matriz ≈ 1.0 (la diferencia es P(> MAX_GOALS) que es despreciable).
+    Aplica corrección Dixon-Coles para capturar dependencia en marcadores bajos.
+    La suma de toda la matriz = 1.0 tras renormalización.
     """
     size = MAX_GOALS_MATRIX + 1  # 0 a MAX_GOALS inclusive
     matrix: list[list[float]] = []
 
+    # Paso 1: Construir matriz Poisson pura
     for i in range(size):
         row = []
         p_home_i = poisson.pmf(i, lambda_home)
         for j in range(size):
             p_away_j = poisson.pmf(j, lambda_away)
-            row.append(round(p_home_i * p_away_j, 6))
+            row.append(p_home_i * p_away_j)
         matrix.append(row)
+
+    # Paso 2: Aplicar corrección Dixon-Coles (tau factor)
+    rho = -0.09  # Constante de acoplamiento empírica
+    matrix = _apply_dixon_coles_correction(matrix, lambda_home, lambda_away, rho)
+
+    # Paso 3: Renormalizar para que sume exactamente 1.0
+    matrix = _renormalize_matrix(matrix)
 
     # Encontrar el marcador más probable
     most_likely_i, most_likely_j = 0, 0
@@ -128,10 +137,82 @@ def build_score_matrix(lambda_home: float, lambda_away: float) -> ScoreMatrix:
                 most_likely_i, most_likely_j = i, j
 
     return ScoreMatrix(
-        matrix=matrix,
+        matrix=[[round(p, 6) for p in row] for row in matrix],
         most_likely_score=f"{most_likely_i}-{most_likely_j}",
         most_likely_prob=round(max_prob, 4),
     )
+
+
+def _apply_dixon_coles_correction(
+    matrix: list[list[float]],
+    lambda_home: float,
+    lambda_away: float,
+    rho: float,
+) -> list[list[float]]:
+    """
+    Aplica el factor de corrección Dixon-Coles τ(x,y) a la matriz de Poisson.
+
+    El factor τ captura la dependencia entre marcadores bajos (0-0, 1-0, 0-1, 1-1)
+    que el modelo Poisson puro subestima.
+
+    τ(0,0) = 1 - (λ_home * λ_away * ρ)
+    τ(1,0) = 1 + (λ_away * ρ)
+    τ(0,1) = 1 + (λ_home * ρ)
+    τ(1,1) = 1 - ρ
+    τ(x,y) = 1.0 para cualquier otra celda
+
+    Args:
+        matrix: Matriz de probabilidades Poisson
+        lambda_home: Goles esperados del local
+        lambda_away: Goles esperados del visitante
+        rho: Constante de acoplamiento (típicamente -0.09)
+
+    Returns:
+        Matriz con corrección Dixon-Coles aplicada
+    """
+    size = len(matrix)
+    corrected = [[0.0] * size for _ in range(size)]
+
+    for i in range(size):
+        for j in range(size):
+            tau = 1.0
+
+            # Aplicar τ solo a las 4 celdas críticas
+            if i == 0 and j == 0:
+                tau = 1.0 - (lambda_home * lambda_away * rho)
+            elif i == 1 and j == 0:
+                tau = 1.0 + (lambda_away * rho)
+            elif i == 0 and j == 1:
+                tau = 1.0 + (lambda_home * rho)
+            elif i == 1 and j == 1:
+                tau = 1.0 - rho
+
+            corrected[i][j] = matrix[i][j] * tau
+
+    return corrected
+
+
+def _renormalize_matrix(matrix: list[list[float]]) -> list[list[float]]:
+    """
+    Renormaliza la matriz para que la suma total sea exactamente 1.0.
+
+    Después de aplicar Dixon-Coles, la suma puede desviarse ligeramente de 1.0.
+    Esta función divide cada celda por la suma total.
+    """
+    total = sum(sum(row) for row in matrix)
+
+    if total == 0:
+        logger.error("Matriz con suma cero, no se puede renormalizar")
+        return matrix
+
+    size = len(matrix)
+    normalized = [[0.0] * size for _ in range(size)]
+
+    for i in range(size):
+        for j in range(size):
+            normalized[i][j] = matrix[i][j] / total
+
+    return normalized
 
 
 # ── Helpers privados ───────────────────────────────────────────────────────────
