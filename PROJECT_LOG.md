@@ -5230,3 +5230,103 @@ Total:                          102 passed
 - **Backend (`apps/api`):** Inclusión de 2 nuevas pruebas unitarias en `tests/test_ticket_builder.py` (`test_ev_ceiling_discard_anomalies` y `test_max_draws_per_ticket_limit`). Ejecución exitosa de suite `pytest`: **36/36 tests pasados (100% éxito)**.
 
 ---
+
+## 🧪 [2026-07-27] Sesión de Auditoría Integral — 25 Errores + Conexión de Predicciones + Ingesta Masiva + Auto-Healing
+
+### 1. 🔍 Auditoría de 25 Errores en Frontend (`apps/web`)
+
+**Errores de Tipos / Props (9 reparados):**
+- `match-card.tsx:22` — `match.minute` podía ser `undefined` en pill "EN VIVO". Agregado `?? 0`.
+- `api.ts:280` — `minute` siempre `undefined` (ternario muerto `? undefined : undefined`). Corregido a usar `raw.minute` del backend.
+- `page.tsx:403,417` — `charAt(0)` sin fallback en team names vacíos. Agregado `?.` optional chaining + `|| '?'`.
+- `api.ts:148` — `as Mode` sin validación. Agregado guard con `.includes()`.
+- `poisson-mini-chart.tsx:57` — `max=0` causaba `NaN` en SVG height. Agregado `Math.max(..., 0.01)`.
+- `poisson-modal-chart.tsx:116` — División por cero cuando `max=0`. Agregado mínimo 10 y `Math.max(..., 0.001)`.
+- `betmind.ts:128` — `buildModel(0,0)` producía "0-0 · 100%" engañoso. Early return con placeholder.
+- `betmind.ts:197` — `odds=0` causaba `Infinity` en `impliedProbability`. Guard `odds <= 0` early return.
+- `api.ts:246` — `BackendMatch.minute` no existía en la interfaz. Agregado campo opcional.
+
+**Importaciones Muertas / Rotas (5 reparados):**
+- `league-sidebar.tsx:4` — `CheckCircle2Icon` importado y nunca usado. Eliminado.
+- `dashboard.tsx:10` — `MatchCard` importado pero solo usado dentro de `LeagueAccordion`. Eliminado.
+- `trend-pills.tsx:65` — Imports al final del archivo (no estándar). Movidos al top.
+- `dashboard.tsx` — `BottomNav` importado pero no renderizado (nav móvil roto). Restaurado en JSX.
+- `league-accordion.tsx:69` — `divide-y` + `gap-2` en mismo div (conflicto visual). Solo `gap-2`.
+
+**Edge Cases / Next.js (3 reparados):**
+- `confidence-bar.tsx:32` — `setTimeout` sin cleanup en `useEffect`. Agregado `clearTimeout`.
+- `tracking-panel.tsx:54` — `ticket.mode` como id — 2 boletos mismo modo no trackeables. Usa `${mode}-${Date.now()}`.
+- `league-accordion.tsx` — Sin el fix de `divide-y`, las tarjetas dentro del acordeón se renderizaban con bordes inconsistentes.
+
+### 2. 🐍 Backend Python: Correcciones de Cuotas y Algoritmos (`apps/api`)
+
+- `ticket_builder.py:234` — Doble chequeo EV redundante (`ev > 0.35` en línea 212 y 234). Eliminada duplicación.
+- `odds_service.py:270,284` — Filtro de draw odds sin log en `get_odds_for_match` y `get_odds_for_matches`. Agregado `logger.debug`.
+
+### 3. 🔗 Conexión Frontend ↔ Endpoint de Predicciones
+
+**Backend — Schema extendido:**
+- `schemas/prediction.py:78` — Agregados `lambda_home`, `lambda_away` al `PredictionResponse`.
+- `orchestrators/prediction_orchestrator.py:464` — `_build_response` ahora incluye lambdas reales del motor Poisson.
+
+**Frontend — Nueva función `fetchMatchPrediction(id)`:**
+- `lib/api.ts:337-501` — `fetchMatchPrediction(id)` llama en paralelo a `GET /api/v1/matches/{id}` y `GET /api/v1/predictions/{id}`.
+- Interface `EnrichedMatch` extiende `Match` con `lambdaHome`, `lambdaAway`, `probabilities`, `evAnalysis`, `confidenceScore`, `tacticalHeadline`, `llmModelUsed`.
+- `mapBackendPrediction()` convierte `BackendPrediction` a `EnrichedMatch`.
+- `console.log` de diagnóstico en cada paso (URL, HTTP status, lambdas, confianza).
+
+**Página de detalle actualizada:**
+- `app/partidos/[id]/page.tsx:488-560` — Llama a `fetchMatchPrediction()` en vez de `fetchMatches()` con find.
+- `MatchDetailContent` ahora recibe `enriched?: EnrichedMatch | null` y muestra banner de predicción con modelo LLM, confianza y headline táctico.
+- Si la predicción falla (HTTP 422/500), hace fallback al match base sin predicción en vez de mostrar "Partido no encontrado".
+
+### 4. 🧮 Calibrador Matemático Implícito por Cuotas (`packages/ml`)
+
+**Nueva función `estimate_lambdas_from_odds()`:**
+- `models/poisson_engine.py:103-176` — Deriva λ directamente desde cuotas 1X2 y Over 2.5 cuando no hay datos históricos.
+- Algoritmo: despeja overround → probabilidades puras P(home)/P(draw)/P(away) → estima λ_total desde P(over 2.5) → distribuye entre local y visitante según ratio 1X2.
+- _Fórmula:_ $\lambda_{total} = 0.5 + 4.0 \times P_{over}$, $\lambda_{home} = \lambda_{total} \times ratio_{home} \times home\_advantage$, $\lambda_{away} = \lambda_{total} \times (1 - ratio_{home})$
+
+**Pipeline actualizado:**
+- `pipeline/prediction_pipeline.py:78-93` — Si `!is_reliable` y hay cuotas → usa `estimate_lambdas_from_odds()`. Si no hay cuotas → fallback mínimo λ=0.3.
+- `pipeline/prediction_pipeline.py:128-145` — `_calculate_confidence` ahora recibe flag `odds_based` y asigna 35% de confiabilidad cuando se usa estimación desde cuotas ("Lambdas estimadas desde cuotas de mercado").
+
+### 5. 🔄 Generación On-Demand y Tolerancia a Fallos
+
+**Endpoint resiliente:**
+- `routes/v1/predictions.py:63-115` — Si no se pasan cuotas explícitas, carga odds desde BD automáticamente via `OddsService.get_odds_for_match()`. Nunca devuelve 404 por falta de datos.
+- Captura `Exception` genérica después de `MatchNotFoundException` para devolver 422 con mensaje descriptivo en vez de 500.
+
+**Orquestador tolerante a fallos del LLM:**
+- `orchestrators/prediction_orchestrator.py:77-120` — `try/except` alrededor de `run_full_analysis()`. Si Groq/Llama falla (rate limit, timeout, error de API), captura la excepción y usa `_build_minimal_tactical_analysis()` en vez de propagar el error. La predicción cuantitativa (Poisson + EV) siempre se completa.
+
+### 6. 📜 Script de Ingesta Masiva Histórica
+
+**Nuevo script `scripts/sync_all_historical.py`:**
+- Recorre las 11 ligas configuradas en `FEATURED_LEAGUES` y ejecuta `DataIngestionService.full_sync_league()` para cada una.
+- Parámetros CLI: `--season` (año, default: actual), `--last` (partidos por liga, default: 50).
+- Pipeline: crea tablas → sincroniza liga → equipos → partidos finalizados para cada liga.
+- **Ejecutado con season=2024:** 11/11 ligas procesadas, 260 equipos, 281 partidos históricos ingeridos.
+
+**Sincronización de partidos de hoy:**
+- `scripts/sync_today_matches.py` ejecutado con éxito: 10 partidos programados sincronizados + 102 cuotas desde API-Football.
+- Datos totales en Supabase: 239 partidos (156 finalizados + 81 programados/en vivo).
+
+### 7. 🛡️ Fix: Runtime Error `charAt of undefined`
+
+- `page.tsx:407,418` — `match?.home?.charAt(0) || '?'` con optional chaining.
+- `api.ts:285-286` — `raw.home_team_name || 'Local'` y `raw.away_team_name || 'Visitante'` como fallback en `mapBackendMatch`.
+- `page.tsx:409,413` — Los `<h1>` de equipos ahora tienen fallback `match.home || 'Local'`.
+
+### 8. 🧪 Resultados de Verificación
+
+```
+npx tsc --noEmit        →  0 errores TypeScript
+npm run build           →  Compiled successfully (Next.js 16.2.6 / Turbopack, ~3s)
+pytest (107 tests)      →  104 passed, 3 pre-existing failures (pytest-asyncio)
+pytest (58 tests subset)→  58 passed (Poisson, tickets, Kelly, anti-cascara)
+```
+
+**IDs de partidos válidos para testing:** 255 (Rosario Central vs Racing), 254 (Argentinos Jrs vs Estudiantes RC), 253 (San Lorenzo vs Gimnasia), 252 (Banfield vs Sarmiento), 168 (Dep. Cuenca vs Emelec), 160 (La Calera vs Everton), 167 (Guayaquil City vs U. Católica).
+
+---
