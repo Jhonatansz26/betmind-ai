@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Optional, Type, TypeVar
+from typing import Any, Optional, Type, TypeVar, overload
 
 import redis.asyncio as redis
 from pydantic import BaseModel
@@ -13,6 +13,10 @@ class CacheService:
     def __init__(self, redis_url: str):
         self._redis = redis.from_url(redis_url, decode_responses=True)
 
+    @overload
+    async def get(self, key: str, model: Type[T]) -> Optional[T]: ...
+    @overload
+    async def get(self, key: str, model: None = None) -> Optional[str]: ...
     async def get(self, key: str, model: Type[T] | None = None) -> Optional[Any]:
         try:
             raw = await self._redis.get(key)

@@ -132,7 +132,7 @@ class PredictionOrchestrator:
         quant_output: MatchPredictionOutput,
     ) -> TacticalAnalysis:
         """Construye análisis táctico mínimo sin LLM para generación masiva."""
-        from betmind_ml.schemas.tactical_analysis import TacticalAnalysis, MarketNarrative, ProConPoint, SignalStrength
+        from betmind_ml.schemas.tactical_analysis import MarketNarrative, ProConPoint, SignalStrength
 
         markets_by_name = {m.market_name: m for m in quant_output.markets}
 

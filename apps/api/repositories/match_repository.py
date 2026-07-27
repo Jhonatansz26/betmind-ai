@@ -166,12 +166,6 @@ class MatchRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_by_external_id(self, external_id: int) -> Match | None:
-        """Obtiene partido por ID externo (API-Football)."""
-        stmt = select(Match).where(Match.external_id == external_id)
-        result = await self._session.execute(stmt)
-        return result.scalar_one_or_none()
-
     async def get_by_external_match_id(self, external_match_id: int) -> Match | None:
         """Obtiene partido por external_id (alias para compatibilidad)."""
         return await self.get_by_external_id(external_match_id)

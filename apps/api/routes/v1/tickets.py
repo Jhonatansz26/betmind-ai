@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -14,6 +16,8 @@ from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.tactical_analysis_repository import TacticalAnalysisRepository
 from apps.api.services.odds_service import OddsService
 from apps.api.dependencies import get_async_session, get_cache_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
@@ -117,6 +121,7 @@ async def generate_tickets(
                     "markets": markets,
                 })
         except Exception:
+            logger.warning("Error processing prediction for match_id=%s", match.id, exc_info=True)
             continue
 
     total_ev = sum(

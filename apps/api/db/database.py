@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from apps.api.config import settings
+from apps.api.models.base import Base
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ async_session_factory = async_sessionmaker(
 
 
 async def init_db() -> None:
-    from apps.api.models import Base, Team, League, Match, Prediction, User, BookmakerOdd
+    from apps.api.models import Team, League, Match, Prediction, User, BookmakerOdd
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -68,8 +69,6 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
 
 async def ping_db() -> dict:
     try:
-        from apps.api.models import Base
-        
         async with engine.connect() as conn:
             result = await conn.execute(text("SELECT 1"))
             row = result.scalar()
