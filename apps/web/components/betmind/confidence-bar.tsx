@@ -30,11 +30,24 @@ export function ConfidenceBar({ score, className, showLabel = true }: Confidence
   const [width, setWidth] = React.useState(0)
 
   React.useEffect(() => {
-    const id = window.requestAnimationFrame(() => {
-      window.setTimeout(() => setWidth(score), 50)
+    let timeoutId: number | undefined
+    const rafId = window.requestAnimationFrame(() => {
+      timeoutId = window.setTimeout(() => setWidth(score), 50)
     })
-    return () => window.cancelAnimationFrame(id)
+    return () => {
+      window.cancelAnimationFrame(rafId)
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+    }
   }, [score])
+
+  if (score === 0) {
+    return (
+      <div className={cn('flex items-center justify-between gap-1 py-0.5', className)}>
+        <span className="text-[10px] font-medium tracking-wide text-subtle uppercase">Confianza</span>
+        <span className="text-[10px] text-subtle">Sin datos de confianza</span>
+      </div>
+    )
+  }
 
   return (
     <div className={cn('flex flex-col gap-1', className)}>

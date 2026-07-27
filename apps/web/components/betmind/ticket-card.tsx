@@ -63,9 +63,9 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
         </div>
       </CardHeader>
 
-      {/* ── LEGS — Betano-style rows with horizontal dividers ── */}
-      <CardContent className="flex-1 px-4 pt-1 pb-0">
-        <ul>
+      {/* ── LEGS — v0 style rounded boxes ── */}
+      <CardContent className="flex-1 px-4 pt-2 pb-0">
+        <ul className="flex flex-col gap-2">
           {ticket.legs.map((leg, i) => (
             <TicketLeg key={`${leg.match}-${leg.market}`} leg={leg} index={i} />
           ))}

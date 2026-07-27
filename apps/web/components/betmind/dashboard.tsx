@@ -6,7 +6,7 @@ import { type Match, type Ticket } from '@/lib/betmind'
 import { fetchTickets, fetchMatches, fetchLeagues } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { LeagueSidebar } from './league-sidebar'
-import { MatchCard } from './match-card'
+import { LeagueAccordion } from './league-accordion'
 import { ScannerEmptyState } from './scanner-empty-state'
 import { TicketCard } from './ticket-card'
 import { TrackingPanel } from './tracking-panel'
@@ -189,10 +189,24 @@ export function Dashboard() {
     return () => { cancelled = true }
   }, [])
 
+  const [openLeagues, setOpenLeagues] = React.useState<Record<string, boolean>>({})
+
   const filteredMatches = React.useMemo(
     () => (league === 'all' ? matches : matches.filter((m) => String(m.leagueExternalId ?? '') === league)),
     [league, matches],
   )
+
+  const groupedMatches = React.useMemo(() => {
+    const map = new Map<string, { key: string; externalId?: number | null; name: string; matches: Match[] }>()
+    for (const m of filteredMatches) {
+      const key = String(m.leagueExternalId ?? m.league ?? 'other')
+      if (!map.has(key)) {
+        map.set(key, { key, externalId: m.leagueExternalId, name: m.league ?? 'Otras Ligas', matches: [] })
+      }
+      map.get(key)!.matches.push(m)
+    }
+    return Array.from(map.values())
+  }, [filteredMatches])
 
   function selectLeague(id: string) {
     setLeague(id)
@@ -311,9 +325,18 @@ export function Dashboard() {
                       <MatchSkeleton key={i} />
                     ))}
                   </div>
-                ) : filteredMatches.length > 0 ? (
-                  filteredMatches.map((match) => (
-                    <MatchCard key={match.id} match={match} />
+                ) : groupedMatches.length > 0 ? (
+                  groupedMatches.map((group) => (
+                    <LeagueAccordion
+                      key={group.key}
+                      leagueExternalId={group.externalId}
+                      leagueName={group.name}
+                      matches={group.matches}
+                      isOpen={openLeagues[group.key] !== false}
+                      onToggle={() =>
+                        setOpenLeagues((prev) => ({ ...prev, [group.key]: prev[group.key] === false ? true : false }))
+                      }
+                    />
                   ))
                 ) : (
                   <p className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
@@ -330,6 +353,8 @@ export function Dashboard() {
           ) : null}
         </main>
       </div>
+
+      <BottomNav active={tab} onChange={setTab} />
     </div>
   )
 }

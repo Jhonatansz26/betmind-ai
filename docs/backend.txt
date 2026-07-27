@@ -1,1 +1,7 @@
-python -m uvicorn apps.api.main:app --reload
+cd apps/api
+python -m uvicorn main:app --reload --port 8000
+
+cd apps/web
+npm run dev
+
+docker start redis

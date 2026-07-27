@@ -37,10 +37,11 @@ async def generate_tickets(
     today_cot = date.today()
     cache_key = f"tickets:daily:{today_cot.isoformat()}"
 
-    if cached := await cache.get(cache_key, TicketGenerateResponse):
-        if set(request.modes) != {TicketMode.EDGE, TicketMode.VALUE, TicketMode.BOLD}:
-            cached.tickets = [t for t in cached.tickets if t.mode in request.modes]
-        return cached
+    if not request.force_refresh:
+        if cached := await cache.get(cache_key, TicketGenerateResponse):
+            if set(request.modes) != {TicketMode.EDGE, TicketMode.VALUE, TicketMode.BOLD}:
+                cached.tickets = [t for t in cached.tickets if t.mode in request.modes]
+            return cached
 
     repo = MatchRepository(session)
     tactical_repo = TacticalAnalysisRepository(session)

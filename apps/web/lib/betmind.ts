@@ -126,6 +126,14 @@ export interface MatchModel {
 const GRID = 9
 
 export function buildModel(lambdaHome: number, lambdaAway: number): MatchModel {
+  if (lambdaHome <= 0 && lambdaAway <= 0) {
+    return {
+      home: 0, draw: 0, away: 0, over25: 0, btts: 0,
+      topScores: [{ score: '--', probability: 0 }],
+      mostLikely: { score: '--', probability: 0 },
+    }
+  }
+
   let home = 0
   let draw = 0
   let away = 0
@@ -196,6 +204,9 @@ export function marketRows(match: Match, model: MatchModel): MarketRow[] {
 
   return defs.map((def) => {
     const odds = match.odds[def.key]
+    if (odds <= 0) {
+      return { ...def, odds: 0, implied: 0, edge: 0, ev: 0, verdict: 'NO EDGE' as const }
+    }
     const implied = impliedProbability(odds)
     const edge = def.probability - implied
     const ev = expectedValue(def.probability, odds)

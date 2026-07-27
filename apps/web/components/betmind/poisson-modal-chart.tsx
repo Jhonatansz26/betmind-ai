@@ -36,8 +36,8 @@ export function PoissonModalChart({
 }: PoissonModalChartProps) {
   const home = goalDistribution(lambdaHome, 6)
   const away = goalDistribution(lambdaAway, 6)
-  const rawMax = Math.max(...home, ...away)
-  const max = Math.ceil((rawMax * 100) / 10) * 10
+  const rawMax = Math.max(...home, ...away, 0.001)
+  const max = Math.max(Math.ceil((rawMax * 100) / 10) * 10, 10)
 
   const plotW = W - PAD_L - PAD_R
   const plotH = H - PAD_T - PAD_B

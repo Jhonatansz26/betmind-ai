@@ -12,7 +12,7 @@ from betmind_ml.features.strength_calculator import (
     calculate_league_averages,
     calculate_team_strength,
 )
-from betmind_ml.models.poisson_engine import calculate_lambdas, build_score_matrix
+from betmind_ml.models.poisson_engine import calculate_lambdas, estimate_lambdas_from_odds, build_score_matrix
 from betmind_ml.models.market_calculator import build_all_markets
 from betmind_ml.ev.ev_calculator import enrich_markets_batch, get_top_ev_opportunities
 from betmind_ml.config import MODEL_VERSION, CONFIDENCE_WEIGHTS, MIN_MATCHES_FOR_STRENGTH
@@ -75,13 +75,32 @@ def run_prediction(
     )
 
     # ── 3. Lambdas (xG) ──────────────────────────────────────────────────────
-    lambda_home, lambda_away = calculate_lambdas(
-        home=home_strength,
-        away=away_strength,
-        league_key=league_key,
-        league_avg_goals=league_averages["avg_goals_per_team_per_match"],
-        is_neutral_venue=is_neutral_venue,
-    )
+    if not home_strength.is_reliable or not away_strength.is_reliable:
+        if bookmaker_odds and any(
+            bookmaker_odds.get(k) for k in ("1X2_HOME", "1X2_AWAY")
+        ):
+            logger.info(
+                "PredictionPipeline: %s o %s sin datos historicos — "
+                "estimando lambdas desde cuotas",
+                home_team_name, away_team_name,
+            )
+            lambda_home, lambda_away = estimate_lambdas_from_odds(
+                bookmaker_odds, league_key
+            )
+        else:
+            logger.warning(
+                "PredictionPipeline: sin datos historicos ni cuotas — "
+                "usando lambdas minimos"
+            )
+            lambda_home, lambda_away = 0.3, 0.3
+    else:
+        lambda_home, lambda_away = calculate_lambdas(
+            home=home_strength,
+            away=away_strength,
+            league_key=league_key,
+            league_avg_goals=league_averages["avg_goals_per_team_per_match"],
+            is_neutral_venue=is_neutral_venue,
+        )
 
     # ── 4. Matriz de Poisson ──────────────────────────────────────────────────
     score_matrix = build_score_matrix(lambda_home, lambda_away)
@@ -94,8 +113,9 @@ def run_prediction(
         markets = enrich_markets_batch(markets, bookmaker_odds)
 
     # ── 7. Score de confianza ─────────────────────────────────────────────────
+    odds_based = (not home_strength.is_reliable or not away_strength.is_reliable) and bookmaker_odds is not None
     confidence_score, confidence_flags = _calculate_confidence(
-        home_strength, away_strength, h2h_matches, all_league_matches
+        home_strength, away_strength, h2h_matches, all_league_matches, odds_based=odds_based
     )
 
     output = MatchPredictionOutput(
@@ -130,6 +150,7 @@ def _calculate_confidence(
     away: TeamStrengthProfile,
     h2h_matches: list[dict],
     league_matches: list[dict],
+    odds_based: bool = False,
 ) -> tuple[int, list[str]]:
     """Score compuesto 0-100 con banderas de advertencia."""
     flags: list[str] = []
@@ -141,6 +162,9 @@ def _calculate_confidence(
     elif home.is_reliable or away.is_reliable:
         scores["strength_reliability"] = 50.0
         flags.append(f"Datos insuficientes para {'visitante' if home.is_reliable else 'local'}")
+    elif odds_based:
+        scores["strength_reliability"] = 35.0
+        flags.append("Lambdas estimadas desde cuotas de mercado")
     else:
         scores["strength_reliability"] = 0.0
         flags.append("Ambos equipos tienen datos insuficientes")

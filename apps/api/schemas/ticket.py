@@ -45,6 +45,7 @@ class TicketGenerateRequest(BaseModel):
     )
     league_filter: list[str] | None = None
     date: str | None = None
+    force_refresh: bool = False
 
 
 class TicketGenerateResponse(BaseModel):

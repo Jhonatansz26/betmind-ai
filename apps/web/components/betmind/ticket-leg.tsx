@@ -1,8 +1,6 @@
+import { GlobeIcon } from 'lucide-react'
 import type { TicketLegData } from '@/lib/betmind'
 import { cn } from '@/lib/utils'
-import { OddsPill } from './odds-pill'
-
-const SPORT_ICON = '⚽'
 
 export function TicketLeg({ leg, index = 0 }: { leg: TicketLegData; index?: number }) {
   const evPositive = leg.ev > 0
@@ -10,25 +8,25 @@ export function TicketLeg({ leg, index = 0 }: { leg: TicketLegData; index?: numb
 
   return (
     <li
-      className="grid grid-cols-[20px_1fr_auto] items-center gap-3 border-b border-border-subtle py-3 last:border-b-0"
+      className="flex items-center justify-between rounded-lg border border-border/60 bg-surface/60 px-3.5 py-3 transition-colors hover:border-border"
       style={{ animationDelay: `${index * 80}ms` }}
     >
-      {/* Sport icon */}
-      <span aria-hidden className="text-base leading-none">
-        {SPORT_ICON}
-      </span>
-
-      {/* Center: market name / teams / EV on separate lines */}
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-foreground">{leg.market}</p>
-        <p className="truncate text-xs text-muted-foreground">{leg.match}</p>
-        <p className={cn('text-[11px] font-medium', evPositive ? 'text-positive' : 'text-negative')}>
+      {/* Left: market name / teams / EV */}
+      <div className="flex flex-col gap-0.5 min-w-0 pr-3">
+        <span className="truncate text-sm font-semibold text-foreground">{leg.market}</span>
+        <div className="flex items-center gap-1.5 text-subtle">
+          <GlobeIcon className="size-3 shrink-0" aria-hidden />
+          <span className="truncate text-xs text-muted-foreground">{leg.match}</span>
+        </div>
+        <span className={cn('text-[10px] font-semibold', evPositive ? 'text-positive' : 'text-negative')}>
           {evText}
-        </p>
+        </span>
       </div>
 
-      {/* Odds pill — right anchored */}
-      <OddsPill value={leg.odds} />
+      {/* Right: Odds box */}
+      <span className="num ml-2 shrink-0 rounded-md bg-surface-raised/80 px-2.5 py-1 text-base font-bold text-foreground">
+        {leg.odds.toFixed(2)}
+      </span>
     </li>
   )
 }

@@ -81,6 +81,9 @@ class PredictionResponse(BaseModel):
     league: str
     match_date: str
 
+    lambda_home: float = Field(0.0, description="xG del equipo local según modelo Poisson")
+    lambda_away: float = Field(0.0, description="xG del equipo visitante según modelo Poisson")
+
     probabilities: ProbabilityDistribution
     ev_analysis: list[EVAnalysis]
     confidence_score: int = Field(..., ge=0, le=100)

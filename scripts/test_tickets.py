@@ -29,7 +29,7 @@ print("\n" + "=" * 60)
 print("Testing ticket generation...")
 r2 = requests.post(
     "http://localhost:8000/api/v1/tickets/generate",
-    json={"modes": ["edge", "value", "bold"]},
+    json={"modes": ["edge", "value", "bold"], "force_refresh": True},
 )
 print(f"Status: {r2.status_code}")
 if r2.status_code == 200:

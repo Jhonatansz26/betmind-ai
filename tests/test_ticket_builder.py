@@ -415,3 +415,113 @@ class TestBuildTicketForMode:
         if ticket:
             for leg in ticket.legs:
                 assert leg.expected_value >= MODE_CONFIG[TicketMode.EDGE]["min_ev"]
+
+    def test_ev_ceiling_discard_anomalies(self):
+        predictions = [
+            {
+                "match_id": 1,
+                "home_team": "Team 1",
+                "away_team": "Team 2",
+                "league": "Test League",
+                "match_time_cot": "3:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "OVER_2_5",
+                        "market_label": "Over 2.5",
+                        "our_probability": 0.80,
+                        "bookmaker_odds": 1.90,
+                        "implied_probability": 0.52,
+                        "expected_value": 0.52,  # Anomalía > 0.35, debe ser descartada
+                    },
+                    {
+                        "market_name": "1X2_HOME",
+                        "market_label": "Home Win",
+                        "our_probability": 0.60,
+                        "bookmaker_odds": 1.80,
+                        "implied_probability": 0.55,
+                        "expected_value": 0.08,
+                    },
+                ],
+            },
+            {
+                "match_id": 2,
+                "home_team": "Team 3",
+                "away_team": "Team 4",
+                "league": "Test League",
+                "match_time_cot": "5:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "OVER_1_5",
+                        "market_label": "Over 1.5",
+                        "our_probability": 0.70,
+                        "bookmaker_odds": 1.50,
+                        "implied_probability": 0.66,
+                        "expected_value": 0.05,
+                    },
+                ],
+            },
+        ]
+        ticket = build_ticket_for_mode(TicketMode.EDGE, predictions)
+        assert ticket is not None
+        for leg in ticket.legs:
+            assert leg.expected_value <= 0.35
+            assert leg.expected_value != 0.52
+
+    def test_max_draws_per_ticket_limit(self):
+        predictions = [
+            {
+                "match_id": 1,
+                "home_team": "Team 1",
+                "away_team": "Team 2",
+                "league": "Test League",
+                "match_time_cot": "3:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "1X2_DRAW",
+                        "market_label": "Draw",
+                        "our_probability": 0.40,
+                        "bookmaker_odds": 3.10,
+                        "implied_probability": 0.32,
+                        "expected_value": 0.24,
+                    }
+                ],
+            },
+            {
+                "match_id": 2,
+                "home_team": "Team 3",
+                "away_team": "Team 4",
+                "league": "Test League",
+                "match_time_cot": "5:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "1X2_DRAW",
+                        "market_label": "Draw",
+                        "our_probability": 0.40,
+                        "bookmaker_odds": 3.10,
+                        "implied_probability": 0.32,
+                        "expected_value": 0.22,
+                    }
+                ],
+            },
+            {
+                "match_id": 3,
+                "home_team": "Team 5",
+                "away_team": "Team 6",
+                "league": "Test League",
+                "match_time_cot": "7:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "OVER_2_5",
+                        "market_label": "Over 2.5",
+                        "our_probability": 0.60,
+                        "bookmaker_odds": 1.80,
+                        "implied_probability": 0.55,
+                        "expected_value": 0.08,
+                    }
+                ],
+            },
+        ]
+        ticket = build_ticket_for_mode(TicketMode.VALUE, predictions)
+        assert ticket is not None
+        draw_count = sum(1 for leg in ticket.legs if leg.market_name == "1X2_DRAW")
+        assert draw_count <= 1

@@ -68,6 +68,17 @@ POSITIVE_CORRELATIONS: list[tuple[frozenset, float]] = [
 ]
 
 
+MAX_DRAWS_PER_TICKET = 1  # Ningún boleto combinante puede llevar más de 1 empate
+
+
+def _can_add_candidate(selected: list[TicketLegSchema], candidate: TicketLegSchema) -> bool:
+    if candidate.market_name == "1X2_DRAW":
+        draw_count = sum(1 for leg in selected if leg.market_name == "1X2_DRAW")
+        if draw_count >= MAX_DRAWS_PER_TICKET:
+            return False
+    return True
+
+
 def check_forbidden_combination(
     selected_markets: list[str],
 ) -> tuple[bool, str | None]:
@@ -194,9 +205,11 @@ def build_ticket_for_mode(
                 continue
             if bm_odds <= 1.0:
                 continue
+            if mkt_name == "1X2_DRAW" and bm_odds < 2.10:
+                continue
             if bm_odds > max_individual_odds:
                 continue
-            if ev < min_ev:
+            if ev < min_ev or ev > 0.35:  # Techo de sanidad máximo de +35% EV
                 continue
 
             edge_pct = round((prob - implied) * 100, 2) if implied else 0
@@ -237,6 +250,8 @@ def build_ticket_for_mode(
             break
         if candidate.match_id in selected_match_ids:
             continue
+        if not _can_add_candidate(selected, candidate):
+            continue
 
         test_markets = selected_market_names + [candidate.market_name]
         is_valid, reason = check_forbidden_combination(test_markets)
@@ -257,6 +272,8 @@ def build_ticket_for_mode(
         for c in remaining:
             if len(selected) >= max_legs:
                 break
+            if not _can_add_candidate(selected, c):
+                continue
             test_markets = selected_market_names + [c.market_name]
             is_valid, _ = check_forbidden_combination(test_markets)
             if is_valid:

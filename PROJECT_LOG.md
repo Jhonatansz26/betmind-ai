@@ -5185,3 +5185,48 @@ Total:                          102 passed
 - ✅ Player Props: validación de minutos (< 60 → NOT_AVAILABLE)
 - ✅ MTI: derby/relegation = 1.35, clasificación = 1.15, regular = 1.00
 - ✅ Integración con Fase 16: MTI × línea dinámica de tarjetas por liga
+
+---
+
+## 📌 [2026-07-27] — Refactorización Integral UI/UX (Zinc/Slate v0) y Corrección de Bugs Matemáticos en Backend
+
+### 1. 🎨 Frontend: Sistema Visual, Dashboard y Layout (`apps/web`)
+- **Design System & Paleta Zinc (`globals.css`):**
+  - Mapeo de tokens CSS (`--background`, `--surface`, `--card`, `--border`) a la paleta Zinc/Slate oscura de alto contraste (`#09090b` fondo principal, `#111113` y `#18181b` tarjetas, `#27272a` bordes).
+  - Eliminación de fondos negro puro (`#000000`) y resplandores neón fosforescentes.
+- **Agrupación de Ligas y Acordeones (`components/betmind/league-accordion.tsx`):**
+  - Implementación de `LeagueAccordion` con colapsables por país y liga oficial (`LEAGUE_METADATA`).
+  - Indicador de estado en vivo (`EN VIVO` con pulso esmeralda), badges numéricos de partidos programados y banderas en formato Emoji oficial (🇸🇪, 🇩🇰, 🇪🇨, 🇨🇴) reemplazando códigos de texto plano (`SE`, `DK`).
+- **Sidebar & TopNav (`league-sidebar.tsx` & `top-nav.tsx`):**
+  - Botón "Todas las Ligas" a ancho completo (`w-full`) con estado activo en índigo (`bg-primary`).
+  - Subtítulos por región (`EUROPA`, `AMÉRICA`) y widget de "Estado del Modelo: CALIBRADO".
+  - Comportamiento responsive: Sidebar fija (`w-[260px]`) en Desktop (`lg:`) y colapsable en Mobile.
+- **Rediseño de Vista de Detalle de Partido (`app/partidos/[id]/page.tsx`):**
+  - Ampliación de contenedor principal a `max-w-6xl`.
+  - Mantenimiento de la barra sticky de 3 pestañas: `[ 📊 Previa & Pronóstico | ⚔️ H2H & Táctico | 🟨 Árbitro ]`.
+  - **Grid de 2 Columnas (`lg:grid-cols-[3fr_2fr]`) en Pestaña Previa:**
+    - **Columna Izquierda (60%):** Banner $+EV$ destacado con botón interactivo `⭐ Guardar en mi Boleto` (con notificación Toast), píldoras de tendencias (`TrendPills`) y `MarketTable` con acentos esmeralda (`bg-emerald-500/5`) y badges (`✅ VALOR (+EV)` / `❌ EVITAR`).
+    - **Columna Derecha (40%):** Barras de probabilidades (`MatchComparisonBars`) y gráfico de distribución de Poisson (`PoissonModalChart`).
+  - **Limpieza de UI Redundante:** Eliminación completa del contenedor duplicado "Seleccionar mercado" y los botones estáticos rotos de "Modo Edge / Value / Bold".
+  - Preservación de guards `InsufficientDataCard` para `lambda === 0`, datos tácticos pendientes y árbitros sin historial.
+
+---
+
+### 2. ⚙️ Backend: Mapeo de Cuotas y Corrección de Algoritmo EV (`apps/api`)
+- **Filtro Estricto en Servicio de Cuotas (`services/odds_service.py`):**
+  - Refactorización del parser para la casilla `1X2_DRAW` (columna `X` / `Draw`).
+  - Filtrado estricto de palabras clave para descartar mercados de *Double Chance (1X/X2/12)*, *Draw No Bet (DNB)* o *No Bet*.
+  - Incorporación de guard de sanidad: rechazo automático de cualquier cuota de empate inferior a `@ 2.10` para impedir que cuotas de doble oportunidad (ej. `@ 1.78`) corrompan la matriz 1X2.
+- **Techo de Sanidad $+EV$ (`engine/ticket_builder.py`):**
+  - Implementación de filtro de tope máximo de $+EV$: descartar candidatos con `expected_value > 0.35` (+35% EV) para eliminar anomalías por cuotas infladas o sobreestimación del modelo.
+- **Regla de Diversificación en Boletos Combinantes (`engine/ticket_builder.py`):**
+  - Incorporación de constante `MAX_DRAWS_PER_TICKET = 1` y helper `_can_add_candidate`.
+  - Restricción estricta: ningún boleto combinante puede incluir más de 1 selección del mercado `1X2_DRAW`, forzando la combinación con Victorias directas, Mercado de Goles y Ambos Anotan.
+
+---
+
+### 3. 🧪 Resultados de Verificación y Compilación
+- **Frontend (`apps/web`):** Next.js 16.2.6 (Turbopack) ejecutó `npm run build` limpiamente en 3.3s con 0 errores y 0 advertencias de TypeScript en modo estricto.
+- **Backend (`apps/api`):** Inclusión de 2 nuevas pruebas unitarias en `tests/test_ticket_builder.py` (`test_ev_ceiling_discard_anomalies` y `test_max_draws_per_ticket_limit`). Ejecución exitosa de suite `pytest`: **36/36 tests pasados (100% éxito)**.
+
+---

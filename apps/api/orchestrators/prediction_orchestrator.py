@@ -76,7 +76,6 @@ class PredictionOrchestrator:
         # 6. Ejecutar pipeline
         try:
             if include_tactical_analysis:
-                # Verificar si existe análisis táctico reciente en DB (cache de 6 horas)
                 tactical_output = await self._get_cached_tactical_analysis(match_id)
                 
                 if tactical_output:
@@ -86,28 +85,35 @@ class PredictionOrchestrator:
                     logger.info("TacticalAnalysis cache MISS para match_id=%s — ejecutando pipeline completo", match_id)
                     context = self._build_match_context(match)
                     
-                    quant_output, tactical_output = await run_full_analysis(
-                        match_id=match.id,
-                        home_team_id=match.home_team_id,
-                        home_team_name=match.home_team.name,
-                        away_team_id=match.away_team_id,
-                        away_team_name=match.away_team.name,
-                        league_id=match.league_id,
-                        league_key=self._get_league_key(match.league),
-                        league_name=match.league.name,
-                        season=match.match_date.year,
-                        match_date=str(match.match_date.date()),
-                        home_matches=home_matches,
-                        away_matches=away_matches,
-                        all_league_matches=all_league_matches,
-                        h2h_matches=h2h_matches,
-                        context=context,
-                        groq_api_keys=settings.get_groq_api_keys(),
-                        bookmaker_odds=bookmaker_odds,
-                    )
-                    
-                    # Persistir análisis táctico en DB
-                    await self._persist_tactical_analysis(match.id, tactical_output)
+                    try:
+                        quant_output, tactical_output = await run_full_analysis(
+                            match_id=match.id,
+                            home_team_id=match.home_team_id,
+                            home_team_name=match.home_team.name,
+                            away_team_id=match.away_team_id,
+                            away_team_name=match.away_team.name,
+                            league_id=match.league_id,
+                            league_key=self._get_league_key(match.league),
+                            league_name=match.league.name,
+                            season=match.match_date.year,
+                            match_date=str(match.match_date.date()),
+                            home_matches=home_matches,
+                            away_matches=away_matches,
+                            all_league_matches=all_league_matches,
+                            h2h_matches=h2h_matches,
+                            context=context,
+                            groq_api_keys=settings.get_groq_api_keys(),
+                            bookmaker_odds=bookmaker_odds,
+                        )
+                        await self._persist_tactical_analysis(match.id, tactical_output)
+                    except Exception as llm_error:
+                        logger.warning(
+                            "LLM tactical analysis failed for match_id=%s: %s. "
+                            "Using minimal tactical analysis.",
+                            match_id, llm_error,
+                        )
+                        quant_output = await self._run_quantitative_analysis(match, odds)
+                        tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
             else:
                 # Modo cuantitativo solamente (sin LLM)
                 logger.info("Modo cuantitativo para match_id=%s — sin análisis táctico", match_id)
@@ -465,6 +471,8 @@ class PredictionOrchestrator:
             away_team=match.away_team.name,
             league=match.league.name,
             match_date=str(match.match_date),
+            lambda_home=getattr(quant, 'lambda_home', 0) or 0,
+            lambda_away=getattr(quant, 'lambda_away', 0) or 0,
             probabilities=probabilities,
             ev_analysis=ev_analysis,
             confidence_score=tactical.overall_confidence,

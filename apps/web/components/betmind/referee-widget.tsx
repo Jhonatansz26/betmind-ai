@@ -1,6 +1,9 @@
+import { cn } from '@/lib/utils'
 import type { Referee } from '@/lib/betmind'
 
 export function RefereeWidget({ referee }: { referee: Referee }) {
+  const isPlaceholder = referee.name === 'Por confirmar'
+
   const stats = [
     { label: 'Prom. Tarjetas Amarillas', value: referee.yellows.toFixed(1) },
     { label: 'Prom. Tarjetas Rojas', value: referee.reds.toFixed(2) },
@@ -12,6 +15,11 @@ export function RefereeWidget({ referee }: { referee: Referee }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Nombre del árbitro — italic y muted si es placeholder */}
+      <p className={cn('text-sm', isPlaceholder ? 'italic text-muted-foreground' : 'font-medium text-foreground')}>
+        {referee.name}
+      </p>
+
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {stats.map((stat) => (
           <div

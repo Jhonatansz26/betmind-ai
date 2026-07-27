@@ -50,10 +50,9 @@ function saveTracked(tickets: TrackedTicket[]) {
 
 export function addToTracking(ticket: Ticket): void {
   const existing = loadTracked()
-  const already = existing.some((t) => t.id === ticket.mode)
-  if (already) return
+  const entryId = `${ticket.mode}-${Date.now()}`
   const entry: TrackedTicket = {
-    id: ticket.mode,
+    id: entryId,
     mode: ticket.mode,
     combinedOdds: ticket.combinedOdds,
     confidence: ticket.confidence,
@@ -61,7 +60,7 @@ export function addToTracking(ticket: Ticket): void {
     trackedAt: new Date().toISOString(),
     status: 'PENDING',
   }
-  const updated = [entry, ...existing].slice(0, 10) // cap at 10
+  const updated = [entry, ...existing].slice(0, 10)
   saveTracked(updated)
 }
 

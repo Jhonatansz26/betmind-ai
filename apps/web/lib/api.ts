@@ -1,4 +1,5 @@
 import type { Mode, Ticket, TicketLegData, Match, MatchStatus, TacticalFactor, Referee, MarketOdds } from './betmind'
+import { resolveLeague } from './league-metadata'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
@@ -31,6 +32,10 @@ export function isoToFlagEmoji(code: string): string {
     .join('')
 }
 
+/**
+ * @deprecated Use `resolveLeague()` from `@/lib/league-metadata` instead.
+ * Kept for backward compatibility with components not yet migrated.
+ */
 export function flagForCountry(country: string | null | undefined, fallbackLeague?: string): string {
   if (country && COUNTRY_ISO[country]) {
     return isoToFlagEmoji(COUNTRY_ISO[country])
@@ -51,6 +56,10 @@ export function flagForCountry(country: string | null | undefined, fallbackLeagu
   return '\u{1F3C1}'
 }
 
+/**
+ * @deprecated Use `resolveLeague()` from `@/lib/league-metadata` instead.
+ * Kept for backward compatibility with components not yet migrated.
+ */
 export function formatCompositeLeagueName(name: string, country?: string | null): string {
   if (country) {
     if (name.toLowerCase().includes(country.toLowerCase())) {
@@ -99,6 +108,7 @@ interface BackendLeg {
   implied_probability: number
   edge_percentage: number
   expected_value: number
+  kelly_stake?: number
   match_time_cot: string
 }
 
@@ -136,9 +146,10 @@ function mapLeg(leg: BackendLeg): TicketLegData {
 
 function mapBackendTicket(raw: BackendTicket): Ticket {
   const mode = raw.mode.toUpperCase() as Mode
+  const validMode: Mode = ['EDGE', 'VALUE', 'BOLD'].includes(mode) ? mode : 'EDGE'
   return {
-    mode,
-    glyph: MODE_GLYPHS[mode] ?? '\u{2B21}',
+    mode: validMode,
+    glyph: MODE_GLYPHS[validMode] ?? '\u{2B21}',
     combinedOdds: raw.combined_odds,
     confidence: raw.confidence_score,
     evAverage: raw.average_ev,
@@ -207,6 +218,7 @@ interface BackendMatch {
   home_score: number | null
   away_score: number | null
   regulation_time_only: boolean
+  minute?: number | null
   odds?: {
     home?: number
     draw?: number
@@ -223,8 +235,10 @@ interface BackendMatchesResponse {
 
 function mapBackendMatch(raw: BackendMatch): Match {
   const leagueId = LEAGUE_ID_MAP[raw.league_external_id ?? raw.league_id] ?? 'other'
-  const leagueName = raw.league_name
-  const flag = flagForCountry(raw.league_country, leagueName)
+  // Use the centralized LEAGUE_METADATA resolver as the primary source
+  const leagueMeta = resolveLeague(raw.league_external_id, raw.league_name)
+  const leagueName = leagueMeta.name
+  const flag = leagueMeta.flag
 
   const statusMap: Record<string, MatchStatus> = {
     SCHEDULED: 'UPCOMING',
@@ -266,10 +280,10 @@ function mapBackendMatch(raw: BackendMatch): Match {
     flag,
     time: timeStr,
     status: matchStatus,
-    minute: matchStatus === 'LIVE' ? undefined : undefined,
+    minute: matchStatus === 'LIVE' ? (raw.minute ?? undefined) : undefined,
     score: raw.home_score != null && raw.away_score != null ? [raw.home_score, raw.away_score] : undefined,
-    home: raw.home_team_name,
-    away: raw.away_team_name,
+    home: raw.home_team_name || 'Local',
+    away: raw.away_team_name || 'Visitante',
     lambdaHome: 0,
     lambdaAway: 0,
     odds: {
@@ -330,4 +344,163 @@ export async function fetchLeagues(): Promise<LeagueData[]> {
   }
   const data: BackendLeaguesResponse = await res.json()
   return data.leagues
+}
+
+/* ------------------------------------------------------------------ */
+/* Prediction endpoint                                                  */
+/* ------------------------------------------------------------------ */
+
+interface BackendEVEntry {
+  market: string
+  our_probability: number
+  bookmaker_implied_probability: number | null
+  bookmaker_odds: number | null
+  edge_percentage: number | null
+  expected_value: number | null
+  kelly_stake: number | null
+  verdict: string
+}
+
+interface BackendTacticalAnalysis {
+  match_id: number
+  model_version: string
+  goals_narrative: Record<string, unknown> | null
+  cards_narrative: Record<string, unknown> | null
+  corners_narrative: Record<string, unknown> | null
+  player_props_narratives: Record<string, unknown>[]
+  bet_builder_suggestions: Record<string, unknown>[]
+  overall_confidence: number
+  match_preview_headline: string
+  llm_model_used: string
+  data_completeness_score: number
+}
+
+interface BackendPrediction {
+  match_id: number
+  home_team: string
+  away_team: string
+  league: string
+  match_date: string
+  lambda_home: number
+  lambda_away: number
+  probabilities: {
+    home_win: number
+    draw: number
+    away_win: number
+    over_2_5: number
+    over_1_5: number
+  }
+  ev_analysis: BackendEVEntry[]
+  confidence_score: number
+  tactical_narrative: string
+  tactical_analysis: BackendTacticalAnalysis | null
+  confidence_level: string
+}
+
+export interface EnrichedMatch extends Match {
+  lambdaHome: number
+  lambdaAway: number
+  probabilities: {
+    home_win: number
+    draw: number
+    away_win: number
+    over_2_5: number
+    over_1_5: number
+  }
+  evAnalysis: Array<{
+    market: string
+    probability: number
+    odds: number
+    edge: number
+    ev: number
+    verdict: string
+  }>
+  confidenceScore: number
+  tacticalNarrative: string
+  tacticalHeadline: string
+  llmModelUsed: string
+}
+
+function mapBackendPrediction(raw: BackendPrediction, baseMatch: Match): EnrichedMatch {
+  return {
+    ...baseMatch,
+    lambdaHome: raw.lambda_home,
+    lambdaAway: raw.lambda_away,
+    probabilities: {
+      home_win: raw.probabilities.home_win,
+      draw: raw.probabilities.draw,
+      away_win: raw.probabilities.away_win,
+      over_2_5: raw.probabilities.over_2_5,
+      over_1_5: raw.probabilities.over_1_5,
+    },
+    evAnalysis: raw.ev_analysis.map((ev) => ({
+      market: ev.market,
+      probability: ev.our_probability,
+      odds: ev.bookmaker_odds ?? 0,
+      edge: ev.edge_percentage ?? 0,
+      ev: ev.expected_value ?? 0,
+      verdict: ev.verdict,
+    })),
+    confidenceScore: raw.confidence_score,
+    tacticalNarrative: raw.tactical_narrative,
+    tacticalHeadline: raw.tactical_analysis?.match_preview_headline ?? '',
+    llmModelUsed: raw.tactical_analysis?.llm_model_used ?? 'none',
+  }
+}
+
+export async function fetchMatchPrediction(matchId: string): Promise<EnrichedMatch | null> {
+  const matchUrl = `${API_BASE}/api/v1/matches/${matchId}`
+  const predUrl = `${API_BASE}/api/v1/predictions/${matchId}`
+
+  console.log(`[fetchMatchPrediction] Loading match ${matchId}`)
+  console.log(`[fetchMatchPrediction]   Match URL: ${matchUrl}`)
+  console.log(`[fetchMatchPrediction]   Predict URL: ${predUrl}`)
+
+  const [matchRes, predRes] = await Promise.allSettled([
+    fetch(matchUrl),
+    fetch(predUrl),
+  ])
+
+  console.log(`[fetchMatchPrediction]   Match status: ${matchRes.status === 'fulfilled' ? matchRes.value.status : 'REJECTED'}`)
+  console.log(`[fetchMatchPrediction]   Predict status: ${predRes.status === 'fulfilled' ? predRes.value.status : 'REJECTED'}`)
+
+  if (matchRes.status === 'rejected') {
+    throw new Error(`Match API error: ${matchRes.reason}`)
+  }
+
+  if (!matchRes.value.ok) {
+    console.warn(`[fetchMatchPrediction] Match not found (HTTP ${matchRes.value.status}), returning null`)
+    return null
+  }
+
+  const matchData = await matchRes.value.json()
+  const baseMatch = mapBackendMatch(matchData)
+
+  if (predRes.status === 'rejected' || !predRes.value.ok) {
+    console.warn(
+      `[fetchMatchPrediction] Prediction not available for match ${matchId} ` +
+      `(HTTP ${predRes.status === 'rejected' ? 'REJECTED' : predRes.value.status}). ` +
+      `Falling back to base match without prediction.`
+    )
+    return {
+      ...baseMatch,
+      lambdaHome: baseMatch.lambdaHome,
+      lambdaAway: baseMatch.lambdaAway,
+      probabilities: { home_win: 0, draw: 0, away_win: 0, over_2_5: 0, over_1_5: 0 },
+      evAnalysis: [],
+      confidenceScore: 0,
+      tacticalNarrative: '',
+      tacticalHeadline: '',
+      llmModelUsed: 'none',
+    }
+  }
+
+  const predData: BackendPrediction = await predRes.value.json()
+  console.log(
+    `[fetchMatchPrediction] Prediction loaded: lambda_home=${predData.lambda_home}, ` +
+    `lambda_away=${predData.lambda_away}, ` +
+    `confidence=${predData.confidence_score}, ` +
+    `llm=${predData.tactical_analysis?.llm_model_used ?? 'none'}`
+  )
+  return mapBackendPrediction(predData, baseMatch)
 }

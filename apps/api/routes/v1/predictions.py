@@ -16,6 +16,7 @@ from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.tactical_analysis_repository import TacticalAnalysisRepository
 from apps.api.schemas.prediction import OddsInput, PredictionResponse
 from apps.api.services.cache_service import CacheService
+from apps.api.services.odds_service import OddsService
 
 router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
@@ -62,30 +63,48 @@ def get_prediction_orchestrator(
 )
 async def get_match_prediction(
     match_id: int,
-    # Cuotas opcionales como query params para cálculo EV en tiempo real
     home_win_odds: float | None = Query(None, gt=1.0, description="Cuota 1"),
     draw_odds: float | None = Query(None, gt=1.0, description="Cuota X"),
     away_win_odds: float | None = Query(None, gt=1.0, description="Cuota 2"),
     over_2_5_odds: float | None = Query(None, gt=1.0, description="Cuota Over 2.5"),
     orchestrator: PredictionOrchestrator = Depends(get_prediction_orchestrator),
+    session: AsyncSession = Depends(get_async_session),
 ) -> PredictionResponse:
     """
-    Retorna la predicción completa de un partido, incluyendo:
-    - Distribución de probabilidades (1X2, Over/Under)
-    - Análisis de Valor Esperado (+EV) si se proveen cuotas
+    Retorna la prediccion completa de un partido, incluyendo:
+    - Distribucion de probabilidades (1X2, Over/Under)
+    - Analisis de Valor Esperado (+EV)
     - Score de confianza del modelo (0-100)
-    - Narrativa táctica en lenguaje natural
-    - Análisis táctico completo (Fase 4): goles, tarjetas, córneres, bet builder
+    - Narrativa tactica en lenguaje natural
+    - Analisis tactico completo (Fase 4): goles, tarjetas, corners, bet builder
+
+    Si no hay datos historicos, estima lambdas desde las cuotas del mercado.
     """
-    odds = OddsInput(
+    odds_input = OddsInput(
         home_win=home_win_odds,
         draw=draw_odds,
         away_win=away_win_odds,
         over_2_5=over_2_5_odds,
     )
 
+    has_explicit_odds = any([home_win_odds, draw_odds, away_win_odds])
+
+    if not has_explicit_odds:
+        try:
+            odds_service = OddsService(session)
+            db_odds = await odds_service.get_odds_for_match(match_id)
+            if db_odds:
+                odds_input = OddsInput(
+                    home_win=db_odds.get("1X2_HOME"),
+                    draw=db_odds.get("1X2_DRAW"),
+                    away_win=db_odds.get("1X2_AWAY"),
+                    over_2_5=db_odds.get("OVER_2_5"),
+                )
+        except Exception:
+            pass
+
     try:
-        return await orchestrator.get_prediction(match_id=match_id, odds=odds)
+        return await orchestrator.get_prediction(match_id=match_id, odds=odds_input)
 
     except MatchNotFoundException as exc:
         raise HTTPException(
@@ -93,8 +112,14 @@ async def get_match_prediction(
             detail=str(exc),
         ) from exc
 
-    except PredictionNotAvailableException as exc:
+    except Exception as exc:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "Prediction generation failed for match_id=%s, attempting minimal fallback: %s",
+            match_id, exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
+            detail=f"Prediction not available: {str(exc)[:200]}",
         ) from exc

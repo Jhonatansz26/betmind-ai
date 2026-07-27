@@ -1,33 +1,12 @@
 'use client'
 
 import * as React from 'react'
-import { CheckCircle2Icon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { fetchLeagues, flagForCountry, formatCompositeLeagueName } from '@/lib/api'
+import { fetchLeagues } from '@/lib/api'
 import type { LeagueData } from '@/lib/api'
+import { resolveLeague } from '@/lib/league-metadata'
 
-const AMERICAS_COUNTRIES = new Set([
-  'Brazil', 'Brasil', 'Colombia', 'Argentina', 'USA', 'United States',
-  'Mexico', 'México', 'Chile', 'Ecuador', 'Peru', 'Perú', 'Uruguay', 'Paraguay', 'Bolivia', 'Venezuela'
-])
-
-function resolveFlag(league: LeagueData): string {
-  return flagForCountry(league.country, league.name)
-}
-
-function resolveRegion(country: string | null, name: string): 'EUROPE' | 'AMERICAS' {
-  if (country) {
-    if (AMERICAS_COUNTRIES.has(country)) return 'AMERICAS'
-    return 'EUROPE'
-  }
-  if (name.includes('MLS') || name.includes('Liga') || name.includes('BetPlay') || name.includes('Brasileir') || (name.includes('Serie A') && !name.includes('Italy'))) return 'AMERICAS'
-  return 'EUROPE'
-}
-
-function formatLeagueName(league: LeagueData): string {
-  return formatCompositeLeagueName(league.name, league.country)
-}
 
 interface LeagueSidebarProps {
   active: string
@@ -48,10 +27,11 @@ function LeagueGroup({
   const regionLabel = region === 'EUROPE' ? 'EUROPA' : 'AMÉRICA'
   return (
     <div className="flex flex-col gap-1">
-      <p className="px-2 py-1 text-[10px] font-semibold tracking-[0.12em] text-subtle">{regionLabel}</p>
+      <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-subtle">{regionLabel}</p>
       {leagues.map((league) => {
         const leagueId = String(league.external_id)
         const selected = active === leagueId
+        const meta = resolveLeague(league.external_id, league.name)
         return (
           <button
             key={league.id}
@@ -59,17 +39,26 @@ function LeagueGroup({
             onClick={() => onSelect(leagueId)}
             aria-current={selected}
             className={cn(
-              'flex items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors',
+              'group flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sm transition-colors',
               selected
-                ? 'border-primary/40 bg-primary/10'
-                : 'border-transparent hover:bg-muted/50',
+                ? 'bg-primary/15 font-medium text-primary'
+                : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground',
             )}
           >
-            <span aria-hidden className="text-sm leading-none">
-              {resolveFlag(league)}
-            </span>
-            <span className="flex-1 truncate text-xs text-foreground">{formatLeagueName(league)}</span>
-            <span className="num rounded-sm bg-muted/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-2 min-w-0">
+              <span aria-hidden className="text-sm leading-none shrink-0">
+                {meta.flag}
+              </span>
+              <span className="truncate text-xs">{meta.name}</span>
+            </div>
+            <span
+              className={cn(
+                'num shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold',
+                selected
+                  ? 'bg-primary/20 text-primary'
+                  : 'bg-muted text-subtle group-hover:text-muted-foreground',
+              )}
+            >
               {league.active_matches}
             </span>
           </button>
@@ -99,22 +88,22 @@ export function LeagueSidebar({ active, onSelect }: LeagueSidebarProps) {
     return () => { cancelled = true }
   }, [])
 
-  const europeLeagues = leagues.filter((l) => resolveRegion(l.country, l.name) === 'EUROPE')
-  const americasLeagues = leagues.filter((l) => resolveRegion(l.country, l.name) === 'AMERICAS')
+  const europeLeagues = leagues.filter((l) => resolveLeague(l.external_id, l.name).region === 'EUROPE')
+  const americasLeagues = leagues.filter((l) => resolveLeague(l.external_id, l.name).region === 'AMERICAS')
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <p className="text-xs font-medium tracking-wide text-muted-foreground">Ligas Activas</p>
+        <p className="px-2 text-[11px] font-bold uppercase tracking-widest text-subtle">Ligas Activas</p>
         <button
           type="button"
           onClick={() => onSelect('all')}
           aria-current={active === 'all'}
           className={cn(
-            'w-fit rounded-sm border px-2 py-1 text-[11px] font-medium transition-colors',
+            'w-full rounded-md px-3 py-2 text-left text-sm font-medium transition-colors',
             active === 'all'
-              ? 'border-primary/40 bg-primary text-primary-foreground'
-              : 'border-border bg-background/40 text-muted-foreground hover:text-foreground',
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground',
           )}
         >
           Todas las Ligas
@@ -128,28 +117,28 @@ export function LeagueSidebar({ active, onSelect }: LeagueSidebarProps) {
           ))}
         </div>
       ) : (
-        <>
+        <div className="flex flex-col gap-5">
           <LeagueGroup region="EUROPE" leagues={europeLeagues} active={active} onSelect={onSelect} />
           <LeagueGroup region="AMERICAS" leagues={americasLeagues} active={active} onSelect={onSelect} />
-        </>
+        </div>
       )}
 
-      <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3">
+      <div className="mt-2 flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-medium text-foreground">Estado del Modelo</p>
-          <span className="inline-flex items-center gap-1 rounded-sm border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[10px] font-medium text-positive">
-            <CheckCircle2Icon className="size-2.5" aria-hidden />
+          <p className="text-xs font-semibold text-foreground">Estado del Modelo</p>
+          <span className="inline-flex items-center gap-1 rounded-full border border-positive/30 bg-positive/10 px-2 py-0.5 text-[10px] font-bold text-positive">
+            <span className="live-dot size-1.5 rounded-full bg-positive" aria-hidden />
             CALIBRADO
           </span>
         </div>
-        <dl className="flex flex-col gap-1.5">
+        <dl className="flex flex-col gap-2">
           {[
             ['Ligas activas', `${leagues.length} hoy`],
             ['Partidos programados', `${leagues.reduce((sum, l) => sum + l.active_matches, 0)} hoy`],
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-2">
-              <dt className="text-[11px] text-subtle">{label}</dt>
-              <dd className="num text-[11px] text-muted-foreground">{value}</dd>
+              <dt className="text-xs text-subtle">{label}</dt>
+              <dd className="num text-xs font-medium text-foreground">{value}</dd>
             </div>
           ))}
         </dl>

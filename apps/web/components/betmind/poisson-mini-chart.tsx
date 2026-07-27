@@ -27,7 +27,7 @@ export function PoissonMiniChart({
 }: PoissonMiniChartProps) {
   const home = goalDistribution(lambdaHome, 5)
   const away = goalDistribution(lambdaAway, 5)
-  const max = Math.max(...home, ...away)
+  const max = Math.max(...home, ...away, 0.01)
 
   const labelBand = 8
   const plot = height - labelBand

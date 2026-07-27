@@ -11,14 +11,16 @@ import {
   type Match,
 } from '@/lib/betmind'
 import { cn } from '@/lib/utils'
+import { resolveLeague } from '@/lib/league-metadata'
 import { PoissonMiniChart } from './poisson-mini-chart'
 
 function StatusPill({ match }: { match: Match }) {
   if (match.status === 'LIVE') {
+    const minute = match.minute ?? 0
     return (
       <span className="num inline-flex items-center gap-1.5 rounded-sm border border-positive/30 bg-positive/10 px-1.5 py-0.5 text-[11px] font-medium text-positive">
         <span className="live-dot size-1.5 rounded-full bg-positive" aria-hidden />
-        {`EN VIVO ${match.minute}'`}
+        {`EN VIVO ${minute}'`}
       </span>
     )
   }
@@ -33,6 +35,8 @@ export function MatchCard({ match }: { match: Match }) {
   const model = buildModel(match.lambdaHome, match.lambdaAway)
   const rows = marketRows(match, model)
   const best = bestOpportunity(rows)
+  const leagueMeta = resolveLeague(match.leagueExternalId, match.league)
+  const hasLambda = match.lambdaHome > 0 || match.lambdaAway > 0
 
   return (
     <Card
@@ -47,8 +51,8 @@ export function MatchCard({ match }: { match: Match }) {
         {/* LEFT — meta */}
         <div className="flex items-center justify-between gap-3 lg:w-[20%] lg:flex-col lg:items-start lg:justify-start lg:gap-1.5">
           <p className="flex items-center gap-1.5 text-xs text-subtle">
-            <span aria-hidden>{match.flag}</span>
-            {match.league}
+            <span aria-hidden>{leagueMeta.flag}</span>
+            {leagueMeta.name}
           </p>
           <p className="num text-sm font-medium text-foreground">{match.time}</p>
           <StatusPill match={match} />
@@ -58,29 +62,39 @@ export function MatchCard({ match }: { match: Match }) {
         <div className="flex flex-col gap-2 lg:w-[50%]">
           <div className="flex items-center justify-between gap-3">
             <span className="truncate text-sm font-medium text-foreground">{match.home}</span>
-            <span className="num text-xs text-muted-foreground">{`${(model.home * 100).toFixed(1)}%`}</span>
+            {hasLambda && (
+              <span className="num text-xs text-muted-foreground">{`${(model.home * 100).toFixed(1)}%`}</span>
+            )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <PoissonMiniChart lambdaHome={match.lambdaHome} lambdaAway={match.lambdaAway} />
-            <div className="flex flex-col gap-0.5">
-              <span className="num text-[11px] text-subtle">
-                {`Más probable: ${model.mostLikely.score} (${(model.mostLikely.probability * 100).toFixed(1)}%)`}
-              </span>
-              <span className="num text-[11px] text-subtle">
-                {`λ ${match.lambdaHome.toFixed(2)} · ${match.lambdaAway.toFixed(2)}`}
-              </span>
-              {match.score ? (
-                <span className="num text-[11px] text-positive">
-                  {`Live score: ${match.score[0]}-${match.score[1]}`}
+          {hasLambda ? (
+            <div className="flex items-center gap-3">
+              <PoissonMiniChart lambdaHome={match.lambdaHome} lambdaAway={match.lambdaAway} />
+              <div className="flex flex-col gap-0.5">
+                <span className="num text-[11px] text-subtle">
+                  {`Más probable: ${model.mostLikely.score} (${(model.mostLikely.probability * 100).toFixed(1)}%)`}
                 </span>
-              ) : null}
+                <span className="num text-[11px] text-subtle">
+                  {`λ ${match.lambdaHome.toFixed(2)} · ${match.lambdaAway.toFixed(2)}`}
+                </span>
+                {match.score ? (
+                  <span className="num text-[11px] text-positive">
+                    {`Live score: ${match.score[0]}-${match.score[1]}`}
+                  </span>
+                ) : null}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-md border border-border bg-surface-inset px-2.5 py-1.5">
+              <span className="text-[11px] text-subtle">Modelo por calcular</span>
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-3">
             <span className="truncate text-sm font-medium text-foreground">{match.away}</span>
-            <span className="num text-xs text-muted-foreground">{`${(model.away * 100).toFixed(1)}%`}</span>
+            {hasLambda && (
+              <span className="num text-xs text-muted-foreground">{`${(model.away * 100).toFixed(1)}%`}</span>
+            )}
           </div>
         </div>
 

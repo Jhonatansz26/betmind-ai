@@ -34,13 +34,22 @@ export function MarketTable({ rows }: { rows: MarketRow[] }) {
         <TableBody>
           {rows.map((row) => {
             const verdict = VERDICT_META[row.verdict]
+            const isEvPositive = row.verdict === 'EV+'
+            const isAvoid = row.verdict === 'AVOID'
+
             return (
-              <TableRow key={row.key} className="border-border">
-                <TableCell className="text-sm font-medium text-foreground">{row.label}</TableCell>
+              <TableRow
+                key={row.key}
+                className={cn(
+                  'border-border/60 transition-colors',
+                  isEvPositive && 'bg-positive/[0.04] hover:bg-positive/[0.08]',
+                )}
+              >
+                <TableCell className="text-sm font-semibold text-foreground">{row.label}</TableCell>
                 <TableCell className="num text-right text-sm text-muted-foreground">
                   {`${(row.probability * 100).toFixed(1)}%`}
                 </TableCell>
-                <TableCell className="num text-right text-sm text-muted-foreground">
+                <TableCell className="num text-right text-sm font-medium text-foreground">
                   {row.odds.toFixed(2)}
                 </TableCell>
                 <TableCell className="num text-right text-sm text-muted-foreground">
@@ -48,7 +57,7 @@ export function MarketTable({ rows }: { rows: MarketRow[] }) {
                 </TableCell>
                 <TableCell
                   className={cn(
-                    'num text-right text-sm',
+                    'num text-right text-sm font-medium',
                     row.edge > 0 ? 'text-positive' : 'text-negative',
                   )}
                 >
@@ -56,14 +65,24 @@ export function MarketTable({ rows }: { rows: MarketRow[] }) {
                 </TableCell>
                 <TableCell
                   className={cn(
-                    'num text-right text-sm font-medium',
+                    'num text-right text-sm font-bold',
                     row.ev > 0 ? 'text-positive' : 'text-negative',
                   )}
                 >
                   {`${row.ev >= 0 ? '+' : ''}${row.ev.toFixed(2)}`}
                 </TableCell>
-                <TableCell className={cn('text-right text-xs font-medium', verdict.className)}>
-                  <span aria-hidden>{verdict.icon}</span> {verdict.label}
+                <TableCell className="text-right">
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold',
+                      isEvPositive && 'bg-positive/15 text-positive border border-positive/30',
+                      isAvoid && 'bg-negative/15 text-negative border border-negative/30',
+                      !isEvPositive && !isAvoid && 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    <span aria-hidden>{verdict.icon}</span>
+                    {verdict.label}
+                  </span>
                 </TableCell>
               </TableRow>
             )

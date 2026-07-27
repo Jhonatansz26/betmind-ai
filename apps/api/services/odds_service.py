@@ -198,17 +198,41 @@ class OddsService:
         for bookmaker in bookmakers:
             bets = bookmaker.get("bets", [])
             for bet in bets:
-                bet_name = bet.get("name", "")
+                bet_name = str(bet.get("name", "")).strip()
                 values = bet.get("values", [])
+
+                # Bloquear explícitamente mercados que no sean 1X2 puro (Doble Oportunidad, DNB, Handicap, etc.)
+                bet_name_lower = bet_name.lower()
+                if any(bad in bet_name_lower for bad in ("double", "chance", "dnb", "no bet", "handicap")):
+                    continue
 
                 if bet_name in MARKET_MAP:
                     mapping = MARKET_MAP[bet_name]
                     for val in values:
-                        val_name = val.get("value", "")
+                        val_name = str(val.get("value", "")).strip()
+                        val_name_lower = val_name.lower()
+
+                        # Bloquear explícitamente que en la casilla se cuelen valores 1X, X2, DNB o Doble Oportunidad
+                        if any(bad in val_name_lower for bad in ("1x", "x2", "12", "dnb", "no bet", "double", "chance")):
+                            continue
+
                         odds_val = self._safe_float(val.get("odd"))
-                        if odds_val and val_name in mapping:
+                        if not odds_val:
+                            continue
+
+                        mapped_market = mapping.get(val_name)
+                        if mapped_market == "1X2_DRAW":
+                            # Verificación estricta: cuota de empate puro (columna X / Draw) nunca puede ser anómala (< 2.10)
+                            if odds_val < 2.10:
+                                logger.warning(
+                                    f"Bloqueada cuota anómala para 1X2_DRAW (@ {odds_val}) en fixture {fixture_id}. "
+                                    f"Sospecha de Doble Oportunidad o DNB."
+                                )
+                                continue
+
+                        if mapped_market:
                             parsed.append({
-                                "market_name": mapping[val_name],
+                                "market_name": mapped_market,
                                 "odds_value": odds_val,
                                 "external_fixture_id": fixture_id,
                             })
@@ -242,7 +266,13 @@ class OddsService:
         Obtiene las cuotas almacenadas para un partido como dict {market_name: odds}.
         """
         odds = await self._odds_repo.get_odds_for_match(match_id)
-        return {odd.market_name: odd.odds_value for odd in odds}
+        result = {}
+        for odd in odds:
+            if odd.market_name == "1X2_DRAW" and odd.odds_value < 2.10:
+                logger.debug(f"Filtered draw odds @ {odd.odds_value} for match {match_id}")
+                continue
+            result[odd.market_name] = odd.odds_value
+        return result
 
     async def get_odds_for_matches(self, match_ids: list[int]) -> dict[int, dict[str, float]]:
         """
@@ -252,7 +282,13 @@ class OddsService:
         grouped = await self._odds_repo.get_odds_for_matches(match_ids)
         result: dict[int, dict[str, float]] = {}
         for mid, odds_list in grouped.items():
-            result[mid] = {o.market_name: o.odds_value for o in odds_list}
+            match_odds = {}
+            for o in odds_list:
+                if o.market_name == "1X2_DRAW" and o.odds_value < 2.10:
+                    logger.debug(f"Filtered draw odds @ {o.odds_value} for match {mid}")
+                    continue
+                match_odds[o.market_name] = o.odds_value
+            result[mid] = match_odds
         return result
 
     async def calculate_implied_probability(self, decimal_odds: float) -> float:
