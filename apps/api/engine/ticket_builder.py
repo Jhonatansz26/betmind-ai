@@ -1,5 +1,12 @@
 from dataclasses import dataclass
 from apps.api.schemas.ticket import TicketMode, TicketLegSchema, GeneratedTicket
+from apps.api.engine.kelly import calculate_quarter_kelly
+
+HIGH_VARIANCE_LEAGUES = {
+    "liga_betplay", "liga_profesional_arg", "liga_mx",
+    "primera_chile", "liga_pro_ecu", "liga_1_peru",
+    "serie_a_bra",
+}
 
 MODE_CONFIG = {
     TicketMode.EDGE: {
@@ -121,6 +128,36 @@ def _build_pros(mode: TicketMode, selected: list[TicketLegSchema], avg_ev: float
     ]
 
 
+def _is_high_variance_league(league: str) -> bool:
+    """Check if league is known for high variance (upsets, low predictability)."""
+    league_lower = league.lower().replace(" ", "_")
+    return any(hv in league_lower for hv in HIGH_VARIANCE_LEAGUES)
+
+
+def _passes_anti_cascara_filter(leg: TicketLegSchema) -> bool:
+    """
+    Anti-Cáscara de Guineo filter: rejects low-value favorites in high-variance leagues.
+    
+    Rule: In high-variance leagues, reject selections with odds < 1.25
+    (implied probability > 80%) as they offer insufficient value for the risk.
+    """
+    if _is_high_variance_league(leg.league):
+        if leg.bookmaker_odds < 1.25:
+            return False
+    return True
+
+
+def _calculate_combined_kelly(legs: list[TicketLegSchema]) -> float:
+    """
+    Calculate combined Kelly for a multi-leg ticket.
+    Uses the minimum Kelly across all legs (conservative approach for parlays).
+    """
+    if not legs:
+        return 0.0
+    min_kelly = min(leg.kelly_stake for leg in legs)
+    return round(min_kelly, 4)
+
+
 def build_ticket_for_mode(
     mode: TicketMode,
     available_predictions: list[dict],
@@ -163,8 +200,9 @@ def build_ticket_for_mode(
                 continue
 
             edge_pct = round((prob - implied) * 100, 2) if implied else 0
+            kelly = calculate_quarter_kelly(prob, bm_odds)
 
-            candidates.append(TicketLegSchema(
+            leg = TicketLegSchema(
                 match_id=pred["match_id"],
                 home_team=pred["home_team"],
                 away_team=pred["away_team"],
@@ -176,8 +214,14 @@ def build_ticket_for_mode(
                 implied_probability=implied,
                 edge_percentage=edge_pct,
                 expected_value=ev,
+                kelly_stake=kelly,
                 match_time_cot=pred["match_time_cot"],
-            ))
+            )
+
+            if not _passes_anti_cascara_filter(leg):
+                continue
+
+            candidates.append(leg)
 
     if len(candidates) < 2:
         return None
@@ -238,11 +282,18 @@ def build_ticket_for_mode(
 
     avg_ev = calculate_average_ev(selected)
     corr_bonus = get_correlation_bonus(selected_market_names)
+    combined_kelly = _calculate_combined_kelly(selected)
     base_confidence = min(
         round(avg_ev * 400 + corr_bonus * 20 + len(selected) * 5), 95
     )
 
     correlation_status = "positive" if corr_bonus > 0.5 else "independent"
+
+    if combined_kelly > 0:
+        kelly_pct = combined_kelly * 100
+        staking = f"Kelly: {kelly_pct:.1f}% del bankroll"
+    else:
+        staking = config["staking"]
 
     return GeneratedTicket(
         mode=mode,
@@ -250,6 +301,7 @@ def build_ticket_for_mode(
         legs=selected,
         combined_odds=combined,
         average_ev=avg_ev,
+        kelly_stake=combined_kelly,
         confidence_score=base_confidence,
         correlation_validated=True,
         tactical_summary=(
@@ -258,5 +310,5 @@ def build_ticket_for_mode(
         ),
         pros=_build_pros(mode, selected, avg_ev, combined),
         cons=_build_cons(selected, avg_ev, combined),
-        staking_suggestion=config["staking"],
+        staking_suggestion=staking,
     )

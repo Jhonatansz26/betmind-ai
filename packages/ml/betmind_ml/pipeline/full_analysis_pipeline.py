@@ -90,6 +90,7 @@ async def run_full_analysis(
         away_booked_players=away_booked_players,
         corners_data=corners_data,
         bookmaker_odds=bookmaker_odds,
+        league_key=league_key,
     )
 
     return quant_output, tactical_output

@@ -18,7 +18,7 @@ from betmind_ml.narrative.generators.goals_narrative import generate_goals_narra
 from betmind_ml.narrative.generators.cards_narrative import generate_cards_narrative
 from betmind_ml.narrative.generators.corners_narrative import generate_corners_narrative
 from betmind_ml.narrative.generators.bet_builder import generate_bet_builder
-from betmind_ml.config import NARRATIVE_MODEL
+from betmind_ml.config import NARRATIVE_MODEL, get_cards_line
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +155,7 @@ class NarrativeOrchestrator:
         away_booked_players: list[str] | None = None,
         corners_data: dict | None = None,
         bookmaker_odds: dict | None = None,
+        league_key: str = "default",
     ) -> TacticalAnalysis:
         """
         Ejecuta todos los generadores en paralelo con control de concurrencia.
@@ -200,7 +201,7 @@ class NarrativeOrchestrator:
                 referee=referee,
                 context=context,
                 expected_total_cards=home_yellows_avg + away_yellows_avg,
-                cards_line=3.5,
+                cards_line=get_cards_line(league_key),
                 bookmaker_odds_over=odds.get("CARDS_OVER_3_5"),
                 bookmaker_odds_under=odds.get("CARDS_UNDER_3_5"),
                 groq_client=self._client,

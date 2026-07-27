@@ -57,6 +57,36 @@ EV_AVOID_THRESHOLD = -0.10
 # ── Mercado de Tarjetas ──────────────────────────────────────────────────────
 CARDS_LINE_DEFAULT = 3.5
 
+# Baselines dinámicos de tarjetas por liga/región
+# Ligas sudamericanas tienden a más tarjetas (4.5-5.5)
+# Ligas europeas tienden a menos tarjetas (3.5-4.5)
+CARDS_LINE_BY_LEAGUE: dict[str, float] = {
+    # Sudamérica (más físicas, más tarjetas)
+    "liga_betplay": 5.5,
+    "liga_profesional_arg": 5.5,
+    "serie_a_bra": 5.0,
+    "liga_mx": 4.5,
+    "primera_chile": 5.0,
+    "liga_pro_ecu": 5.0,
+    "liga_1_peru": 5.0,
+    # Europa (más tácticas, menos tarjetas)
+    "premier_league": 3.5,
+    "laliga": 4.0,
+    "bundesliga": 3.5,
+    "serie_a": 4.0,
+    # Norteamérica
+    "mls": 4.0,
+    # Europa del Norte
+    "allsvenskan": 3.5,
+    "superliga_den": 3.5,
+    "super_league_sui": 3.5,
+}
+
+
+def get_cards_line(league_key: str) -> float:
+    """Retorna la línea de tarjetas para una liga específica."""
+    return CARDS_LINE_BY_LEAGUE.get(league_key, CARDS_LINE_DEFAULT)
+
 # ── Score de Confianza ────────────────────────────────────────────────────────
 CONFIDENCE_WEIGHTS = {
     "strength_reliability":    0.35,  # ¿Los dos equipos tienen >= MIN_MATCHES?

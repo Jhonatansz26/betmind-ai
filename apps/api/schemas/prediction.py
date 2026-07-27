@@ -48,6 +48,7 @@ class EVAnalysis(BaseModel):
     bookmaker_odds: float | None = Field(None, gt=1.0)
     edge_percentage: float | None = None
     expected_value: float | None = None
+    kelly_stake: float | None = Field(None, ge=0, le=1, description="Quarter-Kelly stake (0-1)")
     verdict: Verdict
 
 

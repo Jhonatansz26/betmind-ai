@@ -418,6 +418,7 @@ class PredictionOrchestrator:
     ) -> PredictionResponse:
         """Construye la respuesta para la API."""
         from apps.api.schemas.prediction import ProbabilityDistribution, EVAnalysis, Verdict
+        from apps.api.engine.kelly import calculate_quarter_kelly
 
         # Extraer probabilidades del output cuantitativo
         markets_by_name = {m.market_name: m for m in quant.markets}
@@ -440,6 +441,7 @@ class PredictionOrchestrator:
         ev_analysis = []
         for market in quant.markets:
             if market.bookmaker_odds:
+                kelly = calculate_quarter_kelly(market.our_probability, market.bookmaker_odds)
                 ev_analysis.append(EVAnalysis(
                     market=market.market_name,
                     our_probability=market.our_probability,
@@ -447,6 +449,7 @@ class PredictionOrchestrator:
                     bookmaker_odds=market.bookmaker_odds,
                     edge_percentage=market.edge,
                     expected_value=market.expected_value,
+                    kelly_stake=kelly,
                     verdict=Verdict.POSITIVE_VALUE if market.expected_value and market.expected_value > 0.05 else Verdict.NO_VALUE,
                 ))
 

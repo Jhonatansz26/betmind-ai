@@ -20,6 +20,7 @@ class TicketLegSchema(BaseModel):
     implied_probability: float
     edge_percentage: float
     expected_value: float
+    kelly_stake: float = Field(0.0, ge=0, le=1, description="Quarter-Kelly stake (0-1)")
     match_time_cot: str
 
 
@@ -29,6 +30,7 @@ class GeneratedTicket(BaseModel):
     legs: list[TicketLegSchema]
     combined_odds: float
     average_ev: float
+    kelly_stake: float = Field(0.0, ge=0, le=1, description="Combined Quarter-Kelly stake for ticket")
     confidence_score: int
     correlation_validated: bool
     tactical_summary: str
