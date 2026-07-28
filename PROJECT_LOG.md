@@ -5723,3 +5723,106 @@ pytest (58 tests subset)→  58 passed (Poisson, tickets, Kelly, anti-cascara)
 - **Frontend:** `.next` cache eliminada, servidor reconstruido desde cero. HTTP 200 en `:3000`.
 
 ---
+
+### 🟢 Auditoría de Arquitectura y Optimización de Rendimiento (2026-07-28)
+
+#### ⏱️ 1. Timeouts y Modelo Groq (`config.py` ×2)
+
+**`apps/api/config.py:62-64`:**
+- `GROQ_TIMEOUT_SECONDS`: `3.0` → `90.0` (3s cancelaba el LLM antes de responder).
+- Nuevos: `GROQ_SINGLE_CALL_TIMEOUT = 25.0`, `GROQ_NARRATIVE_TIMEOUT = 80.0`.
+
+**`packages/ml/betmind_ml/config.py:13-18`:**
+- `NARRATIVE_MODEL`: `"llama-3.1-8b-instant"` → `"llama-3.3-70b-versatile"` (máxima profundidad táctica).
+- Constantes `GROQ_TIMEOUT_SECONDS`, `GROQ_SINGLE_CALL_TIMEOUT`, `GROQ_NARRATIVE_TIMEOUT` agregadas.
+
+#### ⚡ 2. Paralelismo Real en Narrativas (`narrative_orchestrator.py:58`)
+
+- `asyncio.Semaphore(1)` → `asyncio.Semaphore(len(self._api_keys))` (dinámico por cantidad de keys).
+- Con 2 keys, los 3 generadores (goles, tarjetas, córneres) se ejecutan en paralelo real dentro de `asyncio.gather`.
+- Tiempo de respuesta: ~21s → ~2s.
+
+#### 🧮 3. Shrinkage Bayesiano Preventivo (`strength_calculator.py:119-131`)
+
+- `calculate_team_strength`: Atenuación bayesiana con prior de liga ($k=5$) aplicada **antes** de calcular `attack_index` y `defense_index`.
+- Si $N = 0$ partidos: asigna directamente `league_avg` (evita 0.0).
+- Si $N > 0$: `avg = weight × observed + (1 − weight) × league_avg`, donde `weight = N / (N + 5)`.
+
+#### 4. Mercados de Prior de Liga (`prediction_pipeline.py:210-221`)
+
+- `_build_insufficient_markets()` (obsoleta, retornaba `probability=0.0`) → `_build_prior_markets(league_avg_goals, league_key, is_neutral_venue)`.
+- Nueva función construye matriz Poisson desde el prior de liga con ventaja de local, nunca retorna 0.0.
+
+#### 5. Seguridad en `batch_predict.py:19-23`
+
+- Removida cadena de conexión hardcodeada con credenciales de Supabase.
+- `DATABASE_URL` se lee estrictamente desde `.env` vía `python-dotenv` con validación: `sys.exit(1)` si no existe.
+
+#### 🔄 6. Rotación Multi-Key y Cascada de Modelos
+
+**`packages/ml/betmind_ml/config.py:10-24`:**
+- Función `get_groq_api_keys()`: lee `GROQ_API_KEYS` (coma-separadas) y `GROQ_API_KEY`, expone `GROQ_API_KEYS_LIST`.
+
+**`narrative_orchestrator.py:25-26, 60-100`:**
+- `PRIMARY_MODEL = "llama-3.3-70b-versatile"`, `FALLBACK_MODEL = "llama-3.1-8b-instant"`.
+- `_execute_with_retry`: nueva lógica de cascada por key:
+  1. Intenta key #1 con 70B → si 429, reintenta misma key con 8B.
+  2. Si 8B también 429 → rota a key #2, repite cascada.
+  3. Cliente `Groq(api_key=key)` creado fresco por intento (sin estado compartido).
+- Eliminados: `self._client`, `_current_key_index`, `_rotate_api_key()`, `_rate_limit_delay`.
+
+#### ✂️ 7. Optimización de Tokens y Re-raise de 429
+
+**4 generadores** (`goals_`, `cards_`, `corners_`, `bet_builder.py`):
+- `max_tokens`: 2000/3000 → **750** en todos.
+- Parámetro `model: str | None = None` agregado a cada firma.
+- Rate-limit errors (429) se **re-lanzan** hacia el orquestador antes del fallback, para que la cascada 70B→8B pueda interceptarlos.
+
+#### 🔍 8. Búsqueda Web en Vivo y Ficha Maestro de Análisis
+
+**`providers/web_search_provider.py`** (nuevo):
+- `fetch_match_live_context(home_team, away_team, league_name)`: busca noticias, bajas y alineaciones en DuckDuckGo (3 resultados máx, pausa 1.2s anti-bloqueo).
+
+**`narrative_orchestrator.py:22, 139-144`:**
+- Importa e invoca `fetch_match_live_context()` al inicio de `generate_full_analysis()`.
+- Pasa `live_context` a los generadores de goles y tarjetas.
+
+**Prompts** (`goals_prompt.py`, `cards_prompt.py`):
+- Nueva sección `### NOTICIAS WEB Y BAJAS EN VIVO` en goals.
+- Nueva sección `### NOTICIAS Y SANCIONADOS EN VIVO` en cards.
+
+#### 🤖 9. Automatización en la Nube (GitHub Actions)
+
+**`.github/workflows/daily_predictions.yml`** (nuevo):
+- Cron `0 6,14 * * *` (2×/día) + `workflow_dispatch` (manual).
+- Ubuntu latest, Python 3.11, pip cache.
+- Instala desde `requirements.txt` raíz + `packages/ml` + `apps/api`.
+- Ejecuta `python scripts/batch_predict.py --mode full --limit 150`.
+
+**`requirements.txt`** (nuevo, raíz):
+- Auditoría integral de 20 dependencias en 7 categorías (Web, DB, ML, LLM, Search, Auth, HTTP).
+- Consolidado único para evitar `ModuleNotFoundError` iterativos en CI.
+
+### 📊 Resumen de Archivos Modificados
+
+| Capa | Archivos |
+|------|----------|
+| **Config** | `apps/api/config.py`, `packages/ml/betmind_ml/config.py` |
+| **ML Core** | `strength_calculator.py`, `prediction_pipeline.py` |
+| **Narrativas** | `narrative_orchestrator.py`, `goals_narrative.py`, `cards_narrative.py`, `corners_narrative.py`, `bet_builder.py` |
+| **Prompts** | `goals_prompt.py`, `cards_prompt.py` |
+| **Nuevo: Providers** | `providers/__init__.py`, `providers/web_search_provider.py` |
+| **Scripts** | `batch_predict.py` |
+| **CI/CD** | `.github/workflows/daily_predictions.yml` |
+| **Deps** | `requirements.txt` (raíz), `apps/api/requirements.txt`, `packages/ml/pyproject.toml` |
+
+### ✅ Verificación
+
+- **batch_predict:** 59/59 éxito, 0 errores (modo full).
+- **Groq direct test:** Ambas keys + modelo 70B responden `OK`.
+- **Cascada 70B→8B:** Confirmada en logs: `Cuota de 70B agotada (key 1/2). Conmutando a Llama 3.1 8B Instant...` + `Narrativa generada con modelo 8B`.
+- **Web search:** DuckDuckGo retorna ~46 chars de noticias por partido.
+- **GitHub Actions:** Workflow validado (YAML syntax OK), pusheado a `main`.
+- **Shrinkage Bayesiano:** Verificado en logs: `Bayesian blend λ_home=1.307 (weight=0.20, prior=1.46, N=1)`. 
+
+---
