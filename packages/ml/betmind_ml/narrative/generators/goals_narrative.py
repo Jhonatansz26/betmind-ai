@@ -33,6 +33,8 @@ def generate_goals_narrative(
     match_date: str,
     h2h_stats: dict,
     groq_client,
+    live_context: str = "",
+    model: str | None = None,
 ) -> MarketNarrative | None:
     """
     Genera el análisis de Pros/Contras para Over/Under y BTTS.
@@ -86,6 +88,7 @@ def generate_goals_narrative(
         h2h_avg_goals=h2h_stats.get("avg_goals_total", "N/D"),
         h2h_over_25_count=h2h_stats.get("over_25_count", "N/D"),
         h2h_btts_count=h2h_stats.get("btts_count", "N/D"),
+        live_context=live_context,
         match_importance=context.match_importance.value,
         altitude_masl=context.stadium_altitude_masl,
         altitude_impact=context.altitude_impact,
@@ -101,11 +104,11 @@ def generate_goals_narrative(
     try:
         full_prompt = f"{SYSTEM_BASE}\n\n{user_prompt}"
         response = groq_client.chat.completions.create(
-            model=NARRATIVE_MODEL,
+            model=model or NARRATIVE_MODEL,
             messages=[{"role": "user", "content": full_prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=2000,
+            max_tokens=750,
         )
         
         response_text = response.choices[0].message.content
@@ -121,6 +124,9 @@ def generate_goals_narrative(
         return narrative
 
     except Exception as e:
+        error_str = str(e)
+        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
+            raise
         logger.warning("Error generando GoalsNarrative con LLM, usando fallback: %s", e)
         return _generate_fallback_narrative(
             home_team=home_team_name,

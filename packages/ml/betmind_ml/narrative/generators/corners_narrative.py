@@ -24,6 +24,7 @@ def generate_corners_narrative(
     bookmaker_odds_over: float | None,
     bookmaker_odds_under: float | None,
     groq_client,
+    model: str | None = None,
 ) -> MarketNarrative | None:
     """
     Genera el análisis táctico para Over/Under de córneres.
@@ -74,17 +75,20 @@ def generate_corners_narrative(
     try:
         full_prompt = f"{SYSTEM_BASE}\n\n{user_prompt}"
         response = groq_client.chat.completions.create(
-            model=NARRATIVE_MODEL,
+            model=model or NARRATIVE_MODEL,
             messages=[{"role": "user", "content": full_prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=2000,
+            max_tokens=750,
         )
         
         response_text = response.choices[0].message.content
         narrative: MarketNarrative = MarketNarrative.model_validate_json(response_text)
         return narrative
     except Exception as e:
+        error_str = str(e)
+        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
+            raise
         logger.warning("Error generando CornersNarrative con LLM, usando fallback: %s", e)
         return _generate_fallback_corners_narrative(home_team_name, away_team_name, league_name)
 

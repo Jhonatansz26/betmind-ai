@@ -9,6 +9,21 @@ MODEL_VERSION = "poisson_v1.0"
 # ── Configuración de API Keys ─────────────────────────────────────────────────
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+
+def get_groq_api_keys() -> list[str]:
+    """Retorna lista limpia de API keys desde GROQ_API_KEYS (coma) y GROQ_API_KEY."""
+    keys: list[str] = []
+    raw_keys = os.getenv("GROQ_API_KEYS", "")
+    if raw_keys:
+        keys.extend([k.strip() for k in raw_keys.split(",") if k.strip()])
+    single_key = os.getenv("GROQ_API_KEY", "")
+    if single_key and single_key not in keys:
+        keys.insert(0, single_key.strip())
+    return keys
+
+
+GROQ_API_KEYS_LIST = get_groq_api_keys()
+
 # ── Timeouts de Groq ───────────────────────────────────────────────────────────
 GROQ_TIMEOUT_SECONDS = 90.0
 GROQ_SINGLE_CALL_TIMEOUT = 25.0

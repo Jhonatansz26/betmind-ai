@@ -19,8 +19,12 @@ from betmind_ml.narrative.generators.cards_narrative import generate_cards_narra
 from betmind_ml.narrative.generators.corners_narrative import generate_corners_narrative
 from betmind_ml.narrative.generators.bet_builder import generate_bet_builder
 from betmind_ml.config import NARRATIVE_MODEL, get_cards_line
+from betmind_ml.providers.web_search_provider import fetch_match_live_context
 
 logger = logging.getLogger(__name__)
+
+PRIMARY_MODEL = "llama-3.3-70b-versatile"
+FALLBACK_MODEL = "llama-3.1-8b-instant"
 
 
 def _is_rate_limit_error(error: Exception) -> bool:
@@ -40,100 +44,61 @@ class NarrativeOrchestrator:
             El análisis parcial es mejor que ningún análisis.
     
     Control de concurrencia:
-        - Semáforo de máximo 1 petición en paralelo
-        - Pausa de 1 segundo entre llamadas para evitar rate limits
-        - Reintentos automáticos con retardo exponencial para errores 429
-        - Rotación de API keys si se proporciona lista
+        - Semáforo = cantidad de API keys (máximo paralelismo por key)
+        - Rotación inmediata de API key ante error 429 (sin reintentos con la misma key)
     """
 
     def __init__(self, groq_api_key: str | None = None, groq_api_keys: list[str] | None = None) -> None:
-        # Soporte para múltiples API keys con rotación
         self._api_keys = groq_api_keys or []
         if groq_api_key and groq_api_key not in self._api_keys:
             self._api_keys.insert(0, groq_api_key)
-        
+
         if not self._api_keys:
             logger.warning("No Groq API keys provided. LLM narratives will use fallback.")
-        
-        self._current_key_index = 0
-        self._client = Groq(api_key=self._api_keys[0]) if self._api_keys else None
+
         self._model = NARRATIVE_MODEL
-        self._semaphore = asyncio.Semaphore(3)
-        self._rate_limit_delay = 1.0
+        self._semaphore = asyncio.Semaphore(len(self._api_keys) or 1)
 
-    def _rotate_api_key(self) -> bool:
-        """
-        Rota a la siguiente API key disponible.
-        Retorna True si se rotó exitosamente, False si no hay más keys.
-        """
-        if len(self._api_keys) <= 1:
-            return False
-        
-        self._current_key_index = (self._current_key_index + 1) % len(self._api_keys)
-        new_key = self._api_keys[self._current_key_index]
-        self._client = Groq(api_key=new_key)
-        logger.info(f"Rotated to Groq API key #{self._current_key_index + 1}/{len(self._api_keys)}")
-        return True
-
-    async def _execute_with_retry(self, func, *args, max_retries=3, **kwargs):
-        """
-        Ejecuta una función con control de concurrencia y reintentos.
-        Rota API keys si se alcanza rate limit.
-        
-        Args:
-            func: Función a ejecutar
-            max_retries: Número máximo de reintentos por key (default: 3)
-            *args, **kwargs: Argumentos para la función
-        
-        Returns:
-            Resultado de la función o None si falla después de todos los reintentos
-        """
+    async def _execute_with_retry(self, func, *args, **kwargs) -> object | None:
+        """Cascada de modelos: 70B → 8B → siguiente key → repite."""
+        models = [PRIMARY_MODEL, FALLBACK_MODEL]
         total_keys = len(self._api_keys)
-        keys_tried = 0
-        
-        while keys_tried < total_keys:
-            for attempt in range(max_retries + 1):
+
+        for key_idx, key in enumerate(self._api_keys):
+            for model in models:
                 try:
-                    if not self._client:
-                        logger.warning("No Groq client available, using fallback")
-                        return None
-                    
+                    client = Groq(api_key=key)
+                    kwargs.pop('groq_client', None)
+
                     async with self._semaphore:
-                        kwargs.pop('groq_client', None)
-                        result = await asyncio.to_thread(func, *args, groq_client=self._client, **kwargs)
-                        # Pausa entre llamadas para evitar rate limits
-                        await asyncio.sleep(self._rate_limit_delay)
-                        return result
+                        result = await asyncio.to_thread(
+                            func, *args, groq_client=client, model=model, **kwargs,
+                        )
+                    if model == FALLBACK_MODEL:
+                        logger.info(
+                            "Narrativa generada con modelo 8B (key %d/%d)",
+                            key_idx + 1, total_keys,
+                        )
+                    return result
+
                 except Exception as e:
-                    if _is_rate_limit_error(e):
-                        if attempt < max_retries:
-                            # Retardo exponencial: 5s, 10s, 20s
-                            wait_time = 5 * (2 ** attempt)
-                            logger.warning(
-                                f"Rate limit alcanzado (429). Reintentando en {wait_time}s... "
-                                f"(intento {attempt + 1}/{max_retries})"
-                            )
-                            await asyncio.sleep(wait_time)
-                        else:
-                            # Se agotaron reintentos con esta key, intentar rotar
-                            logger.warning(
-                                f"Groq Key límite alcanzado, cambiando a siguiente clave... "
-                                f"(key {self._current_key_index + 1}/{total_keys})"
-                            )
-                            if self._rotate_api_key():
-                                keys_tried += 1
-                                break  # Salir del loop de reintentos, intentar con nueva key
-                            else:
-                                logger.error(
-                                    f"Todas las API keys agotadas. "
-                                    f"Función: {func.__name__}. Error: {e}"
-                                )
-                                return None
+                    if _is_rate_limit_error(e) and model == PRIMARY_MODEL:
+                        logger.warning(
+                            "Cuota de 70B agotada (key %d/%d). Conmutando a Llama 3.1 8B Instant...",
+                            key_idx + 1, total_keys,
+                        )
+                        continue
+                    elif _is_rate_limit_error(e) and key_idx < total_keys - 1:
+                        logger.warning(
+                            "Key %d/%d agotada (429). Rotando a la siguiente...",
+                            key_idx + 1, total_keys,
+                        )
+                        break
                     else:
-                        logger.error(f"Error ejecutando {func.__name__}: {e}")
+                        logger.error("Error ejecutando %s: %s", func.__name__, e)
                         return None
-        
-        logger.error(f"Todas las API keys agotadas después de {keys_tried} intentos")
+
+        logger.error("Todas las %d keys y modelos agotados", total_keys)
         return None
 
     async def generate_full_analysis(
@@ -170,6 +135,11 @@ class NarrativeOrchestrator:
             match_output.match_id
         )
 
+        live_context = await fetch_match_live_context(
+            home_team_name, away_team_name, league_name
+        )
+        logger.info("Web context fetched: %d chars", len(live_context))
+
         (
             goals_result,
             cards_result,
@@ -186,7 +156,7 @@ class NarrativeOrchestrator:
                 league_name=league_name,
                 match_date=match_date,
                 h2h_stats=h2h_stats,
-                groq_client=self._client,
+                live_context=live_context,
             ),
             self._execute_with_retry(
                 generate_cards_narrative,
@@ -205,7 +175,7 @@ class NarrativeOrchestrator:
                 cards_line=get_cards_line(league_key),
                 bookmaker_odds_over=odds.get("CARDS_OVER_3_5"),
                 bookmaker_odds_under=odds.get("CARDS_UNDER_3_5"),
-                groq_client=self._client,
+                live_context=live_context,
             ),
             self._execute_with_retry(
                 generate_corners_narrative,
@@ -216,7 +186,6 @@ class NarrativeOrchestrator:
                 context=context,
                 bookmaker_odds_over=odds.get("CORNERS_OVER_9_5"),
                 bookmaker_odds_under=odds.get("CORNERS_UNDER_9_5"),
-                groq_client=self._client,
             ),
             return_exceptions=False,
         )
@@ -232,7 +201,6 @@ class NarrativeOrchestrator:
             markets_summary=markets_summary,
             all_analysis_data=all_narratives_summary,
             n_suggestions=3,
-            groq_client=self._client,
         )
 
         narratives_generated = sum(

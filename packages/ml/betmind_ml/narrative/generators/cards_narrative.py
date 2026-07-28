@@ -38,6 +38,8 @@ def generate_cards_narrative(
     bookmaker_odds_over: float | None,
     bookmaker_odds_under: float | None,
     groq_client,
+    live_context: str = "",
+    model: str | None = None,
 ) -> MarketNarrative | None:
     """
     Genera el análisis táctico para Over/Under de tarjetas.
@@ -87,6 +89,7 @@ def generate_cards_narrative(
         match_importance=context.match_importance.value,
         is_derby="Sí" if context.is_derby else "No",
         rivalry_intensity=context.rivalry_intensity,
+        live_context=live_context,
         home_position=context.home_position or "N/D",
         away_position=context.away_position or "N/D",
         cards_line=cards_line,
@@ -98,17 +101,20 @@ def generate_cards_narrative(
     try:
         full_prompt = f"{SYSTEM_BASE}\n\n{user_prompt}"
         response = groq_client.chat.completions.create(
-            model=NARRATIVE_MODEL,
+            model=model or NARRATIVE_MODEL,
             messages=[{"role": "user", "content": full_prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=2000,
+            max_tokens=750,
         )
         
         response_text = response.choices[0].message.content
         narrative: MarketNarrative = MarketNarrative.model_validate_json(response_text)
         return narrative
     except Exception as e:
+        error_str = str(e)
+        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
+            raise
         logger.warning("Error generando CardsNarrative con LLM, usando fallback: %s", e)
         return _generate_fallback_cards_narrative(home_team_name, away_team_name, league_name)
 

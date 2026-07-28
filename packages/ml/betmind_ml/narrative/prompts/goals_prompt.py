@@ -36,6 +36,9 @@ Analiza el mercado de GOLES para el siguiente partido y devuelve el JSON.
 - Partidos Más de 2.5: {h2h_over_25_count}/{h2h_count}
 - BTTS en H2H: {h2h_btts_count}/{h2h_count}
 
+### NOTICIAS WEB Y BAJAS EN VIVO
+{live_context}
+
 ### Contexto del Partido
 - Importancia: {match_importance}
 - Altitud estadio: {altitude_masl} msnm (impacto: {altitude_impact})

@@ -24,6 +24,7 @@ def generate_bet_builder(
     all_analysis_data: str,
     n_suggestions: int,
     groq_client,
+    model: str | None = None,
 ) -> list[BetBuilderCombination] | None:
     """
     Genera combinadas tácticas correlacionadas positivamente.
@@ -49,11 +50,11 @@ def generate_bet_builder(
     try:
         full_prompt = f"{SYSTEM_BASE}\n\n{user_prompt}"
         response = groq_client.chat.completions.create(
-            model=NARRATIVE_MODEL,
+            model=model or NARRATIVE_MODEL,
             messages=[{"role": "user", "content": full_prompt}],
             response_format={"type": "json_object"},
-            temperature=0.3,
-            max_tokens=3000,
+            temperature=0.4,
+            max_tokens=750,
         )
         
         response_text = response.choices[0].message.content
@@ -70,6 +71,9 @@ def generate_bet_builder(
         )
         return combinations
     except Exception as e:
+        error_str = str(e)
+        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
+            raise
         logger.warning("Error generando BetBuilder con LLM, usando fallback: %s", e)
         return _generate_fallback_bet_builder(
             home_team_name, away_team_name, league_name, markets_summary

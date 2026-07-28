@@ -29,6 +29,9 @@ Analiza el mercado de TARJETAS para el siguiente partido.
 - Intensidad de la rivalidad: {rivalry_intensity}/5
 - Situación en tabla (local posición {home_position} vs visitante posición {away_position})
 
+### NOTICIAS Y SANCIONADOS EN VIVO
+{live_context}
+
 ### Línea de Tarjetas a Analizar
 - Over {cards_line} tarjetas totales
 - Promedio esperado del modelo: {expected_total_cards} tarjetas
