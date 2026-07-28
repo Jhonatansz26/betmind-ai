@@ -5330,3 +5330,206 @@ pytest (58 tests subset)→  58 passed (Poisson, tickets, Kelly, anti-cascara)
 **IDs de partidos válidos para testing:** 255 (Rosario Central vs Racing), 254 (Argentinos Jrs vs Estudiantes RC), 253 (San Lorenzo vs Gimnasia), 252 (Banfield vs Sarmiento), 168 (Dep. Cuenca vs Emelec), 160 (La Calera vs Everton), 167 (Guayaquil City vs U. Católica).
 
 ---
+
+## 📅 Sesión de Trabajo: Julio 27-28, 2026 — Time Decay, Timezone COT/UTC, Cobertura Multiliga ESPN, Scraper UEFA, Refactor UI
+
+### 1. ⚙️ Motor Quant: Exponential Time Decay (Fase 1)
+
+**Archivos:** `packages/ml/betmind_ml/config.py`, `packages/ml/betmind_ml/features/strength_calculator.py`
+
+- **`config.py:21`** — `STRENGTH_WINDOW` expandido de 10 → **12** partidos.
+- **`config.py:29-33`** — Nuevas constantes: `DECAY_FACTOR = 0.85`, `DAYS_DECAY_RATE = 0.005`.
+- **`strength_calculator.py:1-44`** — Nueva función `_compute_weighted_average(values: list[float]) -> float`:
+  - Pesos exponenciales por índice: `w[k] = DECAY_FACTOR ** k` para `k=0,1,...,N-1`.
+  - Partido más reciente (k=0) → peso 1.0 (100%). Partido k=11 → peso 0.167 (17%).
+  - Implementación: `weighted_sum = sum(v * w for v, w in zip(values, weights))`, `avg = weighted_sum / sum(weights)`.
+- **`strength_calculator.py:107-108`** — Reemplazo de `sum(goals)/len(goals)` simple por `_compute_weighted_average(goals)` para `avg_scored` y `avg_conceded`.
+
+**Verificación con datos reales (Liga Profesional Argentina, 4 partidos):**
+
+| Partido | λ_home (simple) | λ_home (decay) | Efecto |
+|---------|:---:|:---:|--------|
+| Banfield vs Sarmiento | 0.573 | **0.413** ↓ | Forma reciente peor que histórico |
+| Argentinos Jrs vs Est RC | 1.468 | **1.714** ↑ | Forma reciente mejor que histórico |
+| Rosario Central vs Racing | 2.765 | **2.708** → | Dominante estable |
+
+---
+
+### 2. 🛡️ Refactorización Cuantitativa: Remoción de Fallback Tautológico (Fase 1)
+
+**Archivos:** `prediction_pipeline.py`, `poisson_engine.py`, `ev_calculator.py`, `prediction_orchestrator.py`
+
+- **`prediction_pipeline.py:78-103`** — Reemplazado el bloque `if not is_reliable`:
+  - **Antes:** Si `is_reliable=False` y hay cuotas → `estimate_lambdas_from_odds()` (tautología: predecir desde cuotas y luego comparar contra las mismas cuotas). Si no hay cuotas → hardcode `(0.3, 0.3)`.
+  - **Ahora:** `lambda_home=0.0, lambda_away=0.0`, `confidence_score=0`, `confidence_flags=["INSUFFICIENT_DATA: <5 partidos historicos"]`, todos los mercados con `verdict=PredictionVerdict.INSUFFICIENT` y `our_probability=0.0`. Early return con `ScoreMatrix()` vacío.
+- **`prediction_pipeline.py:225-242`** — Nueva `_build_insufficient_markets()`: 13 mercados con probability=0.0 y verdict=INSUFFICIENT.
+- **`poisson_engine.py:18,103-114`** — `import warnings` + `DeprecationWarning` en `estimate_lambdas_from_odds()`. Removida su llamada desde `prediction_pipeline.py:15`.
+- **`ev_calculator.py:30-64`** — Nueva `_compute_fair_probability(market_name, odds, odds_dict)`:
+  - Desmargina el overround del bookmaker para obtener probabilidad implícita justa.
+  - Grupo 1X2: `overround = (1/H) + (1/D) + (1/A)`, `fair = (1/odds) / overround`.
+  - Pares Over/Under, BTTS: detecta lado opuesto en `odds_dict`.
+- **`ev_calculator.py:67-110`** — `enrich_market_with_ev()` acepta `fair_implied_prob: float | None`.
+- **`prediction_orchestrator.py:452-456`** — Mapeo `PredictionVerdict.INSUFFICIENT` → `Verdict.INSUFFICIENT_DATA` en `_build_response()`.
+
+---
+
+### 3. 🧠 Resiliencia del Cerebro Táctico LLM (Fase 2)
+
+**Archivos:** `apps/api/config.py`, `apps/api/orchestrators/prediction_orchestrator.py`
+
+- **`config.py:63`** — `GROQ_TIMEOUT_SECONDS: float = 3.0`.
+- **`orchestrator.py:6`** — `import asyncio`.
+- **`orchestrator.py:77-122`** — Refactorización del bloque de ejecución del pipeline:
+  - **Siempre ejecuta primero el análisis cuantitativo** (`_run_quantitative_analysis`) de forma independiente.
+  - Si hay caché táctico en DB → lo usa directamente.
+  - Si no hay caché → `await self._run_full_analysis_safe()` con `asyncio.wait_for(run_full_analysis(...), timeout=settings.GROQ_TIMEOUT_SECONDS)`.
+  - Solo persiste análisis táctico si `llm_model_used != "none"` (análisis real del LLM, no fallback).
+- **`orchestrator.py:408-470`** — Nuevo `_run_full_analysis_safe()`:
+  - Captura `asyncio.TimeoutError` → `logger.warning` + fallback a `_build_minimal_tactical_analysis()`.
+  - Captura `Exception` genérica → fallback táctico mínimo.
+  - **Garantía:** La predicción cuantitativa (Poisson + EV) nunca se pierde, incluso si Groq está caído o lento.
+
+---
+
+### 4. 🗄️ Persistencia SQL y LEFT JOIN de Predicciones (Fase 3)
+
+**Archivos:** `006_expand_predictions_table.sql`, `prediction.py`, `match.py`, `match_repository.py`, `prediction_orchestrator.py`, `matches.py`
+
+- **`006_expand_predictions_table.sql`** — Migración DDL: 7 columnas añadidas a `predictions` (`lambda_home`, `lambda_away`, `home_attack_index`, `away_attack_index`, `home_defense_index`, `away_defense_index`, `markets_json`) + índice `idx_predictions_match_created`.
+- **`prediction.py:21-31`** — 7 nuevas columnas `Optional[float]` + relationship `match: Mapped["Match"]`.
+- **`match.py:30-33`** — Relationship `predictions: Mapped[list["Prediction"]]` con `back_populates="match"`, `order_by="Prediction.created_at.desc()"`, `lazy="noload"`.
+- **`match_repository.py:297-356`** — Nuevo `upsert_prediction()`: INSERT o UPDATE con todos los campos cuantitativos + rollback en error.
+- **`orchestrator.py:117`** — Llamada a `_persist_prediction(match.id, quant_output)` después de todo análisis cuantitativo.
+- **`orchestrator.py:287-324`** — `_persist_prediction()`: serializa `MarketProbability` → `markets_json`, persiste vía `match_repo.upsert_prediction()`.
+- **`matches.py:66`** — `selectinload(Match.predictions)` en `list_matches()` para LEFT JOIN automático.
+- **`matches.py:283-296`** — `_match_to_dict_full()` incluye `prediction: {lambda_home, lambda_away, confidence, ...}` o `null`.
+- **`scripts/batch_predict.py:133`** — `await session.commit()` explícito después de cada predicción (fix de bug de persistencia).
+
+---
+
+### 5. 🕒 Zona Horaria: date_filter y Conversión Explícita COT→UTC
+
+**Archivos:** `apps/api/routes/v1/matches.py`, `apps/api/routes/v1/tickets.py`, `apps/web/lib/api.ts`, `apps/web/components/betmind/date-selector.tsx`, `apps/web/components/betmind/dashboard.tsx`
+
+- **`matches.py:31-36`** — Nuevo parámetro `date_filter` ("today", "tomorrow", YYYY-MM-DD).
+- **`matches.py:44-67`** — Conversión explícita COT→UTC: `start_utc = start_cot.astimezone(timezone.utc)`, `end_utc = end_cot.astimezone(timezone.utc)`.
+- **`matches.py:71-75`** — Guarda de fecha mínima: cuando no hay `date_filter` y es modo upcoming, `Match.match_date >= today_start_utc` (00:00 COT de hoy) para excluir partidos pasados con status SCHEDULED stale.
+- **`tickets.py:34-58`** — `date_filter` param: "today" → `[today_cot]`, "tomorrow" → `[tomorrow_cot_obj]`, YYYY-MM-DD → `[parsed_date]`, sin filtro → `[today, tomorrow]`.
+- **`api.ts:177-179`** — `fetchTickets(dateFilter?)` con query param `date_filter`.
+- **`api.ts:320-327`** — `fetchMatches(dateFilter?)` con query param `date_filter`.
+- **`date-selector.tsx`** — Nuevo componente con tabs `[Hoy] [Mañana] [Ver Todos]` + `formatDateTitle()`.
+- **`dashboard.tsx:102,133,168`** — Estado `dateFilter`, llamadas `fetchTickets`/`fetchMatches` con dateFilter, títulos dinámicos.
+
+---
+
+### 6. 🌍 Cobertura Global Multiliga: ESPN Provider + Scraper UEFA
+
+**Archivos:** `espn_provider.py`, `provider_registry.py`, `data_ingestion.py`, `uefa_qualifiers_scraper.py`, `config.py`
+
+- **`espn_provider.py:44-96`** — `ESPN_LEAGUE_SLUGS` expandido de 16 a 23 entradas:
+  - UEFA: 9001=uefa.champions, 9002=uefa.europa, 9003=uefa.europa.conf
+  - CONMEBOL: 9010=conmebol.libertadores, 9011=conmebol.sudamericana
+  - Nacionales: 9004=bra.2 (Série B), 9005=col.copa (Copa Colombia)
+- **`espn_provider.py:257-311`** — `get_teams()` reescrito: standings como fuente primaria, scoreboard de 7 días (−2 a +4) como fuente secundaria para ligas sin standings.
+- **`espn_provider.py:154-202`** — `get_finished_matches()` reescrito: usa endpoint `teams/{id}/schedule` en vez de escanear 60 fechas de scoreboard (más eficiente, ~17-19 partidos por equipo).
+- **`espn_provider.py:364-366`** — Nuevo `_fetch_team_schedule()`: `/{slug}/teams/{teamId}/schedule`.
+- **`provider_registry.py:27-31`** — Registro de `EspnDataProvider` como proveedor primario.
+- **`provider_registry.py:49-82`** — Routing: si `league_id in ESPN_LEAGUE_SLUGS` → ESPN; fallback a football-data.org y ai_search_agent.
+- **`data_ingestion.py:6`** — Import de `ESPN_LEAGUE_SLUGS`.
+- **`data_ingestion.py:75-85`** — `_resolve_provider()`: primero verifica ESPN (todas las ligas con slug), luego football-data.org.
+- **`data_ingestion.py:257-262`** — Fallback scraper: si provider retorna 0 fixtures y `league_id in {9001, 9003}`, invoca `_scrape_uefa_qualifiers_fallback()`.
+- **`data_ingestion.py:501-516`** — `_scrape_uefa_qualifiers_fallback()`: llama al scraper de Flashscore.
+
+**Nuevo archivo `uefa_qualifiers_scraper.py`:**
+- `scrape_uefa_qualifiers(slug)` — Usa `crawl4ai` (AsyncWebCrawler) para renderizar Flashscore.
+- `_parse_flashscore_markdown(md, slug)` — Parsea markdown renderizado con regex: `28.07. [KuPS - Sabah Baku](url)`.
+- URL: `https://www.flashscore.com/football/europe/{champions-league,conference-league}/fixtures/`.
+- 37 partidos extraídos (17 UCL + 20 UECL qualifiers).
+
+**`team_repository.py:35-37`** — `get_by_name(name)`: búsqueda por nombre canonicalizado (cross-provider).
+
+---
+
+### 7. 📊 Estado de Predicciones al Cierre
+
+**60 partidos SCHEDULED, 60 predicciones en Supabase:**
+
+| Liga | Predicciones | λ>0 (SUFFICIENT) | λ=0 (INSUFFICIENT) |
+|------|:---:|:---:|:---:|
+| Argentina - Liga Prof. | 4 | 4 | 0 |
+| Brasil - Série B | 3 | 3 | 0 |
+| CONMEBOL Sudamericana | 8 | 1 | 7 |
+| Colombia - Copa | 8 | 0 | 8 |
+| UEFA Champions League | 17 | 0 | 17 |
+| UEFA Conference League | 20 | 0 | 20 |
+
+**Top predicciones con λ>0:**
+- Rosario Central vs Racing: λ=2.708/0.571 conf=80
+- O'Higgins vs Boca Juniors: λ=2.336/0.932 conf=72
+- Fortaleza vs Botafogo-SP: λ=1.234/2.173 conf=80
+- Juventude vs Avaí: λ=1.699/1.585 conf=80
+- Argentinos Jrs vs Est RC: λ=1.714/0.456 conf=80
+- San Lorenzo vs Gimnasia: λ=0.358/1.546 conf=80 (+EV: 1X2_AWAY edge=+46%)
+- Ponte Preta vs Athletic: λ=1.550/0.386 conf=80
+- Banfield vs Sarmiento: λ=0.413/0.805 conf=80 (+EV: DRAW edge=+10.7%)
+
+---
+
+### 8. 🎨 Frontend: Estandarización de UI y Filtrado Dinámico
+
+**Archivos:** `dashboard.tsx`, `league-sidebar.tsx`, `league-metadata.ts`, `league-accordion.tsx`, `api.ts`
+
+- **`league-metadata.ts`** — Archivo completo reescrito con 21 ligas + formato `País - Torneo` en `shortName`.
+- **`dashboard.tsx:175-201`** — `leaguePills` derivado de `matches` vía `useMemo` (no de `fetchLeagues()`):
+  - Agrupa `matches` por `leagueExternalId`, cuenta partidos, ordena por count descendente.
+  - Filtro `count > 0` — solo ligas con partidos en la fecha seleccionada.
+  - Pill "Todas las Ligas" muestra total real: `Todas las Ligas (4)`.
+- **`league-sidebar.tsx`** — Reescrita completamente:
+  - Recibe `matches` como prop, deriva ligas con `useMemo`.
+  - Agrupa por región (EUROPA/AMÉRICA) usando `resolveLeague().region`.
+  - Muestra `meta.shortName` y count real por liga.
+  - Sin dependencia de `fetchLeagues()`.
+- **`api.ts:11`** — `resolveLeague` usado en `dashboard.tsx` para nombres de pills.
+- **12 UPDATEs en DB** (`leagues.name`) aplicando formato estándar: "Argentina - Liga Prof.", "Brasil - Serie A", "Colombia - BetPlay", etc.
+- **`league-accordion.tsx:25`** — Ya usaba `resolveLeague()` correctamente.
+
+---
+
+### 9. 🐛 Bugs Corregidos
+
+| Bug | Archivo | Fix |
+|-----|---------|-----|
+| `estimate_lambdas_from_odds()` producía predicción tautológica | `prediction_pipeline.py:78-103` | Early return INSUFFICIENT_DATA sin llamar a la función deprecada |
+| EV calculado con probabilidad implícita cruda (sin desmarginar) | `ev_calculator.py:30-64` | `_compute_fair_probability()` con overround stripping |
+| `predictions` no se persistía en DB (solo Redis) | `orchestrator.py:117` + `match_repository.py:297` | `_persist_prediction()` → `upsert_prediction()` |
+| `session.commit()` faltante en batch_predict | `batch_predict.py:133` | `await session.commit()` después de cada predicción |
+| date_filter "tomorrow" devolvía 0 resultados | `matches.py:65-67` | `astimezone(timezone.utc)` explícito |
+| Partidos pasados aparecían en "Ver Todos" | `matches.py:71-75` | Guarda `match_date >= today_start_utc` |
+| Pills de ligas mostraban IDs numéricos (9001, 128) | `dashboard.tsx:183` | `resolveLeague(id).shortName` |
+| Pills de ligas vacías aparecían para fechas sin partidos | `dashboard.tsx:175-201` | `useMemo` derivado de `matches` con `.filter(count > 0)` |
+| Sidebar mostraba ligas sin partidos para la fecha | `league-sidebar.tsx` | Reescrita con `matches` prop + `useMemo` |
+| Unión Magdalena vs Santa Fe faltante en Copa Colombia | Sync manual | Insertado match_id=1289, ext_id=401871780 |
+| UEFA qualifiers no tenían datos (ESPN=0 eventos) | `uefa_qualifiers_scraper.py` + `data_ingestion.py:257` | Fallback con crawl4ai → Flashscore |
+
+---
+
+### 10. 📂 Archivos Clave Modificados (43 cambios en 27 archivos)
+
+**Backend (14 archivos):**
+`config.py`, `strength_calculator.py`, `prediction_pipeline.py`, `poisson_engine.py`, `ev_calculator.py`, `prediction_orchestrator.py`, `prediction.py` (model), `match.py` (model), `match_repository.py`, `team_repository.py`, `matches.py` (route), `tickets.py` (route), `data_ingestion.py`, `provider_registry.py`
+
+**ML Package (2 archivos):**
+`config.py` (ml), `strength_calculator.py` (ml)
+
+**Scrapers (2 archivos):**
+`espn_provider.py`, `uefa_qualifiers_scraper.py` (nuevo)
+
+**Frontend (6 archivos):**
+`dashboard.tsx`, `league-sidebar.tsx`, `league-metadata.ts`, `date-selector.tsx` (nuevo), `api.ts`, `page.tsx`
+
+**Scripts (2 archivos):**
+`batch_predict.py`, `006_expand_predictions_table.sql` (nuevo)
+
+**Verificación:** TypeScript 0 errores, Python imports OK, 60/60 batch_predict success, 59 predicciones en Supabase.
+
+---

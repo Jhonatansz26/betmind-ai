@@ -27,3 +27,7 @@ class Match(TimestampMixin, Base):
     league: Mapped["League"] = relationship("League", lazy="noload")
     home_team: Mapped["Team"] = relationship("Team", foreign_keys=[home_team_id], lazy="noload")
     away_team: Mapped["Team"] = relationship("Team", foreign_keys=[away_team_id], lazy="noload")
+    predictions: Mapped[list["Prediction"]] = relationship(
+        "Prediction", back_populates="match", lazy="noload",
+        order_by="Prediction.created_at.desc()",
+    )

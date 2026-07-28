@@ -130,6 +130,9 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant") -> dict:
                 logger.info("  => OK | conf=%d | ev_mkts=%d",
                             prediction.confidence_score, len(prediction.ev_analysis))
 
+                # Persistir en DB inmediatamente (por si el loop falla despues)
+                await session.commit()
+
             except Exception as e:
                 stats["errors"] += 1
                 tb = traceback.format_exc()

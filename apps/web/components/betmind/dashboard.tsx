@@ -3,7 +3,8 @@
 import * as React from 'react'
 
 import { type Match, type Ticket } from '@/lib/betmind'
-import { fetchTickets, fetchMatches, fetchLeagues } from '@/lib/api'
+import { fetchTickets, fetchMatches } from '@/lib/api'
+import { resolveLeague } from '@/lib/league-metadata'
 import { cn } from '@/lib/utils'
 import { LeagueSidebar } from './league-sidebar'
 import { LeagueAccordion } from './league-accordion'
@@ -11,6 +12,7 @@ import { ScannerEmptyState } from './scanner-empty-state'
 import { TicketCard } from './ticket-card'
 import { TrackingPanel } from './tracking-panel'
 import { BottomNav, TopNav, type NavTab } from './top-nav'
+import { DateSelector, formatDateTitle, type DateFilter } from './date-selector'
 
 /* ------------------------------------------------------------------ */
 /* Skeletons                                                           */
@@ -100,6 +102,7 @@ export function Dashboard() {
   const [tab, setTab] = React.useState<NavTab>('Boletos')
   const [league, setLeague] = React.useState('all')
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
+  const [dateFilter, setDateFilter] = React.useState<DateFilter>('today')
   const [today, setToday] = React.useState('')
   const [tickets, setTickets] = React.useState<Ticket[]>([])
   const [ticketsLoading, setTicketsLoading] = React.useState(true)
@@ -110,7 +113,6 @@ export function Dashboard() {
     totalEv: number
     generatedAt: string
   } | null>(null)
-  const [leaguePills, setLeaguePills] = React.useState<{ id: string; name: string }[]>([{ id: 'all', name: 'Todas las Ligas' }])
 
   // refreshKey bumps whenever user tracks a ticket, causing TrackingPanel to re-read localStorage
   const [trackRefreshKey, setTrackRefreshKey] = React.useState(0)
@@ -131,7 +133,8 @@ export function Dashboard() {
     let cancelled = false
     async function load() {
       try {
-        const result = await fetchTickets()
+        const filterParam = dateFilter === 'all' ? undefined : dateFilter
+        const result = await fetchTickets(['EDGE', 'VALUE', 'BOLD'], undefined, filterParam)
         if (!cancelled) {
           setTickets(result.tickets)
           setTicketMeta({
@@ -148,15 +151,14 @@ export function Dashboard() {
     }
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [dateFilter])
 
   React.useEffect(() => {
     let cancelled = false
     async function loadMatches() {
       try {
-        const todayCot = new Date()
-        const dateStr = todayCot.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
-        const fetchedMatches = await fetchMatches(dateStr)
+        const filterParam = dateFilter === 'all' ? undefined : dateFilter
+        const fetchedMatches = await fetchMatches(filterParam)
         if (!cancelled) {
           setMatches(fetchedMatches.length > 0 ? fetchedMatches : [])
         }
@@ -168,28 +170,36 @@ export function Dashboard() {
     }
     loadMatches()
     return () => { cancelled = true }
-  }, [])
-
-  React.useEffect(() => {
-    let cancelled = false
-    async function loadLeagues() {
-      try {
-        const data = await fetchLeagues()
-        if (!cancelled && data.length > 0) {
-          setLeaguePills([
-            { id: 'all', name: 'Todas las Ligas' },
-            ...data.filter((l) => l.active_matches > 0).map((l) => ({ id: String(l.external_id), name: l.name })),
-          ])
-        }
-      } catch {
-        // keep default pills
-      }
-    }
-    loadLeagues()
-    return () => { cancelled = true }
-  }, [])
+  }, [dateFilter])
 
   const [openLeagues, setOpenLeagues] = React.useState<Record<string, boolean>>({})
+
+  // Derive league pills from actual matches for the selected date
+  const leaguePills = React.useMemo(() => {
+    const countByLeague = new Map<string, { id: string; name: string; count: number }>()
+
+    for (const m of matches) {
+      const lid = String(m.leagueExternalId ?? 'other')
+      if (!countByLeague.has(lid)) {
+        countByLeague.set(lid, {
+          id: lid,
+          name: resolveLeague(m.leagueExternalId, m.league).shortName,
+          count: 0,
+        })
+      }
+      countByLeague.get(lid)!.count++
+    }
+
+    const pills = Array.from(countByLeague.values())
+      .filter((l) => l.count > 0)
+      .sort((a, b) => b.count - a.count)
+
+    const total = matches.length
+    return [
+      { id: 'all', name: `Todas las Ligas (${total})`, count: total },
+      ...pills,
+    ]
+  }, [matches])
 
   const filteredMatches = React.useMemo(
     () => (league === 'all' ? matches : matches.filter((m) => String(m.leagueExternalId ?? '') === league)),
@@ -219,6 +229,8 @@ export function Dashboard() {
   const showBoard   = tab === 'Partidos'
   const showScanner = tab === 'Escáner'
 
+  const dateInfo = React.useMemo(() => formatDateTitle(dateFilter, new Date()), [dateFilter])
+
   return (
     <div className="min-h-svh bg-background pb-16 md:pb-0">
       <TopNav active={tab} onChange={setTab} onToggleSidebar={() => setSidebarOpen((v) => !v)} />
@@ -233,7 +245,7 @@ export function Dashboard() {
               : 'hidden',
           )}
         >
-          <LeagueSidebar active={league} onSelect={selectLeague} />
+          <LeagueSidebar active={league} onSelect={selectLeague} matches={matches} />
         </aside>
 
         {sidebarOpen ? (
@@ -253,10 +265,11 @@ export function Dashboard() {
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div>
                     <h1 className="text-xl font-bold tracking-tight text-foreground">
-                      Boletos de Hoy
+                      Boletos de {dateInfo.title}
                     </h1>
-                    <p className="mt-0.5 text-xs text-subtle capitalize">{today}</p>
+                    <p className="mt-0.5 text-xs text-subtle capitalize">{dateInfo.subtitle}</p>
                   </div>
+                  <DateSelector value={dateFilter} onChange={setDateFilter} />
                   <p className="num text-xs text-muted-foreground">
                     {ticketMeta
                       ? `${ticketMeta.matchesAnalyzed} partidos · ${ticketMeta.totalEv} oportunidades +EV`
@@ -296,8 +309,11 @@ export function Dashboard() {
             <section className="flex flex-col gap-4">
               <div className="flex flex-col gap-3">
                 <h1 className="text-xl font-bold tracking-tight text-foreground">
-                  Partidos de Hoy
+                  Partidos de {dateInfo.title}
                 </h1>
+                <div className="flex items-center gap-3">
+                  <DateSelector value={dateFilter} onChange={setDateFilter} />
+                </div>
                 <div className="no-scrollbar flex items-center gap-2 overflow-x-auto pb-1">
                   {leaguePills.map((pill) => (
                     <button

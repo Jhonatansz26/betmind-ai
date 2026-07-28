@@ -1,18 +1,47 @@
 """
-SRP: Calcula los índices de fuerza de ataque y defensa de un equipo
+SRP: Calcula los indices de fuerza de ataque y defensa de un equipo
 relativos a la media de su liga. Sin I/O — recibe listas de partidos.
 
-La matemática se basa en el modelo de Dixon-Robinson (1998) simplificado:
-    attack_index  = (goles_marcados_equipo / partidos) / (goles_totales_liga / partidos_liga / 2)
-    defense_index = (goles_totales_liga / partidos_liga / 2) / (goles_recibidos_equipo / partidos)
+La matematica se basa en el modelo de Dixon-Robinson (1998) simplificado
+con Ponderacion Exponencial por Tiempo (Time Decay):
 
-Un defense_index > 1.0 significa que el equipo recibe MENOS goles que el promedio.
+    peso[k] = DECAY_FACTOR ** k    donde k=0 es el partido mas reciente
+
+de forma que los partidos recientes tienen mayor influencia en
+el calculo de promedios de goles y los indices de ataque/defensa.
+
+    attack_index  = (goles_marcados_ponderados) / (promedio_liga)
+    defense_index = (promedio_liga) / (goles_recibidos_ponderados)
+
+Un defense_index > 1.0 significa que el equipo recibe MENOS goles
+que el promedio de la liga (buena defensa).
 """
 import logging
 from betmind_ml.schemas.team_strength import TeamStrengthProfile
-from betmind_ml.config import MIN_MATCHES_FOR_STRENGTH, STRENGTH_WINDOW
+from betmind_ml.config import MIN_MATCHES_FOR_STRENGTH, STRENGTH_WINDOW, DECAY_FACTOR
 
 logger = logging.getLogger(__name__)
+
+
+def _compute_weighted_average(values: list[float]) -> float:
+    """
+    Calcula el promedio ponderado con decaimiento exponencial por indice.
+
+    peso[k] = DECAY_FACTOR ** k   para k = 0, 1, 2, ..., N-1
+
+    El partido mas reciente (indice 0) recibe peso 1.0 (maximo).
+    Cada partido hacia atras pierde un 15% de peso por posicion.
+    Para una ventana de 12 partidos, el mas antiguo pesa ~16.7%.
+    """
+    if not values:
+        return 0.0
+
+    n = len(values)
+    weights = [DECAY_FACTOR ** k for k in range(n)]
+    weighted_sum = sum(v * w for v, w in zip(values, weights))
+    weight_total = sum(weights)
+
+    return weighted_sum / weight_total if weight_total > 0 else 0.0
 
 
 def calculate_league_averages(all_matches: list[dict]) -> dict:
@@ -81,8 +110,8 @@ def calculate_team_strength(
                 goals_scored.append(match["away_goals"])
                 goals_conceded.append(match.get("home_goals", 0))
 
-    avg_scored = sum(goals_scored) / len(goals_scored) if goals_scored else 0.0
-    avg_conceded = sum(goals_conceded) / len(goals_conceded) if goals_conceded else 0.0
+    avg_scored = _compute_weighted_average(goals_scored)
+    avg_conceded = _compute_weighted_average(goals_conceded)
 
     league_avg = league_averages["avg_goals_per_team_per_match"]
 

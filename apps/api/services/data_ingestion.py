@@ -13,6 +13,7 @@ from apps.api.repositories.team_repository import TeamRepository
 from apps.api.services.api_football import APIFootballService
 from apps.api.services.providers.base_provider import DataProviderPort, RawFixture, RawTeam
 from apps.api.services.providers.provider_registry import get_provider_for_league
+from apps.api.services.providers.espn_provider import ESPN_LEAGUE_SLUGS
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +67,18 @@ class DataIngestionService:
         self._match_repo = MatchRepository(session)
 
     def _resolve_provider(self, league_id: int) -> tuple[DataProviderPort | None, str | None]:
+        # 1. ESPN: todas las ligas con slug conocido (incluye 2026)
+        if league_id in ESPN_LEAGUE_SLUGS:
+            provider = get_provider_for_league(str(league_id))
+            if provider:
+                return provider, str(league_id)
+
+        # 2. football-data.org: solo PL y PD
         code = API_FOOTBALL_TO_FOOTBALL_DATA.get(league_id)
         if code:
             provider = get_provider_for_league(code)
             return provider, code
+
         return None, None
 
     async def sync_league(self, external_league_id: int) -> League | None:
@@ -246,6 +255,17 @@ class DataIngestionService:
             )
 
             if not raw_fixtures:
+                # Fallback: UEFA qualifiers via Flashscore scraper
+                uefa_ids = {9001: "uefa.champions", 9003: "uefa.europa.conf"}
+                uefa_slug = uefa_ids.get(league_id)
+                if uefa_slug:
+                    logger.info(
+                        f"[sync_matches] No fixtures from provider for league {league_id}. "
+                        f"Trying UEFA qualifiers scraper ({uefa_slug})..."
+                    )
+                    raw_fixtures = await _scrape_uefa_qualifiers_fallback(uefa_slug)
+
+            if not raw_fixtures:
                 logger.warning(
                     f"[sync_matches] No fixtures returned for {league_code} season {season}."
                 )
@@ -266,6 +286,22 @@ class DataIngestionService:
                     away_team = await self._team_repo.get_by_external_id(
                         raw_fixture.away_team_external_id
                     )
+
+                    # Fallback: buscar por nombre si el external_id no coincide
+                    if not home_team:
+                        home_team = await self._team_repo.get_by_name(raw_fixture.home_team)
+                        if home_team:
+                            logger.debug(
+                                f"[sync_matches] Home team matched by name: "
+                                f"{raw_fixture.home_team} -> id={home_team.id}"
+                            )
+                    if not away_team:
+                        away_team = await self._team_repo.get_by_name(raw_fixture.away_team)
+                        if away_team:
+                            logger.debug(
+                                f"[sync_matches] Away team matched by name: "
+                                f"{raw_fixture.away_team} -> id={away_team.id}"
+                            )
 
                     if not home_team or not away_team:
                         logger.warning(
@@ -465,3 +501,22 @@ class DataIngestionService:
         )
 
         return total_result
+
+
+async def _scrape_uefa_qualifiers_fallback(league_code: str) -> list:
+    """Fallback: scrape UEFA qualifiers desde Flashscore cuando ESPN no tiene datos."""
+    try:
+        from apps.api.services.scrapers.uefa_qualifiers_scraper import scrape_uefa_qualifiers
+        from apps.api.services.providers.base_provider import RawFixture
+
+        fixtures = await scrape_uefa_qualifiers(league_code)
+        logger.info(
+            f"[uefa_scraper] Got {len(fixtures)} fixtures from Flashscore for {league_code}"
+        )
+        return fixtures
+    except ImportError:
+        logger.warning("[uefa_scraper] crawl4ai not available, skipping UEFA scraper")
+        return []
+    except Exception as e:
+        logger.error(f"[uefa_scraper] Error: {e}")
+        return []

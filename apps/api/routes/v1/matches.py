@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -29,26 +29,55 @@ async def list_matches(
     skip: int = 0,
     limit: int = 100,
     date_str: str | None = Query(None, alias="date", description="Fecha en formato YYYY-MM-DD (zona COT)"),
+    date_filter: str | None = Query(
+        None,
+        alias="date_filter",
+        description="Filtro predefinido: 'today', 'tomorrow', o fecha YYYY-MM-DD",
+    ),
     include_upcoming: bool = Query(True, description="Incluir partidos programados"),
     include_finished: bool = Query(False, description="Incluir partidos finalizados"),
     db: AsyncSession = Depends(get_async_session),
 ):
     """Lista partidos almacenados en la base de datos con datos de equipos y liga."""
     conditions = []
-    
-    if date_str:
+    now_cot = datetime.now(COT)
+
+    # Resolver date_filter: "today" / "tomorrow" / YYYY-MM-DD
+    resolved_date = date_str
+    if not resolved_date and date_filter:
+        if date_filter.lower() == "today":
+            resolved_date = now_cot.strftime("%Y-%m-%d")
+        elif date_filter.lower() == "tomorrow":
+            tomorrow_cot = now_cot + timedelta(days=1)
+            resolved_date = tomorrow_cot.strftime("%Y-%m-%d")
+        else:
+            resolved_date = date_filter  # Asumir YYYY-MM-DD
+
+    if resolved_date:
         try:
-            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            target_date = datetime.strptime(resolved_date, "%Y-%m-%d").date()
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid date format. Use YYYY-MM-DD",
             )
-        
-        start_dt = datetime.combine(target_date, datetime.min.time(), tzinfo=COT)
-        end_dt = datetime.combine(target_date, datetime.max.time(), tzinfo=COT)
-        conditions.append(and_(Match.match_date >= start_dt, Match.match_date <= end_dt))
-    
+
+        # Construir rango en COT y convertir explicitamente a UTC
+        # para garantizar comparacion correcta con timestamptz en PostgreSQL
+        start_cot = datetime.combine(target_date, datetime.min.time(), tzinfo=COT)
+        end_cot = datetime.combine(target_date, datetime.max.time(), tzinfo=COT)
+        start_utc = start_cot.astimezone(timezone.utc)
+        end_utc = end_cot.astimezone(timezone.utc)
+        conditions.append(and_(Match.match_date >= start_utc, Match.match_date <= end_utc))
+
+    # Guarda de fecha minima: en modo "upcoming" sin filtro de fecha,
+    # solo mostrar partidos desde hoy a las 00:00 COT hacia adelante
+    # (excluye partidos pasados con status SCHEDULED stale)
+    if include_upcoming and not include_finished and not resolved_date:
+        today_start_cot = datetime.combine(now_cot.date(), datetime.min.time(), tzinfo=COT)
+        today_start_utc = today_start_cot.astimezone(datetime.timezone.utc)
+        conditions.append(Match.match_date >= today_start_utc)
+
     status_filter = []
     if include_upcoming:
         status_filter.extend(["SCHEDULED", "LIVE", "INPLAY"])
@@ -64,6 +93,7 @@ async def list_matches(
             selectinload(Match.home_team),
             selectinload(Match.away_team),
             selectinload(Match.league),
+            selectinload(Match.predictions),
         )
         .order_by(Match.match_date.asc())
         .offset(skip)
@@ -278,5 +308,18 @@ def _match_to_dict_full(m: Match, odds: dict[str, float] | None = None) -> dict:
             "over25": odds.get("OVER_2_5"),
             "btts": odds.get("BTTS_YES"),
         }
+
+    if m.predictions:
+        latest = m.predictions[0]
+        result["prediction"] = {
+            "prediction_type": latest.prediction_type,
+            "confidence": latest.confidence,
+            "value_score": latest.value_score,
+            "reasoning": latest.reasoning,
+            "lambda_home": latest.lambda_home,
+            "lambda_away": latest.lambda_away,
+        }
+    else:
+        result["prediction"] = None
 
     return result

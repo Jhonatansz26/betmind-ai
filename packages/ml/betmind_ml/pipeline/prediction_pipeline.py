@@ -7,12 +7,12 @@ No tiene dependencias de DB — recibe todo como parámetros.
 """
 import logging
 from betmind_ml.schemas.team_strength import TeamStrengthProfile
-from betmind_ml.schemas.prediction_output import MatchPredictionOutput, MarketProbability
+from betmind_ml.schemas.prediction_output import MatchPredictionOutput, MarketProbability, PredictionVerdict, ScoreMatrix
 from betmind_ml.features.strength_calculator import (
     calculate_league_averages,
     calculate_team_strength,
 )
-from betmind_ml.models.poisson_engine import calculate_lambdas, estimate_lambdas_from_odds, build_score_matrix
+from betmind_ml.models.poisson_engine import calculate_lambdas, build_score_matrix
 from betmind_ml.models.market_calculator import build_all_markets
 from betmind_ml.ev.ev_calculator import enrich_markets_batch, get_top_ev_opportunities
 from betmind_ml.config import MODEL_VERSION, CONFIDENCE_WEIGHTS, MIN_MATCHES_FOR_STRENGTH
@@ -74,48 +74,74 @@ def run_prediction(
         h2h_matches=h2h_matches,  # Mismo H2H, desde la perspectiva del visitante
     )
 
-    # ── 3. Lambdas (xG) ──────────────────────────────────────────────────────
-    if not home_strength.is_reliable or not away_strength.is_reliable:
-        if bookmaker_odds and any(
-            bookmaker_odds.get(k) for k in ("1X2_HOME", "1X2_AWAY")
-        ):
-            logger.info(
-                "PredictionPipeline: %s o %s sin datos historicos — "
-                "estimando lambdas desde cuotas",
-                home_team_name, away_team_name,
-            )
-            lambda_home, lambda_away = estimate_lambdas_from_odds(
-                bookmaker_odds, league_key
-            )
-        else:
-            logger.warning(
-                "PredictionPipeline: sin datos historicos ni cuotas — "
-                "usando lambdas minimos"
-            )
-            lambda_home, lambda_away = 0.3, 0.3
-    else:
-        lambda_home, lambda_away = calculate_lambdas(
-            home=home_strength,
-            away=away_strength,
-            league_key=league_key,
-            league_avg_goals=league_averages["avg_goals_per_team_per_match"],
-            is_neutral_venue=is_neutral_venue,
+    # ── 3. Guard: validar datos suficientes (mín 5 partidos por equipo) ──────
+    insufficient = not home_strength.is_reliable or not away_strength.is_reliable
+
+    if insufficient:
+        unreliable_teams = []
+        if not home_strength.is_reliable:
+            unreliable_teams.append(home_team_name)
+        if not away_strength.is_reliable:
+            unreliable_teams.append(away_team_name)
+
+        logger.warning(
+            "PredictionPipeline: %s con < %d partidos historicos. "
+            "Datos insuficientes para prediccion cuantitativa.",
+            ", ".join(unreliable_teams),
+            MIN_MATCHES_FOR_STRENGTH,
         )
 
-    # ── 4. Matriz de Poisson ──────────────────────────────────────────────────
+        lambda_home, lambda_away = 0.0, 0.0
+        score_matrix = ScoreMatrix()
+        markets = _build_insufficient_markets()
+        confidence_score = 0
+        confidence_flags = [
+            f"INSUFFICIENT_DATA: <{MIN_MATCHES_FOR_STRENGTH} partidos historicos"
+        ]
+
+        output = MatchPredictionOutput(
+            match_id=match_id,
+            model_version=MODEL_VERSION,
+            lambda_home=lambda_home,
+            lambda_away=lambda_away,
+            markets=markets,
+            score_matrix=score_matrix,
+            confidence_score=confidence_score,
+            confidence_flags=confidence_flags,
+            home_attack_index=home_strength.attack_index,
+            away_attack_index=away_strength.attack_index,
+            home_defense_index=home_strength.defense_index,
+            away_defense_index=away_strength.defense_index,
+        )
+
+        logger.warning(
+            "PredictionPipeline: ABORTADO por datos insuficientes | match_id=%d",
+            match_id,
+        )
+        return output
+
+    # ── 4. Lambdas (xG) ──────────────────────────────────────────────────────
+    lambda_home, lambda_away = calculate_lambdas(
+        home=home_strength,
+        away=away_strength,
+        league_key=league_key,
+        league_avg_goals=league_averages["avg_goals_per_team_per_match"],
+        is_neutral_venue=is_neutral_venue,
+    )
+
+    # ── 5. Matriz de Poisson ──────────────────────────────────────────────────
     score_matrix = build_score_matrix(lambda_home, lambda_away)
 
-    # ── 5. Probabilidades de mercados ─────────────────────────────────────────
+    # ── 6. Probabilidades de mercados ─────────────────────────────────────────
     markets = build_all_markets(score_matrix.matrix)
 
-    # ── 6. Enriquecer con EV si hay cuotas ───────────────────────────────────
+    # ── 7. Enriquecer con EV si hay cuotas ───────────────────────────────────
     if bookmaker_odds:
         markets = enrich_markets_batch(markets, bookmaker_odds)
 
-    # ── 7. Score de confianza ─────────────────────────────────────────────────
-    odds_based = (not home_strength.is_reliable or not away_strength.is_reliable) and bookmaker_odds is not None
+    # ── 8. Score de confianza ─────────────────────────────────────────────────
     confidence_score, confidence_flags = _calculate_confidence(
-        home_strength, away_strength, h2h_matches, all_league_matches, odds_based=odds_based
+        home_strength, away_strength, h2h_matches, all_league_matches, odds_based=False
     )
 
     output = MatchPredictionOutput(
@@ -194,3 +220,23 @@ def _calculate_confidence(
     raw_score = sum(scores[key] * weights[key] for key in weights if key in scores)
 
     return round(min(max(raw_score, 0), 100)), flags
+
+
+def _build_insufficient_markets() -> list[MarketProbability]:
+    """Retorna lista de mercados con probability=0.0 y verdict=INSUFFICIENT."""
+    market_names = [
+        "1X2_HOME", "1X2_DRAW", "1X2_AWAY",
+        "OVER_0_5", "UNDER_0_5",
+        "OVER_1_5", "UNDER_1_5",
+        "OVER_2_5", "UNDER_2_5",
+        "OVER_3_5", "UNDER_3_5",
+        "BTTS_YES", "BTTS_NO",
+    ]
+    return [
+        MarketProbability(
+            market_name=name,
+            our_probability=0.0,
+            verdict=PredictionVerdict.INSUFFICIENT,
+        )
+        for name in market_names
+    ]

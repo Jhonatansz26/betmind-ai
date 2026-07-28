@@ -3,6 +3,7 @@
 Orquestador: coordina el repositorio, el engine ML y los servicios externos.
 Integra el pipeline completo de la Fase 3 (Motor Cuantitativo) y Fase 4 (Cerebro Táctico).
 """
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -17,7 +18,7 @@ from apps.api.services.cache_service import CacheService
 from betmind_ml.pipeline.full_analysis_pipeline import run_full_analysis
 from betmind_ml.schemas.match_context import MatchContext, MatchImportance
 from betmind_ml.schemas.referee import RefereeProfile
-from betmind_ml.schemas.prediction_output import MatchPredictionOutput
+from betmind_ml.schemas.prediction_output import MatchPredictionOutput, PredictionVerdict
 from betmind_ml.schemas.tactical_analysis import TacticalAnalysis
 
 logger = logging.getLogger(__name__)
@@ -73,61 +74,52 @@ class PredictionOrchestrator:
         # 5. Construir cuotas para el pipeline ML
         bookmaker_odds = self._build_bookmaker_odds(odds)
 
-        # 6. Ejecutar pipeline
-        try:
-            if include_tactical_analysis:
-                tactical_output = await self._get_cached_tactical_analysis(match_id)
-                
-                if tactical_output:
-                    logger.info("TacticalAnalysis cache HIT para match_id=%s (DB)", match_id)
+        # 6. Ejecutar pipeline cuantitativo (siempre primero, independiente del LLM)
+        if include_tactical_analysis:
+            # 6a. Verificar cache de analisis tactico en DB
+            tactical_from_cache = await self._get_cached_tactical_analysis(match_id)
+
+            if tactical_from_cache:
+                logger.info("TacticalAnalysis cache HIT para match_id=%s (DB)", match_id)
+                try:
                     quant_output = await self._run_quantitative_analysis(match, odds)
-                else:
-                    logger.info("TacticalAnalysis cache MISS para match_id=%s — ejecutando pipeline completo", match_id)
-                    context = self._build_match_context(match)
-                    
-                    try:
-                        quant_output, tactical_output = await run_full_analysis(
-                            match_id=match.id,
-                            home_team_id=match.home_team_id,
-                            home_team_name=match.home_team.name,
-                            away_team_id=match.away_team_id,
-                            away_team_name=match.away_team.name,
-                            league_id=match.league_id,
-                            league_key=self._get_league_key(match.league),
-                            league_name=match.league.name,
-                            season=match.match_date.year,
-                            match_date=str(match.match_date.date()),
-                            home_matches=home_matches,
-                            away_matches=away_matches,
-                            all_league_matches=all_league_matches,
-                            h2h_matches=h2h_matches,
-                            context=context,
-                            groq_api_keys=settings.get_groq_api_keys(),
-                            bookmaker_odds=bookmaker_odds,
-                        )
-                        await self._persist_tactical_analysis(match.id, tactical_output)
-                    except Exception as llm_error:
-                        logger.warning(
-                            "LLM tactical analysis failed for match_id=%s: %s. "
-                            "Using minimal tactical analysis.",
-                            match_id, llm_error,
-                        )
-                        quant_output = await self._run_quantitative_analysis(match, odds)
-                        tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
+                except Exception as e:
+                    logger.error("Quantitative pipeline failed for match_id=%s: %s", match_id, e)
+                    raise PredictionNotAvailableException(match_id) from e
+                tactical_output = tactical_from_cache
             else:
-                # Modo cuantitativo solamente (sin LLM)
-                logger.info("Modo cuantitativo para match_id=%s — sin análisis táctico", match_id)
+                logger.info(
+                    "TacticalAnalysis cache MISS para match_id=%s — "
+                    "ejecutando pipeline completo con timeout %.1fs",
+                    match_id, settings.GROQ_TIMEOUT_SECONDS,
+                )
+                quant_output, tactical_output = await self._run_full_analysis_safe(
+                    match, odds,
+                    home_matches=home_matches,
+                    away_matches=away_matches,
+                    h2h_matches=h2h_matches,
+                    all_league_matches=all_league_matches,
+                    bookmaker_odds=bookmaker_odds,
+                )
+                # Solo persistir si el LLM genero analisis real (no fallback)
+                if tactical_output.llm_model_used != "none":
+                    await self._persist_tactical_analysis(match.id, tactical_output)
+        else:
+            logger.info("Modo cuantitativo para match_id=%s — sin analisis tactico", match_id)
+            try:
                 quant_output = await self._run_quantitative_analysis(match, odds)
-                tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
-            
-        except Exception as e:
-            logger.error("Error ejecutando pipeline ML para match_id=%s: %s", match_id, e)
-            raise PredictionNotAvailableException(match_id) from e
+            except Exception as e:
+                logger.error("Quantitative pipeline failed for match_id=%s: %s", match_id, e)
+                raise PredictionNotAvailableException(match_id) from e
+            tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
+
+        # 6b. Persistir prediccion cuantitativa en DB (para LEFT JOIN desde /v1/matches)
+        await self._persist_prediction(match.id, quant_output)
 
         # 7. Construir respuesta
         response = self._build_response(match, quant_output, tactical_output)
 
-        # 8. Persistir en caché
+        # 8. Persistir en cache
         await self._cache.set(cache_key, response, ttl=_CACHE_TTL_SECONDS)
 
         return response
@@ -292,6 +284,50 @@ class PredictionOrchestrator:
             except Exception as rollback_error:
                 logger.error("Error durante rollback: %s", rollback_error)
 
+    async def _persist_prediction(
+        self,
+        match_id: int,
+        quant_output: MatchPredictionOutput,
+    ) -> None:
+        """Persiste la prediccion cuantitativa en la tabla predictions para LEFT JOIN."""
+        import json
+        try:
+            markets_data = [
+                {
+                    "market_name": m.market_name,
+                    "our_probability": m.our_probability,
+                    "implied_probability": m.implied_probability,
+                    "edge": m.edge,
+                    "expected_value": m.expected_value,
+                    "verdict": m.verdict.value if m.verdict else None,
+                }
+                for m in quant_output.markets
+            ]
+            await self._match_repo.upsert_prediction(
+                match_id=match_id,
+                prediction_type=quant_output.model_version,
+                confidence=str(quant_output.confidence_score),
+                value_score=round(
+                    sum(m.expected_value or 0 for m in quant_output.markets)
+                    / max(len(quant_output.markets), 1),
+                    4,
+                ),
+                reasoning="; ".join(quant_output.confidence_flags) if quant_output.confidence_flags else None,
+                lambda_home=quant_output.lambda_home,
+                lambda_away=quant_output.lambda_away,
+                home_attack_index=quant_output.home_attack_index,
+                away_attack_index=quant_output.away_attack_index,
+                home_defense_index=quant_output.home_defense_index,
+                away_defense_index=quant_output.away_defense_index,
+                markets_json=json.dumps(markets_data),
+            )
+        except Exception as e:
+            logger.warning(
+                "Error al persistir prediccion cuantitativa para match %s: %s. "
+                "Continuando sin persistir.",
+                match_id, e,
+            )
+
     async def _get_cached_tactical_analysis(
         self,
         match_id: int,
@@ -416,6 +452,70 @@ class PredictionOrchestrator:
         
         return quant_output
 
+    async def _run_full_analysis_safe(
+        self,
+        match: Match,
+        odds: OddsInput | None,
+        home_matches: list[dict],
+        away_matches: list[dict],
+        h2h_matches: list[dict],
+        all_league_matches: list[dict],
+        bookmaker_odds: dict[str, float] | None,
+    ) -> tuple[MatchPredictionOutput, TacticalAnalysis]:
+        """
+        Ejecuta el pipeline completo (Fase 3 + Fase 4) con timeout.
+        Si el LLM excede el timeout o falla, retorna el analisis cuantitativo
+        intacto con un analisis tactico minimo de fallback.
+
+        La prediccion cuantitativa (Poisson + EV) nunca se pierde.
+        """
+        context = self._build_match_context(match)
+
+        try:
+            quant_output, tactical_output = await asyncio.wait_for(
+                run_full_analysis(
+                    match_id=match.id,
+                    home_team_id=match.home_team_id,
+                    home_team_name=match.home_team.name,
+                    away_team_id=match.away_team_id,
+                    away_team_name=match.away_team.name,
+                    league_id=match.league_id,
+                    league_key=self._get_league_key(match.league),
+                    league_name=match.league.name,
+                    season=match.match_date.year,
+                    match_date=str(match.match_date.date()),
+                    home_matches=home_matches,
+                    away_matches=away_matches,
+                    all_league_matches=all_league_matches,
+                    h2h_matches=h2h_matches,
+                    context=context,
+                    groq_api_keys=settings.get_groq_api_keys(),
+                    bookmaker_odds=bookmaker_odds,
+                ),
+                timeout=settings.GROQ_TIMEOUT_SECONDS,
+            )
+            return quant_output, tactical_output
+
+        except asyncio.TimeoutError:
+            logger.warning(
+                "LLM tactical analysis TIMEOUT after %.1fs for match_id=%s. "
+                "Falling back to minimal tactical analysis.",
+                settings.GROQ_TIMEOUT_SECONDS, match.id,
+            )
+            quant_output = await self._run_quantitative_analysis(match, odds)
+            tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
+            return quant_output, tactical_output
+
+        except Exception as e:
+            logger.warning(
+                "LLM tactical analysis failed for match_id=%s: %s. "
+                "Falling back to minimal tactical analysis.",
+                match.id, e,
+            )
+            quant_output = await self._run_quantitative_analysis(match, odds)
+            tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
+            return quant_output, tactical_output
+
     def _build_response(
         self,
         match: Match,
@@ -448,6 +548,14 @@ class PredictionOrchestrator:
         for market in quant.markets:
             if market.bookmaker_odds:
                 kelly = calculate_quarter_kelly(market.our_probability, market.bookmaker_odds)
+
+                if market.verdict == PredictionVerdict.INSUFFICIENT:
+                    api_verdict = Verdict.INSUFFICIENT_DATA
+                elif market.expected_value and market.expected_value > 0.05:
+                    api_verdict = Verdict.POSITIVE_VALUE
+                else:
+                    api_verdict = Verdict.NO_VALUE
+
                 ev_analysis.append(EVAnalysis(
                     market=market.market_name,
                     our_probability=market.our_probability,
@@ -456,7 +564,7 @@ class PredictionOrchestrator:
                     edge_percentage=market.edge,
                     expected_value=market.expected_value,
                     kelly_stake=kelly,
-                    verdict=Verdict.POSITIVE_VALUE if market.expected_value and market.expected_value > 0.05 else Verdict.NO_VALUE,
+                    verdict=api_verdict,
                 ))
 
         # Construir narrativa táctica

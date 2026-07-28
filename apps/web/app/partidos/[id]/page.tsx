@@ -373,7 +373,7 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
   const rows = React.useMemo(() => marketRows(match, model), [match, model])
   const best = React.useMemo(() => bestOpportunity(rows), [rows])
   const leagueMeta = resolveLeague(match.leagueExternalId, match.league)
-  const hasPrediction = enriched != null && (enriched.lambdaHome > 0 || enriched.lambdaAway > 0)
+  const hasPrediction = enriched != null && (enriched.confidenceScore > 0 || enriched.evAnalysis.length > 0)
 
   return (
     <div className="flex flex-col gap-0">

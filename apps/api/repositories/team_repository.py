@@ -31,6 +31,10 @@ class TeamRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_name(self, name: str) -> Optional[Team]:
+        """Obtiene equipo por nombre canonicalizado (cross-provider)."""
+        return await self._find_by_normalized_name(name)
+
     async def get_all(self, skip: int = 0, limit: int = 100) -> list[Team]:
         """Obtiene todos los equipos con paginación."""
         stmt = select(Team).offset(skip).limit(limit)

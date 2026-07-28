@@ -18,13 +18,21 @@ NARRATIVE_MODEL = "llama-3.1-8b-instant"
 MIN_MATCHES_FOR_STRENGTH = 5
 
 # Ventana de partidos para calcular fuerza de ataque/defensa
-STRENGTH_WINDOW = 10  # últimos 10 partidos de la temporada actual
+STRENGTH_WINDOW = 12  # últimos 12 partidos de la temporada actual
 
 # Ventana para forma reciente (más corta — captura momento actual)
 FORM_WINDOW = 5
 
 # Ventana H2H
 H2H_WINDOW = 6
+
+# ── Ponderación Exponencial por Tiempo (Time Decay) ─────────────────────────
+# Factor de decaimiento por índice de partido: peso[k] = DECAY_FACTOR^k
+# k=0 (más reciente) → peso=1.0, k=11 (más antiguo) → peso=0.85^11≈0.167
+DECAY_FACTOR = 0.85
+
+# Decaimiento alternativo por días transcurridos: peso = exp(-DAYS_DECAY_RATE * días)
+DAYS_DECAY_RATE = 0.005
 
 # ── Factores de Ventaja de Local por Liga ─────────────────────────────────────
 # Calibrados empíricamente sobre datos históricos

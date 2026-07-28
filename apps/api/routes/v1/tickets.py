@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -27,15 +27,39 @@ COT = ZoneInfo("America/Bogota")
 @router.post(
     "/generate",
     response_model=TicketGenerateResponse,
-    summary="Generate AI tickets for today's matches (EDGE, VALUE, BOLD)",
+    summary="Generate AI tickets for selected date (today, tomorrow, or all)",
 )
 async def generate_tickets(
     request: TicketGenerateRequest,
+    date_filter: str | None = Query(
+        None,
+        alias="date_filter",
+        description="Filtro de fecha: 'today', 'tomorrow', YYYY-MM-DD, o omitir para hoy+mañana",
+    ),
     session=Depends(get_async_session),
     cache=Depends(get_cache_service),
 ):
-    today_cot = date.today()
-    cache_key = f"tickets:daily:{today_cot.isoformat()}"
+    now_cot = datetime.now(COT)
+    today_cot = now_cot.date()
+    tomorrow_cot_obj = today_cot + timedelta(days=1)
+
+    if date_filter:
+        df = date_filter.lower()
+        if df == "today":
+            target_dates = [today_cot]
+        elif df == "tomorrow":
+            target_dates = [tomorrow_cot_obj]
+        else:
+            try:
+                target_dates = [datetime.strptime(date_filter, "%Y-%m-%d").date()]
+            except ValueError:
+                target_dates = [today_cot, tomorrow_cot_obj]
+    else:
+        target_dates = [today_cot, tomorrow_cot_obj]
+
+    # Cache key distinguishes dates
+    date_slug = "_".join(sorted(set(d.isoformat() for d in target_dates)))
+    cache_key = f"tickets:daily:{date_slug}"
 
     if not request.force_refresh:
         if cached := await cache.get(cache_key, TicketGenerateResponse):
@@ -47,18 +71,13 @@ async def generate_tickets(
     tactical_repo = TacticalAnalysisRepository(session)
     odds_service = OddsService(session)
 
-    today_matches = await repo.get_matches_by_date(
-        target_date=today_cot,
-        league_keys=request.league_filter,
-    )
-
-    tomorrow_cot = today_cot + timedelta(days=1)
-    tomorrow_matches = await repo.get_matches_by_date(
-        target_date=tomorrow_cot,
-        league_keys=request.league_filter,
-    )
-
-    all_matches = today_matches + tomorrow_matches
+    all_matches = []
+    for target_date in target_dates:
+        day_matches = await repo.get_matches_by_date(
+            target_date=target_date,
+            league_keys=request.league_filter,
+        )
+        all_matches.extend(day_matches)
 
     if not all_matches:
         return TicketGenerateResponse(

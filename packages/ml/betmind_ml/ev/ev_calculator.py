@@ -27,30 +27,77 @@ from betmind_ml.config import EV_POSITIVE_THRESHOLD, EV_AVOID_THRESHOLD
 logger = logging.getLogger(__name__)
 
 
+def _compute_fair_probability(
+    market_name: str,
+    odds: float,
+    odds_dict: dict[str, float],
+) -> float:
+    """
+    Elimina el overround (margen del bookmaker) para obtener una probabilidad
+    implicita justa y comparable con la probabilidad real del modelo.
+
+    Para cada mercado, busca el lado opuesto en odds_dict y calcula:
+        overround = (1/odds_a) + (1/odds_b)
+        fair_prob = (1/odds) / overround
+
+    Si no se encuentra el lado opuesto, se retorna la probabilidad implicita cruda.
+    """
+    _1X2_GROUP = ("1X2_HOME", "1X2_DRAW", "1X2_AWAY")
+
+    if market_name in _1X2_GROUP:
+        odds_home = odds_dict.get("1X2_HOME", 0)
+        odds_draw = odds_dict.get("1X2_DRAW", 0)
+        odds_away = odds_dict.get("1X2_AWAY", 0)
+        if odds_home > 0 and odds_draw > 0 and odds_away > 0:
+            overround = (1.0 / odds_home) + (1.0 / odds_draw) + (1.0 / odds_away)
+            if overround > 0:
+                return (1.0 / odds) / overround
+
+    opposite: str | None = None
+    if market_name.startswith("OVER_"):
+        opposite = market_name.replace("OVER_", "UNDER_", 1)
+    elif market_name.startswith("UNDER_"):
+        opposite = market_name.replace("UNDER_", "OVER_", 1)
+    elif market_name == "BTTS_YES":
+        opposite = "BTTS_NO"
+    elif market_name == "BTTS_NO":
+        opposite = "BTTS_YES"
+
+    if opposite:
+        opposite_odds = odds_dict.get(opposite)
+        if opposite_odds and opposite_odds > 0:
+            overround = (1.0 / odds) + (1.0 / opposite_odds)
+            if overround > 0:
+                return (1.0 / odds) / overround
+
+    return 1.0 / odds
+
+
 def enrich_market_with_ev(
     market: MarketProbability,
     bookmaker_odds: float,
+    fair_implied_prob: float | None = None,
 ) -> MarketProbability:
     """
-    Añade análisis de EV a un MarketProbability existente.
-    Retorna un nuevo objeto (los dataclasses son mutables aquí — no frozen).
+    Anade analisis de EV a un MarketProbability existente.
+    Retorna un nuevo objeto (los dataclasses son mutables aqui — no frozen).
 
     Args:
         market: MarketProbability con our_probability ya calculada.
         bookmaker_odds: Cuota decimal del bookmaker (ej: 1.85, 2.10, 3.40).
                         Debe ser > 1.0 siempre.
+        fair_implied_prob: Probabilidad implicita desmarginada (opcional).
+                           Si no se provee, se usa la probabilidad implicita cruda 1/odds.
     """
     if bookmaker_odds <= 1.0:
-        logger.warning("Cuota inválida recibida: %.2f para %s", bookmaker_odds, market.market_name)
+        logger.warning("Cuota invalida recibida: %.2f para %s", bookmaker_odds, market.market_name)
         return market
 
-    implied_prob = 1.0 / bookmaker_odds
+    implied_prob = fair_implied_prob if fair_implied_prob is not None else (1.0 / bookmaker_odds)
     edge = market.our_probability - implied_prob
 
-    # EV por unidad apostada (stake = 1)
     ev = (market.our_probability * (bookmaker_odds - 1.0)) - (1.0 - market.our_probability)
 
-    # Clasificación
     if ev >= EV_POSITIVE_THRESHOLD:
         verdict = PredictionVerdict.POSITIVE_EV
     elif ev <= EV_AVOID_THRESHOLD:
@@ -59,7 +106,7 @@ def enrich_market_with_ev(
         verdict = PredictionVerdict.NO_VALUE
 
     logger.info(
-        "+EV Analysis | %s: P_real=%.1f%% P_implied=%.1f%% Edge=%.1f%% EV=%.3f → %s",
+        "+EV Analysis | %s: P_real=%.1f%% P_fair=%.1f%% Edge=%.1f%% EV=%.3f -> %s",
         market.market_name,
         market.our_probability * 100,
         implied_prob * 100,
@@ -68,10 +115,9 @@ def enrich_market_with_ev(
         verdict.value,
     )
 
-    # Mutar el market in-place (no es frozen dataclass)
     market.bookmaker_odds            = bookmaker_odds
     market.implied_probability       = round(implied_prob, 4)
-    market.edge                      = round(edge * 100, 2)   # en porcentaje
+    market.edge                      = round(edge * 100, 2)
     market.expected_value            = round(ev, 4)
     market.verdict                   = verdict
     return market
@@ -82,7 +128,9 @@ def enrich_markets_batch(
     odds_dict: dict[str, float],
 ) -> list[MarketProbability]:
     """
-    Enriquece múltiples mercados con sus cuotas en un solo paso.
+    Enriquece multiples mercados con sus cuotas en un solo paso.
+    Aplica desmarginacion del overround para obtener probabilidades
+    implicitas justas y comparables.
 
     Args:
         markets: Lista de MarketProbability del calculador de mercados.
@@ -93,7 +141,8 @@ def enrich_markets_batch(
     for market in markets:
         odds = odds_dict.get(market.market_name)
         if odds:
-            enriched.append(enrich_market_with_ev(market, odds))
+            fair_prob = _compute_fair_probability(market.market_name, odds, odds_dict)
+            enriched.append(enrich_market_with_ev(market, odds, fair_implied_prob=fair_prob))
         else:
             # Sin cuota disponible — mantenemos la probabilidad, verdict=INSUFFICIENT
             enriched.append(market)

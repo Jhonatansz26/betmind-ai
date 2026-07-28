@@ -3,6 +3,7 @@
 SRP: Este archivo tiene UNA responsabilidad — consultar y persistir datos
 de partidos en la base de datos. Zero lógica de negocio aquí.
 """
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
@@ -11,6 +12,8 @@ from apps.api.models.match import Match
 from apps.api.models.league import League
 from apps.api.models.prediction import Prediction
 from apps.api.core.exceptions import MatchNotFoundException
+
+logger = logging.getLogger(__name__)
 
 LEAGUE_KEY_TO_EXTERNAL_ID: dict[str, int] = {
     "liga_betplay": 239,
@@ -294,3 +297,64 @@ class MatchRepository:
 
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def upsert_prediction(
+        self,
+        match_id: int,
+        prediction_type: str,
+        confidence: str,
+        value_score: float,
+        reasoning: str | None = None,
+        lambda_home: float | None = None,
+        lambda_away: float | None = None,
+        home_attack_index: float | None = None,
+        away_attack_index: float | None = None,
+        home_defense_index: float | None = None,
+        away_defense_index: float | None = None,
+        markets_json: str | None = None,
+    ) -> Prediction:
+        """Inserta o actualiza la prediccion cuantitativa para un partido."""
+        try:
+            stmt = select(Prediction).where(Prediction.match_id == match_id)
+            result = await self._session.execute(stmt)
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                existing.prediction_type = prediction_type
+                existing.confidence = confidence
+                existing.value_score = value_score
+                existing.reasoning = reasoning
+                existing.lambda_home = lambda_home
+                existing.lambda_away = lambda_away
+                existing.home_attack_index = home_attack_index
+                existing.away_attack_index = away_attack_index
+                existing.home_defense_index = home_defense_index
+                existing.away_defense_index = away_defense_index
+                existing.markets_json = markets_json
+                await self._session.flush()
+                return existing
+            else:
+                obj = Prediction(
+                    match_id=match_id,
+                    prediction_type=prediction_type,
+                    confidence=confidence,
+                    value_score=value_score,
+                    reasoning=reasoning,
+                    lambda_home=lambda_home,
+                    lambda_away=lambda_away,
+                    home_attack_index=home_attack_index,
+                    away_attack_index=away_attack_index,
+                    home_defense_index=home_defense_index,
+                    away_defense_index=away_defense_index,
+                    markets_json=markets_json,
+                )
+                self._session.add(obj)
+                await self._session.flush()
+                return obj
+        except Exception as e:
+            logger.warning("Error al persistir prediccion para match %s: %s", match_id, e)
+            try:
+                await self._session.rollback()
+            except Exception:
+                pass
+            raise

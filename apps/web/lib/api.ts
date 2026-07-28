@@ -174,7 +174,13 @@ export interface TicketFetchResult {
 export async function fetchTickets(
   modes: Mode[] = ['EDGE', 'VALUE', 'BOLD'],
   leagueFilter?: string[],
+  dateFilter?: string,
 ): Promise<TicketFetchResult> {
+  const url = new URL(`${API_BASE}/api/v1/tickets/generate`)
+  if (dateFilter) {
+    url.searchParams.set('date_filter', dateFilter)
+  }
+
   const body: Record<string, unknown> = {
     modes: modes.map((m) => m.toLowerCase()),
   }
@@ -182,7 +188,7 @@ export async function fetchTickets(
     body.league_filter = leagueFilter
   }
 
-  const res = await fetch(`${API_BASE}/api/v1/tickets/generate`, {
+  const res = await fetch(url.toString(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -226,6 +232,14 @@ interface BackendMatch {
     over25?: number
     btts?: number
   }
+  prediction?: {
+    prediction_type: string
+    confidence: string
+    value_score: number
+    reasoning: string | null
+    lambda_home: number | null
+    lambda_away: number | null
+  } | null
 }
 
 interface BackendMatchesResponse {
@@ -270,6 +284,7 @@ function mapBackendMatch(raw: BackendMatch): Match {
   }
 
   const realOdds = raw.odds ?? { home: undefined, draw: undefined, away: undefined, over25: undefined, btts: undefined }
+  const prediction = raw.prediction ?? null
 
   return {
     id: String(raw.id),
@@ -284,8 +299,8 @@ function mapBackendMatch(raw: BackendMatch): Match {
     score: raw.home_score != null && raw.away_score != null ? [raw.home_score, raw.away_score] : undefined,
     home: raw.home_team_name || 'Local',
     away: raw.away_team_name || 'Visitante',
-    lambdaHome: 0,
-    lambdaAway: 0,
+    lambdaHome: prediction?.lambda_home ?? 0,
+    lambdaAway: prediction?.lambda_away ?? 0,
     odds: {
       home: realOdds.home ?? 0,
       draw: realOdds.draw ?? 0,
@@ -302,14 +317,14 @@ function mapBackendMatch(raw: BackendMatch): Match {
   }
 }
 
-export async function fetchMatches(dateStr?: string): Promise<Match[]> {
+export async function fetchMatches(dateFilter?: string): Promise<Match[]> {
   const params = new URLSearchParams({
     limit: '200',
     include_upcoming: 'true',
     include_finished: 'false',
   })
-  if (dateStr) {
-    params.set('date', dateStr)
+  if (dateFilter) {
+    params.set('date_filter', dateFilter)
   }
 
   const res = await fetch(`${API_BASE}/api/v1/matches/?${params.toString()}`)
@@ -453,16 +468,11 @@ export async function fetchMatchPrediction(matchId: string): Promise<EnrichedMat
   const predUrl = `${API_BASE}/api/v1/predictions/${matchId}`
 
   console.log(`[fetchMatchPrediction] Loading match ${matchId}`)
-  console.log(`[fetchMatchPrediction]   Match URL: ${matchUrl}`)
-  console.log(`[fetchMatchPrediction]   Predict URL: ${predUrl}`)
 
   const [matchRes, predRes] = await Promise.allSettled([
     fetch(matchUrl),
     fetch(predUrl),
   ])
-
-  console.log(`[fetchMatchPrediction]   Match status: ${matchRes.status === 'fulfilled' ? matchRes.value.status : 'REJECTED'}`)
-  console.log(`[fetchMatchPrediction]   Predict status: ${predRes.status === 'fulfilled' ? predRes.value.status : 'REJECTED'}`)
 
   if (matchRes.status === 'rejected') {
     throw new Error(`Match API error: ${matchRes.reason}`)
@@ -480,7 +490,7 @@ export async function fetchMatchPrediction(matchId: string): Promise<EnrichedMat
     console.warn(
       `[fetchMatchPrediction] Prediction not available for match ${matchId} ` +
       `(HTTP ${predRes.status === 'rejected' ? 'REJECTED' : predRes.value.status}). ` +
-      `Falling back to base match without prediction.`
+      `Returning base match — prediction data is insufficient or unavailable.`
     )
     return {
       ...baseMatch,

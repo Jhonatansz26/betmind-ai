@@ -3,40 +3,38 @@
 import * as React from 'react'
 
 import { cn } from '@/lib/utils'
-import { fetchLeagues } from '@/lib/api'
-import type { LeagueData } from '@/lib/api'
+import type { Match } from '@/lib/betmind'
 import { resolveLeague } from '@/lib/league-metadata'
 
 
 interface LeagueSidebarProps {
   active: string
   onSelect: (leagueId: string) => void
+  matches: Match[]
 }
 
 function LeagueGroup({
   region,
-  leagues,
+  items,
   active,
   onSelect,
 }: {
   region: 'EUROPE' | 'AMERICAS'
-  leagues: LeagueData[]
+  items: { leagueId: string; name: string; count: number; flag: string; region: string }[]
   active: string
   onSelect: (id: string) => void
 }) {
-  const regionLabel = region === 'EUROPE' ? 'EUROPA' : 'AMÉRICA'
+  const regionLabel = region === 'EUROPE' ? 'EUROPA' : 'AMERICA'
   return (
     <div className="flex flex-col gap-1">
       <p className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-subtle">{regionLabel}</p>
-      {leagues.map((league) => {
-        const leagueId = String(league.external_id)
-        const selected = active === leagueId
-        const meta = resolveLeague(league.external_id, league.name)
+      {items.map((item) => {
+        const selected = active === item.leagueId
         return (
           <button
-            key={league.id}
+            key={item.leagueId}
             type="button"
-            onClick={() => onSelect(leagueId)}
+            onClick={() => onSelect(item.leagueId)}
             aria-current={selected}
             className={cn(
               'group flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sm transition-colors',
@@ -47,9 +45,9 @@ function LeagueGroup({
           >
             <div className="flex items-center gap-2 min-w-0">
               <span aria-hidden className="text-sm leading-none shrink-0">
-                {meta.flag}
+                {item.flag}
               </span>
-              <span className="truncate text-xs">{meta.name}</span>
+              <span className="truncate text-xs">{item.name}</span>
             </div>
             <span
               className={cn(
@@ -59,7 +57,7 @@ function LeagueGroup({
                   : 'bg-muted text-subtle group-hover:text-muted-foreground',
               )}
             >
-              {league.active_matches}
+              {item.count}
             </span>
           </button>
         )
@@ -68,28 +66,35 @@ function LeagueGroup({
   )
 }
 
-export function LeagueSidebar({ active, onSelect }: LeagueSidebarProps) {
-  const [leagues, setLeagues] = React.useState<LeagueData[]>([])
-  const [loading, setLoading] = React.useState(true)
+export function LeagueSidebar({ active, onSelect, matches }: LeagueSidebarProps) {
+  const sidebarLeagues = React.useMemo(() => {
+    const countMap = new Map<string, { leagueId: string; name: string; shortName: string; count: number; flag: string; region: string }>()
 
-  React.useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const data = await fetchLeagues()
-        if (!cancelled) setLeagues(data)
-      } catch {
-        // keep empty
-      } finally {
-        if (!cancelled) setLoading(false)
+    for (const m of matches) {
+      const lid = String(m.leagueExternalId ?? 'other')
+      if (!countMap.has(lid)) {
+        const meta = resolveLeague(m.leagueExternalId, m.league)
+        countMap.set(lid, {
+          leagueId: lid,
+          name: meta.shortName,
+          shortName: meta.shortName,
+          count: 0,
+          flag: meta.flag,
+          region: meta.region,
+        })
       }
+      countMap.get(lid)!.count++
     }
-    load()
-    return () => { cancelled = true }
-  }, [])
 
-  const europeLeagues = leagues.filter((l) => resolveLeague(l.external_id, l.name).region === 'EUROPE')
-  const americasLeagues = leagues.filter((l) => resolveLeague(l.external_id, l.name).region === 'AMERICAS')
+    return Array.from(countMap.values())
+      .filter((l) => l.count > 0)
+      .sort((a, b) => b.count - a.count)
+  }, [matches])
+
+  const europeLeagues = sidebarLeagues.filter((l) => l.region === 'EUROPE')
+  const americasLeagues = sidebarLeagues.filter((l) => l.region === 'AMERICAS')
+
+  const totalMatches = matches.length
 
   return (
     <div className="flex flex-col gap-6">
@@ -106,22 +111,18 @@ export function LeagueSidebar({ active, onSelect }: LeagueSidebarProps) {
               : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground',
           )}
         >
-          Todas las Ligas
+          Todas las Ligas ({totalMatches})
         </button>
       </div>
 
-      {loading ? (
-        <div className="flex flex-col gap-2">
-          {[0, 1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-8 animate-pulse rounded-md bg-muted" />
-          ))}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-5">
-          <LeagueGroup region="EUROPE" leagues={europeLeagues} active={active} onSelect={onSelect} />
-          <LeagueGroup region="AMERICAS" leagues={americasLeagues} active={active} onSelect={onSelect} />
-        </div>
-      )}
+      <div className="flex flex-col gap-5">
+        {europeLeagues.length > 0 && (
+          <LeagueGroup region="EUROPE" items={europeLeagues} active={active} onSelect={onSelect} />
+        )}
+        {americasLeagues.length > 0 && (
+          <LeagueGroup region="AMERICAS" items={americasLeagues} active={active} onSelect={onSelect} />
+        )}
+      </div>
 
       <div className="mt-2 flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
         <div className="flex items-center justify-between gap-2">
@@ -133,8 +134,8 @@ export function LeagueSidebar({ active, onSelect }: LeagueSidebarProps) {
         </div>
         <dl className="flex flex-col gap-2">
           {[
-            ['Ligas activas', `${leagues.length} hoy`],
-            ['Partidos programados', `${leagues.reduce((sum, l) => sum + l.active_matches, 0)} hoy`],
+            ['Ligas activas', `${sidebarLeagues.length} hoy`],
+            ['Partidos programados', `${totalMatches} hoy`],
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-2">
               <dt className="text-xs text-subtle">{label}</dt>

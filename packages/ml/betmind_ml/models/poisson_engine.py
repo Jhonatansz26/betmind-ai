@@ -15,6 +15,7 @@ FUNDAMENTO MATEMÁTICO:
 """
 import logging
 import math
+import warnings
 from scipy.stats import poisson  # type: ignore
 
 from betmind_ml.schemas.team_strength import TeamStrengthProfile
@@ -107,6 +108,13 @@ def estimate_lambdas_from_odds(
     Deriva Goles Esperados directamente desde cuotas de bookmaker cuando
     no hay datos historicos disponibles. Resuelve el problema de 'Modelo por calcular'.
 
+    .. deprecated::
+        Esta funcion produce una prediccion tautologica (las probabilidades
+        del modelo se derivan de las mismas cuotas con las que luego se
+        compara el EV). Usar solo como referencia o en analisis exploratorios.
+        El pipeline principal ahora retorna INSUFFICIENT_DATA cuando no hay
+        datos historicos suficientes.
+
     Algoritmo:
         1. Extrae probabilidades implicitas del mercado 1X2, ajustando el overround.
         2. Estima lambda_total desde la cuota Over 2.5 (o usa 2.7 global).
@@ -119,6 +127,14 @@ def estimate_lambdas_from_odds(
     Returns:
         (lambda_home, lambda_away) estimados.
     """
+    warnings.warn(
+        "estimate_lambdas_from_odds is deprecated and produces tautological "
+        "predictions. Use only for reference/exploratory analysis. "
+        "The main pipeline now returns INSUFFICIENT_DATA when team strength "
+        "data is unreliable.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     odds_home = bookmaker_odds.get("1X2_HOME", 2.0)
     odds_draw = bookmaker_odds.get("1X2_DRAW", 3.5)
     odds_away = bookmaker_odds.get("1X2_AWAY", 3.5)
