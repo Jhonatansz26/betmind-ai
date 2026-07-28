@@ -209,38 +209,41 @@ def _parse_flashscore_markdown(md: str, slug: str) -> list[RawFixture]:
         )
 
         for link_text, link_url in match_links:
-            if ' - ' not in link_text:
-                continue
-
-            parts = link_text.split(' - ', 1)
-            if len(parts) != 2:
-                continue
-            home_team, away_team = parts[0].strip(), parts[1].strip()
-
-            match_id = _extract_match_id(link_url)
-            if match_id in seen_ids:
-                continue
-            seen_ids.add(match_id)
-
             try:
-                match_dt = datetime.strptime(match_date_str, "%Y-%m-%d").replace(hour=18, minute=0)
-            except ValueError:
-                match_dt = datetime.utcnow()
+                if ' - ' not in link_text:
+                    continue
 
-            fixtures.append(
-                RawFixture(
-                    external_id=_hash_match_id(match_id),
-                    league_code=slug,
-                    league_name=LEAGUE_NAMES.get(slug, slug),
-                    home_team=home_team,
-                    home_team_external_id=0,
-                    away_team=away_team,
-                    away_team_external_id=0,
-                    match_date=match_dt,
-                    status="SCHEDULED",
-                    regulation_time_only=True,
+                parts = link_text.split(' - ', 1)
+                if len(parts) != 2:
+                    continue
+                home_team, away_team = parts[0].strip(), parts[1].strip()
+
+                match_id = _extract_match_id(link_url)
+                if match_id in seen_ids:
+                    continue
+                seen_ids.add(match_id)
+
+                try:
+                    match_dt = datetime.strptime(match_date_str, "%Y-%m-%d").replace(hour=18, minute=0)
+                except ValueError:
+                    match_dt = datetime.utcnow()
+
+                fixtures.append(
+                    RawFixture(
+                        external_id=_hash_match_id(match_id),
+                        league_code=slug,
+                        league_name=LEAGUE_NAMES.get(slug, slug),
+                        home_team=home_team,
+                        home_team_external_id=0,
+                        away_team=away_team,
+                        away_team_external_id=0,
+                        match_date=match_dt,
+                        status="SCHEDULED",
+                        regulation_time_only=True,
+                    )
                 )
-            )
+            except Exception as e:
+                logger.warning(f"Skipping malformed fixture in {slug}: {e}")
 
     return fixtures
 

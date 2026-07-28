@@ -419,8 +419,6 @@ interface BackendPrediction {
 }
 
 export interface EnrichedMatch extends Match {
-  lambdaHome: number
-  lambdaAway: number
   probabilities: {
     home_win: number
     draw: number

@@ -70,7 +70,7 @@ def _compute_fair_probability(
             if overround > 0:
                 return (1.0 / odds) / overround
 
-    return 1.0 / odds
+    return 1.0 / odds if odds > 0 else 0.0
 
 
 def enrich_market_with_ev(
@@ -91,6 +91,10 @@ def enrich_market_with_ev(
     """
     if bookmaker_odds <= 1.0:
         logger.warning("Cuota invalida recibida: %.2f para %s", bookmaker_odds, market.market_name)
+        return market
+
+    if not (0.0 <= market.our_probability <= 1.0):
+        logger.warning("Probabilidad invalida: %.4f para %s", market.our_probability, market.market_name)
         return market
 
     implied_prob = fair_implied_prob if fair_implied_prob is not None else (1.0 / bookmaker_odds)
