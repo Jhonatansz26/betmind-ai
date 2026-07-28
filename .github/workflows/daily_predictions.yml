@@ -22,10 +22,9 @@ jobs:
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
-          pip install python-dotenv groq duckduckgo-search pydantic pydantic-settings httpx sqlalchemy asyncpg
+          pip install -r requirements.txt
           pip install -e packages/ml
           pip install -e apps/api || true
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Ejecutar Predicciones Batch
         env:
