@@ -13,6 +13,8 @@ import {
 import { cn } from '@/lib/utils'
 import { resolveLeague } from '@/lib/league-metadata'
 import { PoissonMiniChart } from './poisson-mini-chart'
+import { LeagueLogo } from './league-logo'
+import { TeamLogo } from './team-logo'
 
 function StatusPill({ match }: { match: Match }) {
   if (match.status === 'LIVE') {
@@ -51,7 +53,7 @@ export function MatchCard({ match }: { match: Match }) {
         {/* LEFT — meta */}
         <div className="flex items-center justify-between gap-3 lg:w-[20%] lg:flex-col lg:items-start lg:justify-start lg:gap-1.5">
           <p className="flex items-center gap-1.5 text-xs text-subtle">
-            <span aria-hidden>{leagueMeta.flag}</span>
+            <LeagueLogo logoUrl={match.leagueLogoUrl} flag={leagueMeta.flag} size="sm" />
             {leagueMeta.name}
           </p>
           <p className="num text-sm font-medium text-foreground">{match.time}</p>
@@ -61,7 +63,10 @@ export function MatchCard({ match }: { match: Match }) {
         {/* CENTER — teams + distribution */}
         <div className="flex flex-col gap-2 lg:w-[50%]">
           <div className="flex items-center justify-between gap-3">
-            <span className="truncate text-sm font-medium text-foreground">{match.home}</span>
+            <span className="flex items-center gap-2 truncate text-sm font-medium text-foreground">
+              <TeamLogo logoUrl={match.homeLogoUrl} teamName={match.home} size="sm" />
+              {match.home}
+            </span>
             {hasLambda && (
               <span className="num text-xs text-muted-foreground">{`${(model.home * 100).toFixed(1)}%`}</span>
             )}
@@ -91,7 +96,10 @@ export function MatchCard({ match }: { match: Match }) {
           )}
 
           <div className="flex items-center justify-between gap-3">
-            <span className="truncate text-sm font-medium text-foreground">{match.away}</span>
+            <span className="flex items-center gap-2 truncate text-sm font-medium text-foreground">
+              <TeamLogo logoUrl={match.awayLogoUrl} teamName={match.away} size="sm" />
+              {match.away}
+            </span>
             {hasLambda && (
               <span className="num text-xs text-muted-foreground">{`${(model.away * 100).toFixed(1)}%`}</span>
             )}

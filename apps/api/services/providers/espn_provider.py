@@ -155,14 +155,24 @@ class EspnDataProvider(DataProviderPort):
                 return {}
 
     async def get_leagues(self) -> list[dict]:
-        return [
-            {
+        leagues = []
+        for api_id, slug in ESPN_LEAGUE_SLUGS.items():
+            logo_url = None
+            try:
+                league_data = await self._request(f"{slug}")
+                logos = league_data.get("logos", [])
+                if logos:
+                    logo_url = logos[0].get("href")
+            except Exception:
+                pass
+
+            leagues.append({
                 "code": str(api_id),
                 "name": ESPN_LEAGUE_NAMES.get(slug, str(api_id)),
                 "country": None,
-            }
-            for api_id, slug in ESPN_LEAGUE_SLUGS.items()
-        ]
+                "logo_url": logo_url,
+            })
+        return leagues
 
     async def get_finished_matches(
         self,
@@ -336,6 +346,8 @@ class EspnDataProvider(DataProviderPort):
             away_ext_id = 0
             home_score = None
             away_score = None
+            home_logo = None
+            away_logo = None
 
             for c in competitors:
                 team_info = c.get("team", {})
@@ -346,6 +358,8 @@ class EspnDataProvider(DataProviderPort):
                     ext_id = int(raw_ext_id) if raw_ext_id else 0
                 except (ValueError, TypeError):
                     ext_id = 0
+
+                team_logo = team_info.get("logo") or team_info.get("logos", [{}])[0].get("href") if team_info.get("logos") else None
 
                 raw_score = c.get("score")
                 if isinstance(raw_score, dict):
@@ -363,10 +377,12 @@ class EspnDataProvider(DataProviderPort):
                     home_team = name
                     home_ext_id = ext_id
                     home_score = score
+                    home_logo = team_logo
                 else:
                     away_team = name
                     away_ext_id = ext_id
                     away_score = score
+                    away_logo = team_logo
 
             if not home_team or not away_team:
                 return None
@@ -403,6 +419,8 @@ class EspnDataProvider(DataProviderPort):
                 away_score=away_score,
                 regulation_time_only=True,
                 matchday=matchday,
+                home_logo=home_logo,
+                away_logo=away_logo,
             )
         except Exception as e:
             logger.error(f"ESPN parse error for event {event.get('id')}: {e}")

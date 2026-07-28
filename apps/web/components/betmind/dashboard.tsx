@@ -8,6 +8,7 @@ import { resolveLeague } from '@/lib/league-metadata'
 import { cn } from '@/lib/utils'
 import { LeagueSidebar } from './league-sidebar'
 import { LeagueAccordion } from './league-accordion'
+import { LeagueLogo } from './league-logo'
 import { ScannerEmptyState } from './scanner-empty-state'
 import { TicketCard } from './ticket-card'
 import { TrackingPanel } from './tracking-panel'
@@ -176,15 +177,17 @@ export function Dashboard() {
 
   // Derive league pills from actual matches for the selected date
   const leaguePills = React.useMemo(() => {
-    const countByLeague = new Map<string, { id: string; name: string; count: number }>()
+    const countByLeague = new Map<string, { id: string; name: string; count: number; logoUrl: string | null }>()
 
     for (const m of matches) {
       const lid = String(m.leagueExternalId ?? 'other')
       if (!countByLeague.has(lid)) {
+        const meta = resolveLeague(m.leagueExternalId, m.league)
         countByLeague.set(lid, {
           id: lid,
-          name: resolveLeague(m.leagueExternalId, m.league).shortName,
+          name: meta.shortName,
           count: 0,
+          logoUrl: m.leagueLogoUrl || meta.logoUrl,
         })
       }
       countByLeague.get(lid)!.count++
@@ -196,7 +199,7 @@ export function Dashboard() {
 
     const total = matches.length
     return [
-      { id: 'all', name: `Todas las Ligas (${total})`, count: total },
+      { id: 'all', name: `Todas las Ligas (${total})`, count: total, logoUrl: null },
       ...pills,
     ]
   }, [matches])
@@ -322,12 +325,15 @@ export function Dashboard() {
                       onClick={() => setLeague(pill.id)}
                       aria-current={league === pill.id}
                       className={cn(
-                        'rounded-sm border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors',
+                        'flex items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors',
                         league === pill.id
                           ? 'border-primary bg-primary text-primary-foreground'
                           : 'border-border bg-background/40 text-muted-foreground hover:text-foreground',
                       )}
                     >
+                      {pill.id !== 'all' && pill.logoUrl && (
+                        <LeagueLogo logoUrl={pill.logoUrl} flag="" size="sm" className="brightness-0 invert" />
+                      )}
                       {pill.name}
                     </button>
                   ))}

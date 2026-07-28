@@ -5,6 +5,7 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 import type { Match } from '@/lib/betmind'
 import { resolveLeague } from '@/lib/league-metadata'
+import { LeagueLogo } from './league-logo'
 
 
 interface LeagueSidebarProps {
@@ -20,7 +21,7 @@ function LeagueGroup({
   onSelect,
 }: {
   region: 'EUROPE' | 'AMERICAS'
-  items: { leagueId: string; name: string; count: number; flag: string; region: string }[]
+  items: { leagueId: string; name: string; count: number; flag: string; logoUrl: string | null; region: string }[]
   active: string
   onSelect: (id: string) => void
 }) {
@@ -44,9 +45,7 @@ function LeagueGroup({
             )}
           >
             <div className="flex items-center gap-2 min-w-0">
-              <span aria-hidden className="text-sm leading-none shrink-0">
-                {item.flag}
-              </span>
+              <LeagueLogo logoUrl={item.logoUrl} flag={item.flag} size="sm" />
               <span className="truncate text-xs">{item.name}</span>
             </div>
             <span
@@ -68,7 +67,7 @@ function LeagueGroup({
 
 export function LeagueSidebar({ active, onSelect, matches }: LeagueSidebarProps) {
   const sidebarLeagues = React.useMemo(() => {
-    const countMap = new Map<string, { leagueId: string; name: string; shortName: string; count: number; flag: string; region: string }>()
+    const countMap = new Map<string, { leagueId: string; name: string; shortName: string; count: number; flag: string; logoUrl: string | null; region: string }>()
 
     for (const m of matches) {
       const lid = String(m.leagueExternalId ?? 'other')
@@ -80,6 +79,7 @@ export function LeagueSidebar({ active, onSelect, matches }: LeagueSidebarProps)
           shortName: meta.shortName,
           count: 0,
           flag: meta.flag,
+          logoUrl: m.leagueLogoUrl || meta.logoUrl,
           region: meta.region,
         })
       }

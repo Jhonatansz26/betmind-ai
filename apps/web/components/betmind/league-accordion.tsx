@@ -5,6 +5,7 @@ import { ChevronDownIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { type Match } from '@/lib/betmind'
 import { resolveLeague } from '@/lib/league-metadata'
+import { LeagueLogo } from './league-logo'
 import { MatchCard } from './match-card'
 
 interface LeagueAccordionProps {
@@ -24,10 +25,10 @@ export function LeagueAccordion({
 }: LeagueAccordionProps) {
   const meta = resolveLeague(leagueExternalId, leagueName)
   const liveCount = matches.filter((m) => m.status === 'LIVE').length
+  const logoUrl = matches[0]?.leagueLogoUrl || meta.logoUrl
 
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card/80 transition-all">
-      {/* Accordion Header */}
       <button
         type="button"
         onClick={onToggle}
@@ -35,9 +36,7 @@ export function LeagueAccordion({
         className="flex w-full items-center justify-between px-4 py-3 transition-colors hover:bg-muted/50"
       >
         <div className="flex items-center gap-2.5">
-          <span className="text-lg leading-none" aria-hidden>
-            {meta.flag}
-          </span>
+          <LeagueLogo logoUrl={logoUrl} flag={meta.flag} size="md" />
           <div className="flex flex-col items-start">
             <span className="text-sm font-semibold text-foreground">{meta.name}</span>
             <span className="text-[11px] text-subtle">{meta.country}</span>
@@ -64,7 +63,6 @@ export function LeagueAccordion({
         </div>
       </button>
 
-      {/* Accordion Body */}
       {isOpen && (
         <div className="flex flex-col gap-2 border-t border-border bg-surface/40 p-2">
           {matches.map((match) => (

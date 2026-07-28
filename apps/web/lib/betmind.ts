@@ -10,6 +10,7 @@ export interface League {
   flag: string
   matches: number
   region: 'EUROPE' | 'AMERICAS'
+  logoUrl: string | null
 }
 
 export interface TacticalFactor {
@@ -41,6 +42,9 @@ export interface Match {
   league: string
   leagueCountry: string | null
   flag: string
+  leagueLogoUrl: string | null
+  homeLogoUrl: string | null
+  awayLogoUrl: string | null
   time: string
   status: MatchStatus
   minute?: number

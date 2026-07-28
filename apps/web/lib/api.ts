@@ -215,10 +215,13 @@ interface BackendMatch {
   league_name: string
   league_external_id: number | null
   league_country: string | null
+  league_logo_url: string | null
   home_team_id: number
   home_team_name: string
+  home_team_logo_url: string | null
   away_team_id: number
   away_team_name: string
+  away_team_logo_url: string | null
   match_date: string
   status: string
   home_score: number | null
@@ -249,10 +252,10 @@ interface BackendMatchesResponse {
 
 function mapBackendMatch(raw: BackendMatch): Match {
   const leagueId = LEAGUE_ID_MAP[raw.league_external_id ?? raw.league_id] ?? 'other'
-  // Use the centralized LEAGUE_METADATA resolver as the primary source
   const leagueMeta = resolveLeague(raw.league_external_id, raw.league_name)
   const leagueName = leagueMeta.name
   const flag = leagueMeta.flag
+  const leagueLogoUrl = raw.league_logo_url || leagueMeta.logoUrl
 
   const statusMap: Record<string, MatchStatus> = {
     SCHEDULED: 'UPCOMING',
@@ -293,6 +296,9 @@ function mapBackendMatch(raw: BackendMatch): Match {
     league: formatCompositeLeagueName(leagueName, raw.league_country),
     leagueCountry: raw.league_country,
     flag,
+    leagueLogoUrl,
+    homeLogoUrl: raw.home_team_logo_url,
+    awayLogoUrl: raw.away_team_logo_url,
     time: timeStr,
     status: matchStatus,
     minute: matchStatus === 'LIVE' ? (raw.minute ?? undefined) : undefined,

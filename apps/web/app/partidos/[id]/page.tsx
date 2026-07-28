@@ -18,6 +18,8 @@ import {
 } from '@/lib/betmind'
 import { fetchMatchPrediction, type EnrichedMatch } from '@/lib/api'
 import { resolveLeague } from '@/lib/league-metadata'
+import { LeagueLogo } from '@/components/betmind/league-logo'
+import { TeamLogo } from '@/components/betmind/team-logo'
 import { cn } from '@/lib/utils'
 import { MarketTable } from '@/components/betmind/market-table'
 import { ModeSelector } from '@/components/betmind/mode-selector'
@@ -381,7 +383,7 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
       <div className="rounded-xl border border-border bg-card p-5">
         {/* Meta row */}
         <p className="flex flex-wrap items-center gap-2 text-xs text-subtle">
-          <span aria-hidden>{leagueMeta.flag}</span>
+          <LeagueLogo logoUrl={match.leagueLogoUrl || leagueMeta.logoUrl} flag={leagueMeta.flag} size="sm" />
           {leagueMeta.name}
           <span aria-hidden>·</span>
           {match.time}
@@ -400,23 +402,13 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
         {/* Equipos */}
         <div className="mt-4 flex items-center gap-4">
           <div className="flex flex-1 items-center gap-3">
-            <span
-              className="flex size-10 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-sm font-semibold text-primary"
-              aria-hidden
-            >
-              {match?.home?.charAt(0) || '?'}
-            </span>
+            <TeamLogo logoUrl={match.homeLogoUrl} teamName={match.home} size="lg" />
             <h1 className="font-serif text-xl leading-tight text-foreground">{match.home || 'Local'}</h1>
           </div>
           <span className="num shrink-0 text-sm text-subtle">vs</span>
           <div className="flex flex-1 items-center justify-end gap-3 text-right">
             <span className="font-serif text-xl leading-tight text-foreground">{match.away || 'Visitante'}</span>
-            <span
-              className="flex size-10 shrink-0 items-center justify-center rounded-full border border-warning/30 bg-warning/10 text-sm font-semibold text-warning"
-              aria-hidden
-            >
-              {match?.away?.charAt(0) || '?'}
-            </span>
+            <TeamLogo logoUrl={match.awayLogoUrl} teamName={match.away} size="lg" />
           </div>
         </div>
 

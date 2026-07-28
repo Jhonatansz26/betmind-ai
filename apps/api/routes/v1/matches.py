@@ -281,6 +281,9 @@ def _match_to_dict_full(m: Match, odds: dict[str, float] | None = None) -> dict:
     league_name = m.league.name if m.league else "Unknown"
     league_external_id = m.league.external_id if m.league else None
     league_country = m.league.country if m.league else None
+    league_logo_url = m.league.logo_url if m.league else None
+    home_team_logo_url = m.home_team.logo_url if m.home_team else None
+    away_team_logo_url = m.away_team.logo_url if m.away_team else None
 
     result = {
         "id": m.id,
@@ -289,10 +292,13 @@ def _match_to_dict_full(m: Match, odds: dict[str, float] | None = None) -> dict:
         "league_name": league_name,
         "league_external_id": league_external_id,
         "league_country": league_country,
+        "league_logo_url": league_logo_url,
         "home_team_id": m.home_team_id,
         "home_team_name": home_team_name,
+        "home_team_logo_url": home_team_logo_url,
         "away_team_id": m.away_team_id,
         "away_team_name": away_team_name,
+        "away_team_logo_url": away_team_logo_url,
         "match_date": str(m.match_date),
         "status": m.status,
         "home_score": m.home_score,

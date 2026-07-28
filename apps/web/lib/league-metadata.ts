@@ -15,110 +15,136 @@ export interface LeagueMeta {
   flag: string
   country: string
   region: 'EUROPE' | 'AMERICAS'
+  logoUrl: string | null
 }
+
+const ESPN = (id: string) => `https://a.espncdn.com/i/leaguelogos/soccer/500/${id}.png`
+const WIKI = (filename: string) => `https://upload.wikimedia.org/wikipedia/${filename}`
 
 const UNKNOWN_LEAGUE: LeagueMeta = {
   name: 'Liga Desconocida',
-  shortName: 'Desconocida',
+  shortName: 'Liga Desconocida',
   flag: '\u{1F3C1}',
   country: 'Internacional',
   region: 'EUROPE',
+  logoUrl: null,
 }
 
 export const LEAGUE_METADATA: Record<number, LeagueMeta> = {
   // ── AMERICAS ──────────────────────────────────────────────────────────
   239: {
     name: 'Liga BetPlay Dimayor',
-    shortName: 'Colombia - BetPlay',
+    shortName: 'Liga BetPlay Dimayor',
     flag: '\u{1F1E8}\u{1F1F4}',
     country: 'Colombia',
     region: 'AMERICAS',
+    logoUrl: ESPN('200'),
   },
   71: {
     name: 'Brasileirao Serie A',
-    shortName: 'Brasil - Serie A',
+    shortName: 'Brasileirao Serie A',
     flag: '\u{1F1E7}\u{1F1F7}',
     country: 'Brasil',
     region: 'AMERICAS',
+    logoUrl: ESPN('85'),
   },
   128: {
     name: 'Liga Profesional Argentina',
-    shortName: 'Argentina - Liga Prof.',
+    shortName: 'Liga Profesional Argentina',
     flag: '\u{1F1E6}\u{1F1F7}',
     country: 'Argentina',
     region: 'AMERICAS',
+    logoUrl: ESPN('1'),
   },
   262: {
     name: 'Liga MX',
-    shortName: 'Mexico - Liga MX',
+    shortName: 'Liga MX',
     flag: '\u{1F1F2}\u{1F1FD}',
     country: 'Mexico',
     region: 'AMERICAS',
+    logoUrl: ESPN('22'),
   },
   253: {
     name: 'Major League Soccer',
-    shortName: 'EE.UU. - MLS',
+    shortName: 'Major League Soccer',
     flag: '\u{1F1FA}\u{1F1F8}',
     country: 'Estados Unidos',
     region: 'AMERICAS',
+    logoUrl: ESPN('19'),
   },
   274: {
     name: 'Primera Division de Chile',
-    shortName: 'Chile - Primera Div.',
+    shortName: 'Primera Division de Chile',
     flag: '\u{1F1E8}\u{1F1F1}',
     country: 'Chile',
     region: 'AMERICAS',
+    logoUrl: ESPN('2329'),
   },
   275: {
     name: 'LigaPro Ecuador',
-    shortName: 'Ecuador - LigaPro',
+    shortName: 'LigaPro Ecuador',
     flag: '\u{1F1EA}\u{1F1E8}',
     country: 'Ecuador',
     region: 'AMERICAS',
+    logoUrl: ESPN('2344'),
   },
   294: {
     name: 'Liga 1 Peru',
-    shortName: 'Peru - Liga 1',
+    shortName: 'Liga 1 Peru',
     flag: '\u{1F1F5}\u{1F1EA}',
     country: 'Peru',
     region: 'AMERICAS',
+    logoUrl: ESPN('2342'),
   },
   9004: {
     name: 'Brasileirao Serie B',
-    shortName: 'Brasil - Serie B',
+    shortName: 'Brasileirao Serie B',
     flag: '\u{1F1E7}\u{1F1F7}',
     country: 'Brasil',
     region: 'AMERICAS',
+    logoUrl: WIKI('en/thumb/9/94/Campeonato_Brasileiro_Serie_B_logo.svg/200px-Campeonato_Brasileiro_Serie_B_logo.svg.png'),
   },
   9005: {
     name: 'Copa Colombia',
-    shortName: 'Colombia - Copa',
+    shortName: 'Copa Colombia',
     flag: '\u{1F1E8}\u{1F1F4}',
     country: 'Colombia',
     region: 'AMERICAS',
+    logoUrl: ESPN('200'),
   },
-  9011: {
-    name: 'CONMEBOL Sudamericana',
-    shortName: 'Sudamericana',
+  9010: {
+    name: 'CONMEBOL Libertadores',
+    shortName: 'CONMEBOL Libertadores',
     flag: '\u{1F30E}',
     country: 'Sudamerica',
     region: 'AMERICAS',
+    logoUrl: ESPN('13'),
+  },
+  9011: {
+    name: 'CONMEBOL Sudamericana',
+    shortName: 'CONMEBOL Sudamericana',
+    flag: '\u{1F30E}',
+    country: 'Sudamerica',
+    region: 'AMERICAS',
+    logoUrl: ESPN('20231'),
   },
 
   // ── EUROPA ────────────────────────────────────────────────────────────
   39: {
     name: 'Premier League',
-    shortName: 'Premier',
+    shortName: 'Premier League',
     flag: '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}',
     country: 'Inglaterra',
     region: 'EUROPE',
+    logoUrl: ESPN('23'),
   },
   140: {
     name: 'LaLiga EA Sports',
-    shortName: 'LaLiga',
+    shortName: 'LaLiga EA Sports',
     flag: '\u{1F1EA}\u{1F1F8}',
     country: 'Espana',
     region: 'EUROPE',
+    logoUrl: ESPN('15'),
   },
   78: {
     name: 'Bundesliga',
@@ -126,6 +152,7 @@ export const LEAGUE_METADATA: Record<number, LeagueMeta> = {
     flag: '\u{1F1E9}\u{1F1EA}',
     country: 'Alemania',
     region: 'EUROPE',
+    logoUrl: ESPN('10'),
   },
   135: {
     name: 'Serie A',
@@ -133,48 +160,63 @@ export const LEAGUE_METADATA: Record<number, LeagueMeta> = {
     flag: '\u{1F1EE}\u{1F1F9}',
     country: 'Italia',
     region: 'EUROPE',
+    logoUrl: ESPN('12'),
   },
   61: {
     name: 'Ligue 1 McDonald\'s',
-    shortName: 'Ligue 1',
+    shortName: 'Ligue 1 McDonald\'s',
     flag: '\u{1F1EB}\u{1F1F7}',
     country: 'Francia',
     region: 'EUROPE',
+    logoUrl: ESPN('9'),
   },
   113: {
     name: 'Allsvenskan',
-    shortName: 'Suecia - Allsvenskan',
+    shortName: 'Allsvenskan',
     flag: '\u{1F1F8}\u{1F1EA}',
     country: 'Suecia',
     region: 'EUROPE',
+    logoUrl: ESPN('65'),
   },
   119: {
     name: 'Superliga Danesa',
-    shortName: 'Dinamarca - Superliga',
+    shortName: 'Superliga Danesa',
     flag: '\u{1F1E9}\u{1F1F0}',
     country: 'Dinamarca',
     region: 'EUROPE',
+    logoUrl: ESPN('57'),
   },
   207: {
     name: 'Super League Suiza',
-    shortName: 'Suiza - Super League',
+    shortName: 'Super League Suiza',
     flag: '\u{1F1E8}\u{1F1ED}',
     country: 'Suiza',
     region: 'EUROPE',
+    logoUrl: ESPN('40'),
   },
   9001: {
     name: 'UEFA Champions League',
-    shortName: 'UCL Qualifiers',
+    shortName: 'UEFA Champions League',
     flag: '\u{1F3C6}',
     country: 'Europa',
     region: 'EUROPE',
+    logoUrl: ESPN('2'),
+  },
+  9002: {
+    name: 'UEFA Europa League',
+    shortName: 'UEFA Europa League',
+    flag: '\u{1F3C6}',
+    country: 'Europa',
+    region: 'EUROPE',
+    logoUrl: ESPN('2310'),
   },
   9003: {
     name: 'UEFA Conference League',
-    shortName: 'UECL Qualifiers',
+    shortName: 'UEFA Conference League',
     flag: '\u{1F3C6}',
     country: 'Europa',
     region: 'EUROPE',
+    logoUrl: WIKI('en/thumb/1/1b/UEFA_Conference_League_logo.svg/200px-UEFA_Conference_League_logo.svg.png'),
   },
 }
 
@@ -225,6 +267,7 @@ export function resolveLeague(
       flag: '\u{1F3C1}',
       country: 'Internacional',
       region: 'EUROPE',
+      logoUrl: null,
     }
   }
 

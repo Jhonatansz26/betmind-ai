@@ -105,12 +105,13 @@ class DataIngestionService:
             )
 
             country = league_info.get("country") if league_info else None
+            logo_url = league_info.get("logo_url") if league_info else None
 
             league = await self._league_repo.create_or_update(
                 external_id=external_league_id,
                 name=league_name,
                 country=country,
-                logo_url=None,
+                logo_url=logo_url,
             )
 
             logger.info(f"Synced league via {provider.provider_name}: {league.name} (ID: {league.id})")
@@ -313,6 +314,15 @@ class DataIngestionService:
                             f"Sync teams first."
                         )
                         continue
+
+                    if raw_fixture.home_logo and not home_team.logo_url:
+                        home_team.logo_url = raw_fixture.home_logo
+                        await self._team_repo.upsert(home_team)
+                        logger.debug(f"Enriched home team logo: {home_team.name}")
+                    if raw_fixture.away_logo and not away_team.logo_url:
+                        away_team.logo_url = raw_fixture.away_logo
+                        await self._team_repo.upsert(away_team)
+                        logger.debug(f"Enriched away team logo: {away_team.name}")
 
                     match = await self._match_repo.upsert_match(
                         external_id=raw_fixture.external_id,
