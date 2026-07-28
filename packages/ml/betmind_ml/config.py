@@ -9,8 +9,13 @@ MODEL_VERSION = "poisson_v1.0"
 # ── Configuración de API Keys ─────────────────────────────────────────────────
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+# ── Timeouts de Groq ───────────────────────────────────────────────────────────
+GROQ_TIMEOUT_SECONDS = 90.0
+GROQ_SINGLE_CALL_TIMEOUT = 25.0
+GROQ_NARRATIVE_TIMEOUT = 80.0
+
 # ── Modelo Narrativo (LLM) ────────────────────────────────────────────────────
-NARRATIVE_MODEL = "llama-3.1-8b-instant"
+NARRATIVE_MODEL = "llama-3.3-70b-versatile"
 
 # ── Parámetros del Feature Engineering ────────────────────────────────────────
 

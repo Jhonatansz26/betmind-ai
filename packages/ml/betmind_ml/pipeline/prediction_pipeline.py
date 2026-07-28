@@ -207,21 +207,15 @@ def _calculate_confidence(
     return round(min(max(raw_score, 0), 100)), flags
 
 
-def _build_insufficient_markets() -> list[MarketProbability]:
-    """Retorna lista de mercados con probability=0.0 y verdict=INSUFFICIENT."""
-    market_names = [
-        "1X2_HOME", "1X2_DRAW", "1X2_AWAY",
-        "OVER_0_5", "UNDER_0_5",
-        "OVER_1_5", "UNDER_1_5",
-        "OVER_2_5", "UNDER_2_5",
-        "OVER_3_5", "UNDER_3_5",
-        "BTTS_YES", "BTTS_NO",
-    ]
-    return [
-        MarketProbability(
-            market_name=name,
-            our_probability=0.0,
-            verdict=PredictionVerdict.INSUFFICIENT,
-        )
-        for name in market_names
-    ]
+def _build_prior_markets(
+    league_avg_goals: float,
+    league_key: str = "default",
+    is_neutral_venue: bool = False,
+) -> list[MarketProbability]:
+    """Fallback defensivo: mercados del prior de liga para nunca devolver 0.0."""
+    home_adv = HOME_ADVANTAGE_BY_LEAGUE.get(league_key, 1.0) if not is_neutral_venue else 1.0
+    lambda_home = league_avg_goals * home_adv
+    lambda_away = league_avg_goals
+
+    prior_matrix = build_score_matrix(lambda_home, lambda_away)
+    return build_all_markets(prior_matrix.matrix)

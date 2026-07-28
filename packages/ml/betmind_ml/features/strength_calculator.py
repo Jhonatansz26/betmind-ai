@@ -111,16 +111,24 @@ def calculate_team_strength(
                 goals_scored.append(match["away_goals"])
                 goals_conceded.append(match.get("home_goals", 0))
 
-    avg_scored = _compute_weighted_average(goals_scored)
-    avg_conceded = _compute_weighted_average(goals_conceded)
+    avg_scored_raw = _compute_weighted_average(goals_scored)
+    avg_conceded_raw = _compute_weighted_average(goals_conceded)
 
     league_avg = league_averages["avg_goals_per_team_per_match"]
 
+    # ── Bayesian Shrinkage hacia el prior de liga (k=5) ──────────────────────
+    k = 5.0
+    if match_count == 0:
+        avg_scored = league_avg
+        avg_conceded = league_avg
+    else:
+        weight = match_count / (match_count + k)
+        avg_scored = weight * avg_scored_raw + (1 - weight) * league_avg
+        avg_conceded = weight * avg_conceded_raw + (1 - weight) * league_avg
+
     # ── Calcular índices relativos ────────────────────────────────────────────
-    # Evitar división por cero con epsilon pequeño
-    epsilon = 0.01
-    attack_index = avg_scored / max(league_avg, epsilon)
-    defense_index = league_avg / max(avg_conceded, epsilon)
+    attack_index = avg_scored / max(league_avg, 0.01)
+    defense_index = league_avg / max(avg_conceded, 0.01)
 
     # ── Forma reciente (últimos 5) ────────────────────────────────────────────
     form_data = _calculate_form(team_id, team_matches[:5])

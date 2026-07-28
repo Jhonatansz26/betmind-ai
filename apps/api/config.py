@@ -59,7 +59,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     ADMIN_API_KEY: str = ""
 
-    GROQ_TIMEOUT_SECONDS: float = 3.0
+    GROQ_TIMEOUT_SECONDS: float = 90.0
+    GROQ_SINGLE_CALL_TIMEOUT: float = 25.0
+    GROQ_NARRATIVE_TIMEOUT: float = 80.0
 
     model_config = {
         "env_file_encoding": "utf-8",

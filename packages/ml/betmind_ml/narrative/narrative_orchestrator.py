@@ -58,7 +58,7 @@ class NarrativeOrchestrator:
         self._current_key_index = 0
         self._client = Groq(api_key=self._api_keys[0]) if self._api_keys else None
         self._model = NARRATIVE_MODEL
-        self._semaphore = asyncio.Semaphore(1)
+        self._semaphore = asyncio.Semaphore(3)
         self._rate_limit_delay = 1.0
 
     def _rotate_api_key(self) -> bool:

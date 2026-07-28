@@ -16,17 +16,23 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-os.environ.setdefault("DATABASE_URL", os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres.sruhpmucytkaksdtkrsi:BetmindPassword2026@"
-    "aws-1-us-east-2.pooler.supabase.com:6543/postgres"
-))
+from dotenv import load_dotenv
+env_path = PROJECT_ROOT / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+    print(f"Loaded .env from {env_path}")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger("batch_predict")
+
+database_url = os.getenv("DATABASE_URL")
+if not database_url:
+    logger.error("DATABASE_URL environment variable is required")
+    sys.exit(1)
+os.environ["DATABASE_URL"] = database_url
 
 
 async def main(limit: int = 0, skip: int = 0, mode: str = "quant") -> dict:
