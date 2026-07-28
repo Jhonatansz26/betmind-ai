@@ -30,12 +30,13 @@ logger = logging.getLogger("batch_predict")
 
 
 async def main(limit: int = 0, skip: int = 0, mode: str = "quant") -> dict:
-    from sqlalchemy import select
+    from sqlalchemy import select, delete
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from sqlalchemy.orm import selectinload
 
     from apps.api.config import settings
     from apps.api.models.match import Match
+    from apps.api.models.prediction import Prediction
     from apps.api.repositories.match_repository import MatchRepository
     from apps.api.repositories.bookmaker_odd_repository import BookmakerOddsRepository
     from apps.api.orchestrators.prediction_orchestrator import PredictionOrchestrator
@@ -87,6 +88,13 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant") -> dict:
 
         match_ids = [m.id for m in all_matches]
 
+        if match_ids:
+            deleted = await session.execute(
+                delete(Prediction).where(Prediction.match_id.in_(match_ids))
+            )
+            await session.commit()
+            logger.info("Deleted %d old predictions for clean recompute", deleted.rowcount)
+
         odds_repo = BookmakerOddsRepository(session)
         odds_grouped = await odds_repo.get_odds_for_matches(match_ids)
 
@@ -119,6 +127,8 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant") -> dict:
 
                 logger.info("[%d/%d] %s vs %s (%s) %s",
                             i + 1, stats["total"], home_name, away_name, league_name, match_time)
+
+                await cache.delete(f"prediction:{match.id}")
 
                 prediction = await orchestrator.get_prediction(
                     match_id=match.id,
@@ -153,8 +163,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Batch prediction for SCHEDULED matches")
     parser.add_argument("--limit", type=int, default=0, help="Max matches to process")
     parser.add_argument("--skip", type=int, default=0, help="Matches to skip")
-    parser.add_argument("--mode", choices=["quant", "full"], default="quant",
-                       help="quant = Fase 3 only, full = Fase 3 + Fase 4 (LLM)")
+    parser.add_argument("--mode", choices=["quant", "full"], default="full",
+                       help="quant = Fase 3 only, full = Fase 3 + Fase 4 (LLM narrativo + fallback estadístico)")
     args = parser.parse_args()
 
     final_stats = asyncio.run(main(

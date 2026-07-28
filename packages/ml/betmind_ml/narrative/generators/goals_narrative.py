@@ -149,20 +149,20 @@ def _generate_fallback_narrative(
     most_likely_prob: float,
 ) -> MarketNarrative:
     """Genera narrativa de respaldo basada en probabilidades de Poisson."""
-    from betmind_ml.schemas.tactical_analysis import NarrativeSignal
+    from betmind_ml.schemas.tactical_analysis import SignalStrength
     
     expected_goals = lambda_home + lambda_away
-    recommendation = "Over 2.5" if p_over_25 > 0.55 else "Under 2.5" if p_over_25 < 0.45 else "Mercado neutral"
+    recommendation = "Más de 2.5" if p_over_25 > 0.55 else "Menos de 2.5" if p_over_25 < 0.45 else "Mercado neutral"
     
     summary = (
         f"Según el modelo Poisson, {home_team} vs {away_team} tiene un marcador más probable de "
         f"{most_likely_score} ({most_likely_prob*100:.0f}%). Los goles esperados son {expected_goals:.1f} "
         f"(λ_home={lambda_home:.2f}, λ_away={lambda_away:.2f}). "
-        f"La probabilidad de Over 2.5 es {p_over_25*100:.1f}% y BTTS es {p_btts*100:.1f}%."
+        f"La probabilidad de Más de 2.5 goles es {p_over_25*100:.1f}% y Ambos Anotan es {p_btts*100:.1f}%."
     )
     
     return MarketNarrative(
-        market_name="Over/Under 2.5 goles",
+        market_name="Más/Menos de 2.5 goles",
         recommendation=recommendation,
         tactical_summary=summary,
         pros=[
@@ -177,6 +177,6 @@ def _generate_fallback_narrative(
             f"Probabilidad BTTS: {p_btts*100:.1f}%",
             "Análisis basado en modelo estadístico",
         ],
-        signal_strength=NarrativeSignal.MEDIUM,
+        signal_strength=SignalStrength.MODERATE,
         featured_player=None,
     )

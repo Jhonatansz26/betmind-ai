@@ -104,11 +104,13 @@ function PreviewTab({
   model,
   rows,
   best,
+  enriched,
 }: {
   match: Match
   model: MatchModel
   rows: MarketRow[]
   best: MarketRow | null
+  enriched?: EnrichedMatch | null
 }) {
   const [selectedMarket, setSelectedMarket] = React.useState<string | null>(null)
   const [mode, setMode] = React.useState<Mode>('EDGE')
@@ -116,6 +118,7 @@ function PreviewTab({
   const comparisonStats = buildComparisonStats(model)
   const trendPills = buildTrendPills(model, best)
   const lambdaAvailable = hasLambda(match)
+  const isBayesian = lambdaAvailable && (enriched?.confidenceScore ?? 0) < 50
 
   return (
     <div
@@ -229,60 +232,58 @@ function PreviewTab({
 
       {/* ── COLUMNA DERECHA (40%) ── */}
       <div className="flex flex-col gap-5">
-        {/* Barras Comparativas (solo datos reales del modelo) */}
+        {/* Barras Comparativas */}
         <div className="rounded-xl border border-border bg-card p-4">
-          <SectionTitle>Probabilidades del Modelo</SectionTitle>
-          <div className="mt-3">
-            {lambdaAvailable ? (
-              <MatchComparisonBars
-                homeLabel={match.home}
-                awayLabel={match.away}
-                stats={comparisonStats}
-              />
-            ) : (
-              <InsufficientDataCard
-                title="Modelo Cuantitativo"
-                message="Se requieren datos históricos para calibrar las probabilidades de este partido."
-              />
+          <SectionTitle>
+            Probabilidades del Modelo
+            {isBayesian && (
+              <span className="ml-2 inline-flex items-center gap-1 rounded-sm border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[9px] font-medium text-warning">
+                Estimación Bayesiana (baja muestra)
+              </span>
             )}
+          </SectionTitle>
+          <div className="mt-3">
+            <MatchComparisonBars
+              homeLabel={match.home}
+              awayLabel={match.away}
+              stats={comparisonStats}
+            />
           </div>
         </div>
 
-        {/* Gráfico Poisson (con guard de lambda) */}
+        {/* Gráfico Poisson */}
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex flex-col gap-4">
-            <SectionTitle>Distribución de Goles (Poisson)</SectionTitle>
-            {lambdaAvailable ? (
-              <>
-                <PoissonModalChart
-                  lambdaHome={match.lambdaHome}
-                  lambdaAway={match.lambdaAway}
-                  homeLabel={match.home}
-                  awayLabel={match.away}
-                />
-                <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-inset p-3">
-                  <p className="text-[10px] font-medium tracking-wide text-subtle uppercase">
-                    Marcadores Más Probables
-                  </p>
-                  <ul className="flex flex-col gap-1">
-                    {model.topScores.map((line) => (
-                      <li
-                        key={line.score}
-                        className="num flex items-center justify-between text-sm text-muted-foreground"
-                      >
-                        <span className="font-medium text-foreground">{line.score}</span>
-                        <span>{`${(line.probability * 100).toFixed(1)}%`}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </>
-            ) : (
-              <InsufficientDataCard
-                title="Modelo de Goles por Poisson"
-                message="El cálculo de distribución de goles requiere al menos 5 partidos históricos registrados."
-              />
-            )}
+            <SectionTitle>
+              Distribución de Goles (Poisson)
+              {isBayesian && (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-sm border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[9px] font-medium text-warning">
+                  Estimación Bayesiana
+                </span>
+              )}
+            </SectionTitle>
+            <PoissonModalChart
+              lambdaHome={match.lambdaHome}
+              lambdaAway={match.lambdaAway}
+              homeLabel={match.home}
+              awayLabel={match.away}
+            />
+            <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface-inset p-3">
+              <p className="text-[10px] font-medium tracking-wide text-subtle uppercase">
+                Marcadores Más Probables
+              </p>
+              <ul className="flex flex-col gap-1">
+                {model.topScores.map((line) => (
+                  <li
+                    key={line.score}
+                    className="num flex items-center justify-between text-sm text-muted-foreground"
+                  >
+                    <span className="font-medium text-foreground">{line.score}</span>
+                    <span>{`${(line.probability * 100).toFixed(1)}%`}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -295,6 +296,9 @@ function PreviewTab({
 /* ------------------------------------------------------------------ */
 
 function H2HTab({ match }: { match: Match }) {
+  const lambdaAvailable = match.lambdaHome > 0 || match.lambdaAway > 0
+  const expectedGoals = match.lambdaHome + match.lambdaAway
+
   return (
     <div
       id="match-panel-h2h"
@@ -316,6 +320,40 @@ function H2HTab({ match }: { match: Match }) {
           </SectionTitle>
           {hasTacticalData(match) ? (
             <TacticalPanel match={match} />
+          ) : lambdaAvailable ? (
+            <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-inset p-4">
+              <p className="text-xs font-semibold text-foreground">Resumen Estadístico (Modelo Cuantitativo)</p>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="flex flex-col gap-1">
+                  <span className="text-subtle">Goles esperados (Local)</span>
+                  <span className="num font-semibold text-foreground">{match.lambdaHome.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-subtle">Goles esperados (Visitante)</span>
+                  <span className="num font-semibold text-foreground">{match.lambdaAway.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-subtle">Total goles esperados</span>
+                  <span className="num font-semibold text-foreground">{expectedGoals.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-subtle">Ritmo del partido</span>
+                  <span className="num font-semibold text-foreground">
+                    {expectedGoals > 2.5 ? 'Abierto' : 'Cerrado'}
+                  </span>
+                </div>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {expectedGoals > 2.8
+                  ? `Se espera un partido con alto voltaje ofensivo (${expectedGoals.toFixed(1)} goles esperados). Ambos equipos muestran capacidad goleadora según sus λ de ataque.`
+                  : expectedGoals > 2.0
+                    ? `Partido con tendencia equilibrada (${expectedGoals.toFixed(1)} goles esperados). Podría definirse por detalles tácticos o una genialidad individual.`
+                    : `Duelo táctico cerrado (${expectedGoals.toFixed(1)} goles esperados). Las defensas dominan sobre los ataques según el modelo Poisson.`}
+              </p>
+              <p className="text-[10px] text-subtle">
+                El análisis táctico detallado (pros/cons, narrativa del árbitro y contexto) se generará con IA antes del inicio del partido.
+              </p>
+            </div>
           ) : (
             <InsufficientDataCard
               title="Análisis Táctico"
@@ -437,9 +475,11 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
         {hasPrediction && enriched && (
           <div className="mt-4 flex flex-col gap-2 rounded-lg border border-border bg-surface/50 p-3">
             <div className="flex items-center gap-2">
-              <span className="num inline-flex items-center gap-1 rounded-md bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
-                {enriched.llmModelUsed}
-              </span>
+              {enriched.llmModelUsed && enriched.llmModelUsed !== 'none' && (
+                <span className="num inline-flex items-center gap-1 rounded-md bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
+                  {enriched.llmModelUsed}
+                </span>
+              )}
               <span className="num text-xs text-muted-foreground">
                 Confianza: {enriched.confidenceScore}/100
               </span>
@@ -464,7 +504,7 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
       {/* ── CONTENIDO DE PESTAÑAS ── */}
       <div className="mt-5">
         {activeTab === 'preview' && (
-          <PreviewTab match={match} model={model} rows={rows} best={best} />
+          <PreviewTab match={match} model={model} rows={rows} best={best} enriched={enriched} />
         )}
         {activeTab === 'h2h' && <H2HTab match={match} />}
         {activeTab === 'referee' && <RefereeTab match={match} />}

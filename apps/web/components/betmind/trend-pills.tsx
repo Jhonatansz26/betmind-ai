@@ -72,10 +72,10 @@ export function buildTrendPills(model: MatchModel, best: MarketRow | null): Tren
   const pills: TrendPill[] = []
 
   if (model.over25 > 0.60)
-    pills.push({ label: `Over 2.5 probable · ${pct(model.over25)}`, type: 'positive' })
+    pills.push({ label: `Más de 2.5 probable · ${pct(model.over25)}`, type: 'positive' })
 
   if (model.over25 < 0.35)
-    pills.push({ label: `Under 2.5 probable · ${pct(1 - model.over25)}`, type: 'warning' })
+    pills.push({ label: `Menos de 2.5 probable · ${pct(1 - model.over25)}`, type: 'warning' })
 
   if (model.btts > 0.55)
     pills.push({ label: `Ambos anotan · ${pct(model.btts)}`, type: 'positive' })

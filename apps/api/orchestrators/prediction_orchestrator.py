@@ -160,13 +160,13 @@ class PredictionOrchestrator:
             favorite_prob = p_draw
 
         if p_over_25 > 0.55:
-            goals_rec = "Over 2.5"
+            goals_rec = "Más de 2.5"
             signal = "MODERATE"
         elif p_over_15 > 0.55:
-            goals_rec = "Over 1.5"
+            goals_rec = "Más de 1.5"
             signal = "MODERATE"
         elif p_over_25 < 0.45:
-            goals_rec = "Under 2.5"
+            goals_rec = "Menos de 2.5"
             signal = "MODERATE"
         else:
             goals_rec = "Mercado neutral"
@@ -175,19 +175,19 @@ class PredictionOrchestrator:
         headline = f"{match.home_team.name} vs {match.away_team.name}: {goals_rec} según modelo Poisson"
 
         goals_narrative = MarketNarrative(
-            market_name="Goles (Over/Under)",
+            market_name="Goles (Más/Menos)",
             our_probability=round(p_over_25, 4) if p_over_25 > 0 else 0.5,
             recommendation=goals_rec,
             pros=[
-                ProConPoint(factor="Poisson Model", description=f"\u03BB_local={lambda_home:.2f}", weight="HIGH"),
-                ProConPoint(factor="Market Analysis", description=f"Over 2.5 probability: {p_over_25:.1%}", weight="MEDIUM"),
+                ProConPoint(factor="Modelo Poisson", description=f"λ_local={lambda_home:.2f}, λ_visitante={lambda_away:.2f}", weight="HIGH"),
+                ProConPoint(factor="Análisis de Mercado", description=f"Probabilidad Más de 2.5: {p_over_25:.1%}", weight="MEDIUM"),
             ],
-            cons=[ProConPoint(factor="Data Quality", description=f"\u03BB_visitante={lambda_away:.2f} bajo", weight="LOW")],
+            cons=[ProConPoint(factor="Calidad de Datos", description=f"Muestra limitada del visitante" if lambda_away < 0.5 else "Sin riesgos detectados", weight="LOW")],
             signal_strength=SignalStrength.MODERATE if signal == "MODERATE" else SignalStrength.WEAK,
-            key_risk="Datos insuficientes" if lambda_home < 0.5 else "Bajo riesgo",
+            key_risk="Muestra limitada — estimación Bayesiana" if lambda_home < 0.5 else "Riesgo bajo",
             tactical_summary=(
-                f"Modelo Poisson: \u03BB_local={lambda_home:.2f}, \u03BB_visitante={lambda_away:.2f}. "
-                f"Probabilidad Over 2.5: {p_over_25:.1%}. "
+                f"Modelo Poisson: λ_local={lambda_home:.2f}, λ_visitante={lambda_away:.2f}. "
+                f"Probabilidad Más de 2.5: {p_over_25:.1%}. "
                 f"Favorito: {favorite} ({favorite_prob:.1%}). "
                 f"Recomendación: {goals_rec}."
             ),
@@ -589,36 +589,25 @@ class PredictionOrchestrator:
         )
 
     def _build_tactical_narrative(self, tactical: TacticalAnalysis) -> str:
-        """Construye una narrativa táctica resumida."""
-        parts = [tactical.match_preview_headline]
-        
+        """Construye una narrativa táctica resumida sin duplicar el titular."""
+        headline = tactical.match_preview_headline
+        parts = [headline]
+
         if tactical.goals_narrative:
-            summary = (
-                tactical.goals_narrative.tactical_summary
-                if hasattr(tactical.goals_narrative, 'tactical_summary')
-                else tactical.goals_narrative.get("tactical_summary", "")
-            )
-            if summary:
+            summary = tactical.goals_narrative.tactical_summary
+            if summary and not summary.strip().startswith(headline.rstrip('.')):
                 parts.append(f"\n\nGoles: {summary}")
-        
+
         if tactical.cards_narrative:
-            summary = (
-                tactical.cards_narrative.tactical_summary
-                if hasattr(tactical.cards_narrative, 'tactical_summary')
-                else tactical.cards_narrative.get("tactical_summary", "")
-            )
+            summary = tactical.cards_narrative.tactical_summary
             if summary:
                 parts.append(f"\n\nTarjetas: {summary}")
-        
+
         if tactical.corners_narrative:
-            summary = (
-                tactical.corners_narrative.tactical_summary
-                if hasattr(tactical.corners_narrative, 'tactical_summary')
-                else tactical.corners_narrative.get("tactical_summary", "")
-            )
+            summary = tactical.corners_narrative.tactical_summary
             if summary:
                 parts.append(f"\n\nCórneres: {summary}")
-        
+
         return "".join(parts)
 
     def _to_serializable(self, narrative):

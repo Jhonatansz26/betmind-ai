@@ -99,6 +99,7 @@ class NarrativeOrchestrator:
                         return None
                     
                     async with self._semaphore:
+                        kwargs.pop('groq_client', None)
                         result = await asyncio.to_thread(func, *args, groq_client=self._client, **kwargs)
                         # Pausa entre llamadas para evitar rate limits
                         await asyncio.sleep(self._rate_limit_delay)

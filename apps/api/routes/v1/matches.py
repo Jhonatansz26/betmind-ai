@@ -75,7 +75,7 @@ async def list_matches(
     # (excluye partidos pasados con status SCHEDULED stale)
     if include_upcoming and not include_finished and not resolved_date:
         today_start_cot = datetime.combine(now_cot.date(), datetime.min.time(), tzinfo=COT)
-        today_start_utc = today_start_cot.astimezone(datetime.timezone.utc)
+        today_start_utc = today_start_cot.astimezone(timezone.utc)
         conditions.append(Match.match_date >= today_start_utc)
 
     status_filter = []
@@ -124,12 +124,19 @@ async def get_upcoming_matches(
     stmt = (
         select(Match)
         .where(Match.status == "SCHEDULED")
+        .options(
+            selectinload(Match.home_team),
+            selectinload(Match.away_team),
+            selectinload(Match.league),
+        )
         .order_by(Match.match_date)
         .limit(limit)
     )
     result = await db.execute(stmt)
     matches = result.scalars().all()
-    return {"matches": [_match_to_dict(m) for m in matches], "total": len(matches)}
+    match_ids = [m.id for m in matches]
+    odds_map = await _fetch_odds_for_matches(db, match_ids)
+    return {"matches": [_match_to_dict_full(m, odds_map.get(m.id, {})) for m in matches], "total": len(matches)}
 
 
 @router.get("/{match_id}")
@@ -137,13 +144,23 @@ async def get_match(
     match_id: int,
     db: AsyncSession = Depends(get_async_session),
 ):
-    """Obtiene un partido específico por ID."""
-    stmt = select(Match).where(Match.id == match_id)
+    """Obtiene un partido específico por ID con datos completos de equipos, liga y odds."""
+    stmt = (
+        select(Match)
+        .where(Match.id == match_id)
+        .options(
+            selectinload(Match.home_team),
+            selectinload(Match.away_team),
+            selectinload(Match.league),
+            selectinload(Match.predictions),
+        )
+    )
     result = await db.execute(stmt)
     match = result.scalar_one_or_none()
     if match is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
-    return _match_to_dict(match)
+    odds_map = await _fetch_odds_for_matches(db, [match_id])
+    return _match_to_dict_full(match, odds_map.get(match_id, {}))
 
 
 @router.post("/sync/{league_id}")
@@ -243,6 +260,61 @@ async def sync_all_target_leagues(
         )
 
 
+@router.get("/{match_id}/h2h")
+async def get_match_h2h(
+    match_id: int,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Obtiene historial H2H entre los equipos de un partido."""
+    match_stmt = select(Match).where(Match.id == match_id)
+    match_result = await db.execute(match_stmt)
+    match = match_result.scalar_one_or_none()
+    if match is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+
+    h2h_stmt = (
+        select(Match)
+        .where(
+            and_(
+                (
+                    (Match.home_team_id == match.home_team_id) & (Match.away_team_id == match.away_team_id)
+                ) | (
+                    (Match.home_team_id == match.away_team_id) & (Match.away_team_id == match.home_team_id)
+                ),
+                Match.status == "FINISHED",
+            )
+        )
+        .options(
+            selectinload(Match.home_team),
+            selectinload(Match.away_team),
+        )
+        .order_by(Match.match_date.desc())
+        .limit(limit)
+    )
+    h2h_result = await db.execute(h2h_stmt)
+    h2h_matches = h2h_result.scalars().all()
+
+    return {
+        "match_id": match_id,
+        "total": len(h2h_matches),
+        "h2h": [
+            {
+                "id": m.id,
+                "match_date": str(m.match_date),
+                "home_team": m.home_team.name if m.home_team else "Unknown",
+                "away_team": m.away_team.name if m.away_team else "Unknown",
+                "home_score": m.home_score,
+                "away_score": m.away_score,
+                "home_logo_url": m.home_team.logo_url if m.home_team else None,
+                "away_logo_url": m.away_team.logo_url if m.away_team else None,
+                "status": m.status,
+            }
+            for m in h2h_matches
+        ],
+    }
+
+
 async def _fetch_odds_for_matches(db: AsyncSession, match_ids: list[int]) -> dict[int, dict[str, float]]:
     """Fetch bookmaker odds grouped by match_id."""
     if not match_ids:
@@ -276,14 +348,24 @@ def _match_to_dict(m: Match) -> dict:
 
 def _match_to_dict_full(m: Match, odds: dict[str, float] | None = None) -> dict:
     """Convierte modelo Match a diccionario con datos completos de equipos, liga y odds."""
-    home_team_name = m.home_team.name if m.home_team else "Unknown"
-    away_team_name = m.away_team.name if m.away_team else "Unknown"
-    league_name = m.league.name if m.league else "Unknown"
-    league_external_id = m.league.external_id if m.league else None
-    league_country = m.league.country if m.league else None
-    league_logo_url = m.league.logo_url if m.league else None
-    home_team_logo_url = m.home_team.logo_url if m.home_team else None
-    away_team_logo_url = m.away_team.logo_url if m.away_team else None
+    try:
+        home_team_name = m.home_team.name if m.home_team else "Unknown"
+        away_team_name = m.away_team.name if m.away_team else "Unknown"
+        league_name = m.league.name if m.league else "Unknown"
+        league_external_id = m.league.external_id if m.league else None
+        league_country = m.league.country if m.league else None
+        league_logo_url = m.league.logo_url if m.league else None
+        home_team_logo_url = m.home_team.logo_url if m.home_team else None
+        away_team_logo_url = m.away_team.logo_url if m.away_team else None
+    except Exception:
+        home_team_name = "Unknown"
+        away_team_name = "Unknown"
+        league_name = "Unknown"
+        league_external_id = None
+        league_country = None
+        league_logo_url = None
+        home_team_logo_url = None
+        away_team_logo_url = None
 
     result = {
         "id": m.id,
@@ -315,17 +397,20 @@ def _match_to_dict_full(m: Match, odds: dict[str, float] | None = None) -> dict:
             "btts": odds.get("BTTS_YES"),
         }
 
-    if m.predictions:
-        latest = m.predictions[0]
-        result["prediction"] = {
-            "prediction_type": latest.prediction_type,
-            "confidence": latest.confidence,
-            "value_score": latest.value_score,
-            "reasoning": latest.reasoning,
-            "lambda_home": latest.lambda_home,
-            "lambda_away": latest.lambda_away,
-        }
-    else:
+    try:
+        if m.predictions:
+            latest = m.predictions[0]
+            result["prediction"] = {
+                "prediction_type": getattr(latest, "prediction_type", None),
+                "confidence": getattr(latest, "confidence", None),
+                "value_score": getattr(latest, "value_score", None),
+                "reasoning": getattr(latest, "reasoning", None),
+                "lambda_home": getattr(latest, "lambda_home", None),
+                "lambda_away": getattr(latest, "lambda_away", None),
+            }
+        else:
+            result["prediction"] = None
+    except Exception:
         result["prediction"] = None
 
     return result

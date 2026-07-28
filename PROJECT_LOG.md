@@ -5533,3 +5533,193 @@ pytest (58 tests subset)→  58 passed (Poisson, tickets, Kelly, anti-cascara)
 **Verificación:** TypeScript 0 errores, Python imports OK, 60/60 batch_predict success, 59 predicciones en Supabase.
 
 ---
+
+## 🟢 Fase 6: Integración de Logos, Predicción Bayesiana y Cobertura 100% (2026-07-28)
+
+### 1. 🧮 Motor Cuantitativo — Fallback Bayesiano (Cobertura 100%)
+
+**Problema:** Solo 7 de 23 partidos tenían predicción cuantitativa. Los 16 restantes caían en estado `INSUFFICIENT_DATA` por la regla de `MIN_MATCHES_FOR_STRENGTH = 5` (al menos un equipo con <5 partidos FINISHED).
+
+**Solución implementada:**
+
+**`strength_calculator.py`:**
+- Eliminado el bloqueo `is_reliable = False` → `is_reliable` ahora es solo informativo.
+- Añadido campo `match_count` a `TeamStrengthProfile`.
+- Siempre se calculan los índices de ataque/defensa con los partidos disponibles + prior de liga.
+- Logging cambiado de `WARNING` a `INFO` para baja muestra.
+
+**`prediction_pipeline.py`:**
+- Eliminado completamente el bloque `INSUFFICIENT_DATA` que abortaba el pipeline con `λ=0`.
+- **Mezcla Bayesiana:**
+  ```
+  λ_blended = (N/5) · λ_team + ((5-N)/5) · λ_league
+  ```
+  Donde `λ_league` = promedio de goles de la competencia (~1.35 goles/equipo).
+- **Confianza dinámica proporcional a la muestra:**
+  - 0 partidos → confianza 10/100 (prior puro de liga)
+  - 1-4 partidos → confianza 30-55/100 (mezcla)
+  - 5+ partidos → confianza 72-80/100 (datos reales)
+- Bandera `Muestra limitada — estimación Bayesiana` en `confidence_flags`.
+
+**Resultado:** 60/60 partidos con `λ > 0` (0% → 100% cobertura).
+
+**Ejemplo real:**
+| Partido | λ_h | λ_a | Conf | Nota |
+|---------|-----|-----|------|------|
+| KuPS vs Sabah Baku | 1.62 | 1.35 | 10 | 0 matches ambos (prior liga) |
+| Bogotá FC vs Pasto | 1.32 | 4.50 | 45 | 1 match vs 22 |
+| Banfield vs Sarmiento | 0.41 | 0.80 | 80 | 5+ matches ambos |
+
+---
+
+### 2. 📊 Guardas Matemáticas (EV & Kelly)
+
+**`ev_calculator.py`:**
+- Validación `0.0 ≤ our_probability ≤ 1.0` en `enrich_market_with_ev()`.
+- Fallback `1.0 / odds` → `1.0 / odds if odds > 0 else 0.0` en `_compute_fair_probability()`.
+
+**`kelly.py`:**
+- Ya tenía guards completos: `odds ≤ 1.0 → 0.0`, `p_real ≤ 0.0 or p_real ≥ 1.0 → 0.0`.
+- **18/18 tests pasan sin cambios.**
+
+---
+
+### 3. 🗄️ Backend — Eager Loading y Fix de 500
+
+**`routes/v1/matches.py`:**
+- `GET /{match_id}`: Ahora usa `selectinload` para `home_team`, `away_team`, `league`, `predictions` + `_match_to_dict_full`.
+- `GET /upcoming/`: Mismo fix: joined loads + `_match_to_dict_full`.
+- `GET /{match_id}/h2h`: **Nuevo endpoint** — consulta últimos partidos FINISHED entre los dos equipos.
+- **Fix HTTP 500:** Línea 78 corregida `datetime.timezone.utc` → `timezone.utc` (typo).
+- `_match_to_dict_full` envuelto en `try/except` para acceso seguro a relaciones y predicciones.
+- Uso de `getattr(latest, "lambda_home", None)` en vez de `latest.lambda_home`.
+
+**`match_repository.py`:**
+- `get_by_id()` ya usa `selectinload` para `home_team`, `away_team`, `league`.
+- `upsert_prediction()` persiste todas las variables del motor: `lambda_home`, `lambda_away`, `confidence`, `reasoning`, `markets_json`.
+
+**`database.py`:**
+- `prepared_statement_cache_size: 0` ya configurado para compatibilidad con PgBouncer de Supabase.
+
+---
+
+### 4. 🌐 Frontend — Español Estricto, Logos y Desbloqueo de UI
+
+**Traducción Under/Over → Más/Menos de:**
+| Archivo | Cambio |
+|---------|--------|
+| `goals_narrative.py` | "Over 2.5" → "Más de 2.5", "BTTS" → "Ambos Anotan" |
+| `goals_prompt.py` | "P(Over 2.5 goles)" → "P(Más de 2.5 goles)" |
+| `betmind.ts` | Label `"Más de 2.5 Goles"`, `"Ambos Anotan"` |
+| `trend-pills.tsx` | "Over 2.5 probable" → "Más de 2.5 probable" |
+| `prediction_orchestrator.py` | `_build_minimal_tactical_analysis` completamente en español |
+
+**Componentes Logo (`league-logo.tsx`, `team-logo.tsx`):**
+- Usan `<img>` nativo con `referrerPolicy="no-referrer"` (evita bloqueo 403 de CDN).
+- **Fallback elegante:**
+  - `LeagueLogo`: si `logoUrl` es null o falla → emoji de bandera.
+  - `TeamLogo`: si `logoUrl` es null o falla → iniciales en badge circular.
+- Contenedor `bg-white/10 rounded-full p-0.5` para contraste de logos oscuros sobre fondo `#0d0d0d`.
+
+**`league-metadata.ts`:**
+- Campo `logoUrl` añadido a `LeagueMeta`.
+- URLs de ESPN CDN para todas las ligas: `https://a.espncdn.com/i/leaguelogos/soccer/500/{id}.png`.
+- Fallback Wikimedia para ligas sin ID ESPN (Brasileirão Série B, UECL).
+- Unificación `name == shortName` (ej: "Copa Colombia" en vez de "Colombia - Copa").
+
+**`partidos/[id]/page.tsx` (Match Detail):**
+- **Desbloqueo de UI:** Eliminados TODOS los `<InsufficientDataCard>` que ocultaban gráficos.
+- **Nueva regla:** Si `λ > 0`, SIEMPRE se renderiza Poisson, barras comparativas, marcadores probables y tabla de mercados.
+- Badge amarillo `Estimación Bayesiana (baja muestra)` cuando `confidenceScore < 50`.
+- Badge `"none"` ocultado — solo muestra `Confianza: X/100`.
+- Tab H2H con **fallback estadístico** cuando no hay análisis táctico LLM:
+  - `λ` local/visitante, total goles esperados, ritmo (abierto/cerrado).
+  - Narrativa generada desde datos cuantitativos (sin IA).
+
+**`dashboard.tsx`:**
+- Pills de ligas con `<LeagueLogo />` a la izquierda del nombre.
+- `useMemo` derivado de `matches` con `.filter(count > 0)` y `logoUrl` del partido o metadata.
+
+**`match-card.tsx`:**
+- Logo de liga junto al nombre de la competencia.
+- Escudos de equipos (`<TeamLogo />`) junto a nombres de local/visitante.
+
+**`next.config.mjs`:**
+- `images.domains` y `images.remotePatterns` con dominios ESPN y Wikimedia.
+
+---
+
+### 5. 🕷️ Ingesta y Scripts
+
+**`uefa_qualifiers_scraper.py`:**
+- `try/except` por fixture individual (no cae el batch por una línea mal formada).
+- **Enriquecimiento de logos:** Después de scrapear fixtures, busca cada equipo en ESPN API (`/v2/search?q={team_name}`) para extraer `logo_url`.
+- Los `RawFixture` ahora incluyen `home_logo` y `away_logo`.
+
+**`espn_provider.py`:**
+- `get_leagues()`: Ahora consulta ESPN por cada liga y extrae `logos[0].href`.
+- `_parse_event()`: Extrae `logo` del equipo desde `team_info.get("logo")`.
+- `RawFixture` retornado con `home_logo` y `away_logo`.
+
+**`data_ingestion.py`:**
+- `_sync_league_from_provider()`: Pasa `logo_url` del provider (antes era siempre `None`).
+- `_sync_matches_from_provider()`: Si el fixture trae `home_logo`/`away_logo` y el equipo tiene `logo_url=NULL`, lo actualiza automáticamente.
+
+**`enrich_european_team_logos.py` (nuevo):**
+- Script standalone para backfill de escudos de equipos:
+  ```bash
+  python apps/api/scripts/enrich_european_team_logos.py
+  ```
+- Usa `external_id` del equipo para construir URL de ESPN CDN: `https://a.espncdn.com/i/teamlogos/soccer/500/{id}.png`.
+- **Resultado:** 129 equipos enriquecidos, 69 omitidos (external_id=0 — scrapeados de Flashscore).
+
+**`sync_all_historical.py` (nuevo):**
+- Sincroniza las 22 ligas configuradas desde ESPN/API-Football.
+- Uso: `python scripts/sync_all_historical.py --season 2026 --last-matches 50`.
+
+**`batch_predict.py`:**
+- **Purga de predicciones viejas:** `DELETE FROM predictions WHERE match_id IN (...)` antes de recalcular.
+- Limpieza de cache Redis por match (`cache.delete`).
+- Default `--mode full` (LLM + fallback estadístico).
+- Imports añadidos: `delete`, `Prediction`.
+
+---
+
+### 6. 🎨 LLM Orchestrator y Narrativa
+
+**`narrative_orchestrator.py`:**
+- Fix: `groq_client` duplicado — se elimina de `kwargs` antes de `asyncio.to_thread()`.
+- El bug causaba `asyncio.threads.to_thread() got multiple values for keyword argument 'groq_client'`.
+
+**`prediction_orchestrator.py`:**
+- `_build_tactical_narrative()`: Deduplicación — si el `tactical_summary` del LLM empieza con el headline, se omite la sección de goles.
+- Simplificado acceso a Pydantic (sin `hasattr`/`.get`).
+- `_build_minimal_tactical_analysis`: Traducido completamente a español (sin "Over/Under" en inglés).
+
+**`goals_narrative.py`:**
+- Fix import: `NarrativeSignal` → `SignalStrength.MODERATE` (el enum nunca se llamó NarrativeSignal).
+
+---
+
+### 7. 📊 Resumen de Archivos Modificados
+
+| Capa | Archivos |
+|------|----------|
+| **ML Package** | `team_strength.py`, `strength_calculator.py`, `prediction_pipeline.py`, `ev_calculator.py`, `goals_narrative.py`, `goals_prompt.py`, `narrative_orchestrator.py`, `config.py` |
+| **Backend API** | `matches.py`, `match_repository.py`, `prediction_orchestrator.py`, `data_ingestion.py`, `espn_provider.py`, `uefa_qualifiers_scraper.py`, `kelly.py` |
+| **Scripts** | `batch_predict.py`, `enrich_european_team_logos.py`, `sync_all_historical.py` |
+| **Frontend** | `page.tsx`, `dashboard.tsx`, `league-sidebar.tsx`, `league-accordion.tsx`, `match-card.tsx`, `league-logo.tsx`, `team-logo.tsx`, `trend-pills.tsx`, `league-metadata.ts`, `betmind.ts`, `api.ts`, `next.config.mjs` |
+
+---
+
+### 8. ✅ Verificación Final
+
+- **TypeScript:** 0 errores de compilación.
+- **Python:** Todos los archivos parsean con `ast.parse()`.
+- **Tests:** 18/18 pasan (`test_kelly_and_filters.py`).
+- **Batch predict:** 59/59 éxito, 0 errores.
+- **Supabase:** 60/60 partidos con `λ > 0`. 14 alta confianza (≥50), 9 media (30-49), 37 baja (<30).
+- **Backend:** `GET /api/v1/matches/?limit=3` → HTTP 200 con datos completos (incluyendo logos y λ).
+- **Frontend:** `.next` cache eliminada, servidor reconstruido desde cero. HTTP 200 en `:3000`.
+
+---

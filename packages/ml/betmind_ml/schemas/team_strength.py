@@ -41,3 +41,4 @@ class TeamStrengthProfile:
 
     # Flag de confianza: False si hay < MIN_MATCHES_FOR_STRENGTH partidos
     is_reliable: bool = True
+    match_count: int = 0

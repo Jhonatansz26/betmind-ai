@@ -15,7 +15,7 @@ from betmind_ml.features.strength_calculator import (
 from betmind_ml.models.poisson_engine import calculate_lambdas, build_score_matrix
 from betmind_ml.models.market_calculator import build_all_markets
 from betmind_ml.ev.ev_calculator import enrich_markets_batch, get_top_ev_opportunities
-from betmind_ml.config import MODEL_VERSION, CONFIDENCE_WEIGHTS, MIN_MATCHES_FOR_STRENGTH
+from betmind_ml.config import MODEL_VERSION, CONFIDENCE_WEIGHTS, MIN_MATCHES_FOR_STRENGTH, HOME_ADVANTAGE_BY_LEAGUE
 
 logger = logging.getLogger(__name__)
 
@@ -74,53 +74,12 @@ def run_prediction(
         h2h_matches=h2h_matches,  # Mismo H2H, desde la perspectiva del visitante
     )
 
-    # ── 3. Guard: validar datos suficientes (mín 5 partidos por equipo) ──────
-    insufficient = not home_strength.is_reliable or not away_strength.is_reliable
+    # ── 3. Fallback Bayesiano con prior de liga ──────────────────────────────
+    home_matches_count = getattr(home_strength, 'match_count', 0)
+    away_matches_count = getattr(away_strength, 'match_count', 0)
+    reliable_count = sum(1 for c in (home_matches_count, away_matches_count) if c >= MIN_MATCHES_FOR_STRENGTH)
 
-    if insufficient:
-        unreliable_teams = []
-        if not home_strength.is_reliable:
-            unreliable_teams.append(home_team_name)
-        if not away_strength.is_reliable:
-            unreliable_teams.append(away_team_name)
-
-        logger.warning(
-            "PredictionPipeline: %s con < %d partidos historicos. "
-            "Datos insuficientes para prediccion cuantitativa.",
-            ", ".join(unreliable_teams),
-            MIN_MATCHES_FOR_STRENGTH,
-        )
-
-        lambda_home, lambda_away = 0.0, 0.0
-        score_matrix = ScoreMatrix()
-        markets = _build_insufficient_markets()
-        confidence_score = 0
-        confidence_flags = [
-            f"INSUFFICIENT_DATA: <{MIN_MATCHES_FOR_STRENGTH} partidos historicos"
-        ]
-
-        output = MatchPredictionOutput(
-            match_id=match_id,
-            model_version=MODEL_VERSION,
-            lambda_home=lambda_home,
-            lambda_away=lambda_away,
-            markets=markets,
-            score_matrix=score_matrix,
-            confidence_score=confidence_score,
-            confidence_flags=confidence_flags,
-            home_attack_index=home_strength.attack_index,
-            away_attack_index=away_strength.attack_index,
-            home_defense_index=home_strength.defense_index,
-            away_defense_index=away_strength.defense_index,
-        )
-
-        logger.warning(
-            "PredictionPipeline: ABORTADO por datos insuficientes | match_id=%d",
-            match_id,
-        )
-        return output
-
-    # ── 4. Lambdas (xG) ──────────────────────────────────────────────────────
+    # ── 4. Lambdas (xG) con blending bayesiano ───────────────────────────────
     lambda_home, lambda_away = calculate_lambdas(
         home=home_strength,
         away=away_strength,
@@ -128,6 +87,20 @@ def run_prediction(
         league_avg_goals=league_averages["avg_goals_per_team_per_match"],
         is_neutral_venue=is_neutral_venue,
     )
+
+    # Mezcla bayesiana: cuando un equipo tiene < 5 partidos,
+    # su lambda se funde con el promedio de la liga proporcionalmente
+    if home_matches_count < MIN_MATCHES_FOR_STRENGTH:
+        league_prior = league_averages["avg_goals_per_team_per_match"] * (HOME_ADVANTAGE_BY_LEAGUE.get(league_key, 1.0) if not is_neutral_venue else 1.0)
+        weight = home_matches_count / MIN_MATCHES_FOR_STRENGTH
+        lambda_home = lambda_home * weight + league_prior * (1 - weight)
+        logger.info("Bayesian blend home: λ_home=%.3f (weight=%.2f, prior=%.2f, N=%d)", lambda_home, weight, league_prior, home_matches_count)
+
+    if away_matches_count < MIN_MATCHES_FOR_STRENGTH:
+        league_prior = league_averages["avg_goals_per_team_per_match"]
+        weight = away_matches_count / MIN_MATCHES_FOR_STRENGTH
+        lambda_away = lambda_away * weight + league_prior * (1 - weight)
+        logger.info("Bayesian blend away: λ_away=%.3f (weight=%.2f, prior=%.2f, N=%d)", lambda_away, weight, league_prior, away_matches_count)
 
     # ── 5. Matriz de Poisson ──────────────────────────────────────────────────
     score_matrix = build_score_matrix(lambda_home, lambda_away)
@@ -139,9 +112,10 @@ def run_prediction(
     if bookmaker_odds:
         markets = enrich_markets_batch(markets, bookmaker_odds)
 
-    # ── 8. Score de confianza ─────────────────────────────────────────────────
+    # ── 8. Score de confianza dinámico (proporcional a muestra) ──────────────
     confidence_score, confidence_flags = _calculate_confidence(
-        home_strength, away_strength, h2h_matches, all_league_matches, odds_based=False
+        home_strength, away_strength, h2h_matches, all_league_matches,
+        odds_based=False, home_matches_count=home_matches_count, away_matches_count=away_matches_count
     )
 
     output = MatchPredictionOutput(
@@ -177,23 +151,34 @@ def _calculate_confidence(
     h2h_matches: list[dict],
     league_matches: list[dict],
     odds_based: bool = False,
+    home_matches_count: int = 0,
+    away_matches_count: int = 0,
 ) -> tuple[int, list[str]]:
     """Score compuesto 0-100 con banderas de advertencia."""
     flags: list[str] = []
     scores: dict[str, float] = {}
 
-    # 1. Confiabilidad de los perfiles de fuerza
-    if home.is_reliable and away.is_reliable:
+    # 1. Confiabilidad de los perfiles de fuerza (Bayesiano)
+    h_count = home_matches_count or getattr(home, 'match_count', 0)
+    a_count = away_matches_count or getattr(away, 'match_count', 0)
+
+    if h_count >= MIN_MATCHES_FOR_STRENGTH and a_count >= MIN_MATCHES_FOR_STRENGTH:
         scores["strength_reliability"] = 100.0
-    elif home.is_reliable or away.is_reliable:
-        scores["strength_reliability"] = 50.0
-        flags.append(f"Datos insuficientes para {'visitante' if home.is_reliable else 'local'}")
+    elif h_count + a_count >= MIN_MATCHES_FOR_STRENGTH:
+        # Al menos un equipo tiene datos: confianza moderada
+        reliability_pct = min((h_count + a_count) / (2 * MIN_MATCHES_FOR_STRENGTH), 1.0)
+        scores["strength_reliability"] = 50.0 + reliability_pct * 30.0
+        if h_count < MIN_MATCHES_FOR_STRENGTH:
+            flags.append(f"Muestra limitada local ({h_count} partidos) — estimación Bayesiana")
+        if a_count < MIN_MATCHES_FOR_STRENGTH:
+            flags.append(f"Muestra limitada visitante ({a_count} partidos) — estimación Bayesiana")
     elif odds_based:
         scores["strength_reliability"] = 35.0
         flags.append("Lambdas estimadas desde cuotas de mercado")
     else:
-        scores["strength_reliability"] = 0.0
-        flags.append("Ambos equipos tienen datos insuficientes")
+        # Ambos equipos con muy pocos datos — confianza baja pero funcional
+        scores["strength_reliability"] = 30.0
+        flags.append(f"Muestra limitada (local={h_count}, visitante={a_count}) — estimación Bayesiana")
 
     # 2. Completitud de forma reciente
     form_completeness = (

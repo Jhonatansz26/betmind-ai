@@ -11,8 +11,8 @@ Analiza el mercado de GOLES para el siguiente partido y devuelve el JSON.
 ### Motor Cuantitativo (Poisson)
 - Goles esperados Local (λ): {lambda_home}
 - Goles esperados Visitante (λ): {lambda_away}
-- P(Over 2.5 goles): {p_over_25}%
-- P(Under 2.5 goles): {p_under_25}%
+- P(Más de 2.5 goles): {p_over_25}%
+- P(Menos de 2.5 goles): {p_under_25}%
 - P(BTTS - Ambos Anotan): {p_btts}%
 - Marcador más probable: {most_likely_score} ({most_likely_prob}%)
 
@@ -33,7 +33,7 @@ Analiza el mercado de GOLES para el siguiente partido y devuelve el JSON.
 
 ### Historial H2H (últimos {h2h_count} enfrentamientos)
 - Promedio de goles totales: {h2h_avg_goals}
-- Partidos Over 2.5: {h2h_over_25_count}/{h2h_count}
+- Partidos Más de 2.5: {h2h_over_25_count}/{h2h_count}
 - BTTS en H2H: {h2h_btts_count}/{h2h_count}
 
 ### Contexto del Partido
@@ -48,7 +48,7 @@ Analiza el mercado de GOLES para el siguiente partido y devuelve el JSON.
 {bookmaker_section}
 
 ## INSTRUCCIÓN
-Basándote SOLO en los datos anteriores, genera el análisis para el mercado de Over/Under 2.5 goles.
+Basándote SOLO en los datos anteriores, genera el análisis para el mercado de Más/Menos de 2.5 goles.
 La recommendation debe ser la opción con mayor valor esperado o mayor probabilidad si no hay cuotas.
 
 Responde con exactamente este JSON schema:

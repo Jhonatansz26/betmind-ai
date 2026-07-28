@@ -87,12 +87,13 @@ def calculate_team_strength(
     """
     # Filtrar a la ventana de análisis
     recent = team_matches[:STRENGTH_WINDOW]
-    is_reliable = len(recent) >= MIN_MATCHES_FOR_STRENGTH
+    match_count = len(recent)
+    is_reliable = match_count >= MIN_MATCHES_FOR_STRENGTH
 
     if not is_reliable:
-        logger.warning(
-            "TeamStrength: %s tiene solo %d partidos (mínimo: %d) — perfil no confiable",
-            team_name, len(recent), MIN_MATCHES_FOR_STRENGTH
+        logger.info(
+            "TeamStrength: %s tiene solo %d partidos (mínimo: %d) — usando prior de liga",
+            team_name, match_count, MIN_MATCHES_FOR_STRENGTH
         )
 
     # ── Calcular promedios de goles ───────────────────────────────────────────
@@ -143,6 +144,7 @@ def calculate_team_strength(
         h2h_win_rate=h2h_data["win_rate"],
         h2h_avg_goals_scored=h2h_data["avg_goals_scored"],
         is_reliable=is_reliable,
+        match_count=match_count,
     )
 
 

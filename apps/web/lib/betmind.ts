@@ -202,8 +202,8 @@ export function marketRows(match: Match, model: MatchModel): MarketRow[] {
     { key: 'home', label: 'Gana Local', probability: model.home },
     { key: 'draw', label: 'Empate', probability: model.draw },
     { key: 'away', label: 'Gana Visitante', probability: model.away },
-    { key: 'over25', label: 'Más de 2.5 Goles', probability: model.over25 },
-    { key: 'btts', label: 'Ambos Anotan: Sí', probability: model.btts },
+    { key: 'over25', label: 'Mas de 2.5 Goles', probability: model.over25 },
+    { key: 'btts', label: 'Ambos Anotan', probability: model.btts },
   ]
 
   return defs.map((def) => {
