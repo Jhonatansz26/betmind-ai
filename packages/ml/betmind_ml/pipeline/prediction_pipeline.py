@@ -106,7 +106,7 @@ def run_prediction(
     score_matrix = build_score_matrix(lambda_home, lambda_away)
 
     # ── 6. Probabilidades de mercados ─────────────────────────────────────────
-    markets = build_all_markets(score_matrix.matrix)
+    markets = build_all_markets(score_matrix.matrix, lambda_home, lambda_away)
 
     # ── 7. Enriquecer con EV si hay cuotas ───────────────────────────────────
     if bookmaker_odds:
@@ -127,6 +127,7 @@ def run_prediction(
         score_matrix=score_matrix,
         confidence_score=confidence_score,
         confidence_flags=confidence_flags,
+        risk_level=_compute_risk_level(confidence_score, markets),
         home_attack_index=home_strength.attack_index,
         away_attack_index=away_strength.attack_index,
         home_defense_index=home_strength.defense_index,
@@ -143,6 +144,18 @@ def run_prediction(
     )
 
     return output
+
+
+def _compute_risk_level(confidence_score: int, markets: list) -> str:
+    """Determina nivel de riesgo basado en confianza y probabilidades."""
+    if confidence_score >= 75:
+        return "LOW"
+    if confidence_score >= 55:
+        best_prob = max((m.our_probability for m in markets if m.our_probability > 0), default=0)
+        if best_prob >= 0.70:
+            return "LOW"
+        return "MEDIUM"
+    return "HIGH"
 
 
 def _calculate_confidence(
@@ -218,4 +231,4 @@ def _build_prior_markets(
     lambda_away = league_avg_goals
 
     prior_matrix = build_score_matrix(lambda_home, lambda_away)
-    return build_all_markets(prior_matrix.matrix)
+    return build_all_markets(prior_matrix.matrix, lambda_home, lambda_away)

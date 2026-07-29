@@ -701,6 +701,7 @@ class PredictionOrchestrator:
             probabilities=probabilities,
             ev_analysis=ev_analysis,
             confidence_score=tactical.overall_confidence,
+            risk_level=getattr(quant, 'risk_level', 'MEDIUM') or 'MEDIUM',
             tactical_narrative=tactical_narrative,
             tactical_analysis=tactical_analysis,
         )

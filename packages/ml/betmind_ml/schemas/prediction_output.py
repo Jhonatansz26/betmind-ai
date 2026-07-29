@@ -58,6 +58,7 @@ class MatchPredictionOutput:
     # Score de confianza del modelo (0-100)
     confidence_score: int = 0
     confidence_flags: list[str] = field(default_factory=list)  # razones de baja confianza
+    risk_level: str = "MEDIUM"  # LOW, MEDIUM, HIGH
 
     # Narrativa táctica (se llena en Fase 4 con LLM)
     tactical_narrative: str = ""

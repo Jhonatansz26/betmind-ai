@@ -87,6 +87,7 @@ class PredictionResponse(BaseModel):
     probabilities: ProbabilityDistribution
     ev_analysis: list[EVAnalysis]
     confidence_score: int = Field(..., ge=0, le=100)
+    risk_level: str = Field("MEDIUM", description="LOW | MEDIUM | HIGH — nivel de riesgo de la predicción")
     tactical_narrative: str = Field(..., description="Explicación en lenguaje natural")
     tactical_analysis: TacticalAnalysisResponse | None = Field(None, description="Análisis táctico completo (Fase 4)")
 

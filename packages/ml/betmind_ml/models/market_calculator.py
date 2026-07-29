@@ -4,10 +4,15 @@ Cada función recibe la matriz y retorna una probabilidad entre 0 y 1.
 
 Mercados implementados:
     - 1X2 (Victoria Local / Empate / Victoria Visitante)
+    - Double Chance (1X, X2, 12)
+    - Draw No Bet (DNB Local, DNB Visitante)
     - Over/Under 0.5, 1.5, 2.5, 3.5 goles
     - BTTS (Ambos Anotan — Both Teams To Score)
+    - Individual Team Goals (Over 0.5 / Over 1.5 Local y Visitante)
     - Marcador exacto más probable
 """
+import math
+
 from betmind_ml.schemas.prediction_output import MarketProbability, PredictionVerdict
 
 
@@ -89,31 +94,86 @@ def calculate_btts(matrix: list[list[float]]) -> dict[str, float]:
     }
 
 
-def build_all_markets(matrix: list[list[float]]) -> list[MarketProbability]:
+def calculate_double_chance(probs_1x2: dict[str, float]) -> dict[str, float]:
+    """Doble oportunidad: 1X, X2, 12 desde 1X2."""
+    return {
+        "double_1x": round(probs_1x2["home_win"] + probs_1x2["draw"], 4),
+        "double_x2": round(probs_1x2["draw"] + probs_1x2["away_win"], 4),
+        "double_12": round(probs_1x2["home_win"] + probs_1x2["away_win"], 4),
+    }
+
+
+def calculate_draw_no_bet(probs_1x2: dict[str, float]) -> dict[str, float]:
+    """Draw No Bet: probabilidad ajustada eliminando el empate."""
+    p_home = probs_1x2["home_win"]
+    p_away = probs_1x2["away_win"]
+    denominator = p_home + p_away
+    if denominator > 0:
+        return {
+            "dnb_home": round(p_home / denominator, 4),
+            "dnb_away": round(p_away / denominator, 4),
+        }
+    return {"dnb_home": 0.5, "dnb_away": 0.5}
+
+
+def calculate_individual_team_goals(lambda_home: float, lambda_away: float) -> dict[str, float]:
+    """
+    Goles individuales por equipo usando Poisson P(X >= 1) = 1 - e^(-λ).
+    Calcula Over 0.5 y Over 1.5 para cada equipo.
+    """
+    p_home_over_05 = round(1 - math.exp(-lambda_home), 4)
+    p_away_over_05 = round(1 - math.exp(-lambda_away), 4)
+    p_home_over_15 = round(1 - math.exp(-lambda_home) * (1 + lambda_home), 4)
+    p_away_over_15 = round(1 - math.exp(-lambda_away) * (1 + lambda_away), 4)
+    return {
+        "home_over_0_5": p_home_over_05,
+        "home_over_1_5": p_home_over_15,
+        "away_over_0_5": p_away_over_05,
+        "away_over_1_5": p_away_over_15,
+    }
+
+
+def build_all_markets(
+    matrix: list[list[float]],
+    lambda_home: float = 0.0,
+    lambda_away: float = 0.0,
+) -> list[MarketProbability]:
     """
     Calcula todos los mercados de una sola vez y los retorna como lista.
     Sin cuotas todavía — el EV se añade en ev_calculator.py.
     """
-    probs_1x2  = calculate_1x2(matrix)
-    over_05    = calculate_over_under(matrix, 0.5)
-    over_15    = calculate_over_under(matrix, 1.5)
-    over_25    = calculate_over_under(matrix, 2.5)
-    over_35    = calculate_over_under(matrix, 3.5)
-    btts       = calculate_btts(matrix)
+    probs_1x2 = calculate_1x2(matrix)
+    over_05   = calculate_over_under(matrix, 0.5)
+    over_15   = calculate_over_under(matrix, 1.5)
+    over_25   = calculate_over_under(matrix, 2.5)
+    over_35   = calculate_over_under(matrix, 3.5)
+    btts      = calculate_btts(matrix)
+    dbl       = calculate_double_chance(probs_1x2)
+    dnb       = calculate_draw_no_bet(probs_1x2)
+    indv      = calculate_individual_team_goals(lambda_home, lambda_away)
 
     markets = [
-        MarketProbability("1X2_HOME",    probs_1x2["home_win"]),
-        MarketProbability("1X2_DRAW",    probs_1x2["draw"]),
-        MarketProbability("1X2_AWAY",    probs_1x2["away_win"]),
-        MarketProbability("OVER_0_5",    over_05["over"]),
-        MarketProbability("UNDER_0_5",   over_05["under"]),
-        MarketProbability("OVER_1_5",    over_15["over"]),
-        MarketProbability("UNDER_1_5",   over_15["under"]),
-        MarketProbability("OVER_2_5",    over_25["over"]),
-        MarketProbability("UNDER_2_5",   over_25["under"]),
-        MarketProbability("OVER_3_5",    over_35["over"]),
-        MarketProbability("UNDER_3_5",   over_35["under"]),
-        MarketProbability("BTTS_YES",    btts["btts_yes"]),
-        MarketProbability("BTTS_NO",     btts["btts_no"]),
+        MarketProbability("1X2_HOME",       probs_1x2["home_win"]),
+        MarketProbability("1X2_DRAW",       probs_1x2["draw"]),
+        MarketProbability("1X2_AWAY",       probs_1x2["away_win"]),
+        MarketProbability("DOUBLE_1X",      dbl["double_1x"]),
+        MarketProbability("DOUBLE_X2",      dbl["double_x2"]),
+        MarketProbability("DOUBLE_12",      dbl["double_12"]),
+        MarketProbability("DNB_HOME",       dnb["dnb_home"]),
+        MarketProbability("DNB_AWAY",       dnb["dnb_away"]),
+        MarketProbability("OVER_0_5",       over_05["over"]),
+        MarketProbability("UNDER_0_5",      over_05["under"]),
+        MarketProbability("OVER_1_5",       over_15["over"]),
+        MarketProbability("UNDER_1_5",      over_15["under"]),
+        MarketProbability("OVER_2_5",       over_25["over"]),
+        MarketProbability("UNDER_2_5",      over_25["under"]),
+        MarketProbability("OVER_3_5",       over_35["over"]),
+        MarketProbability("UNDER_3_5",      over_35["under"]),
+        MarketProbability("BTTS_YES",       btts["btts_yes"]),
+        MarketProbability("BTTS_NO",        btts["btts_no"]),
+        MarketProbability("HOME_OVER_0_5",  indv["home_over_0_5"]),
+        MarketProbability("HOME_OVER_1_5",  indv["home_over_1_5"]),
+        MarketProbability("AWAY_OVER_0_5",  indv["away_over_0_5"]),
+        MarketProbability("AWAY_OVER_1_5",  indv["away_over_1_5"]),
     ]
     return markets
