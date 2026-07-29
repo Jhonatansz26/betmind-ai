@@ -453,6 +453,13 @@ export interface EnrichedMatch extends Match {
   tacticalNarrative: string
   tacticalHeadline: string
   llmModelUsed: string
+  tacticalAnalysis: {
+    goals_narrative: Record<string, unknown> | null
+    cards_narrative: Record<string, unknown> | null
+    corners_narrative: Record<string, unknown> | null
+    overall_confidence: number
+    data_completeness_score: number
+  } | null
   betBuilder: Array<{
     profile: string
     label: string
@@ -492,6 +499,13 @@ function mapBackendPrediction(raw: BackendPrediction, baseMatch: Match): Enriche
     tacticalNarrative: raw.tactical_narrative,
     tacticalHeadline: raw.tactical_analysis?.match_preview_headline ?? '',
     llmModelUsed: raw.tactical_analysis?.llm_model_used ?? 'none',
+    tacticalAnalysis: raw.tactical_analysis ? {
+      goals_narrative: raw.tactical_analysis.goals_narrative,
+      cards_narrative: raw.tactical_analysis.cards_narrative,
+      corners_narrative: raw.tactical_analysis.corners_narrative,
+      overall_confidence: raw.tactical_analysis.overall_confidence,
+      data_completeness_score: raw.tactical_analysis.data_completeness_score,
+    } : null,
     betBuilder: raw.bet_builder ?? [],
   }
 }
@@ -536,6 +550,7 @@ export async function fetchMatchPrediction(matchId: string): Promise<EnrichedMat
       tacticalNarrative: '',
       tacticalHeadline: '',
       llmModelUsed: 'none',
+      tacticalAnalysis: null,
       betBuilder: [],
     }
   }

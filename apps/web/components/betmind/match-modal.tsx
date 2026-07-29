@@ -14,6 +14,7 @@ import {
   type Match,
   type Mode,
 } from '@/lib/betmind'
+import { fetchMatchPrediction, type EnrichedMatch } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { MarketTable } from './market-table'
 import { ModeSelector } from './mode-selector'
@@ -45,11 +46,14 @@ interface MatchModalProps {
 export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
   const [selectedMarket, setSelectedMarket] = React.useState<string | null>(null)
   const [mode, setMode] = React.useState<Mode>('EDGE')
+  const [enriched, setEnriched] = React.useState<EnrichedMatch | null>(null)
 
   React.useEffect(() => {
-    if (open) {
+    if (open && match) {
       setSelectedMarket(null)
       setMode('EDGE')
+      setEnriched(null)
+      fetchMatchPrediction(match.id).then(setEnriched).catch(() => setEnriched(null))
     }
   }, [open, match?.id])
 
@@ -271,6 +275,52 @@ export function MatchModal({ match, open, onOpenChange }: MatchModalProps) {
               Añadir al Boleto
             </Button>
           </section>
+
+          {/* Bet Builder desde predicción enriquecida */}
+          {enriched?.betBuilder && enriched.betBuilder.length > 0 && (
+            <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+              <SectionTitle>Bet Builder Sugerido</SectionTitle>
+              <div className="flex flex-col gap-3">
+                {enriched.betBuilder.map((profile) => (
+                  <div
+                    key={profile.profile}
+                    className="rounded-lg border border-border bg-surface-inset p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-foreground">
+                        {profile.label}
+                      </span>
+                      <span className="num text-xs text-muted-foreground">
+                        Cuota comb: {profile.combined_odds.toFixed(2)}
+                      </span>
+                    </div>
+                    <ul className="mt-2 flex flex-col gap-1">
+                      {profile.selections.map((sel) => (
+                        <li key={sel.market_name} className="flex items-center justify-between text-xs">
+                          <span className="text-subtle">{sel.label}</span>
+                          <span className="num text-muted-foreground">
+                            {sel.odds_estimate.toFixed(2)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 w-full text-xs"
+                      onClick={() => {
+                        toast.success('Añadido al boleto', {
+                          description: `${profile.label} · ${match.home} vs ${match.away}`,
+                        })
+                      }}
+                    >
+                      Copiar al Boleto
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </DialogContent>
     </Dialog>

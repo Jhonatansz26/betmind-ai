@@ -96,6 +96,58 @@ function SectionTitle({
 }
 
 /* ------------------------------------------------------------------ */
+/* Corners & Cards Section                                             */
+/* ------------------------------------------------------------------ */
+
+function TacticalCardsSection({ tacticalAnalysis }: {
+  tacticalAnalysis: EnrichedMatch['tacticalAnalysis']
+}) {
+  if (!tacticalAnalysis) return null
+  const cards = tacticalAnalysis.cards_narrative as Record<string, unknown> | null
+  const corners = tacticalAnalysis.corners_narrative as Record<string, unknown> | null
+
+  if (!cards && !corners) return null
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <SectionTitle>Córners y Tarjetas</SectionTitle>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {cards && (
+          <div className="rounded-lg border border-border bg-surface-inset p-3">
+            <span className="text-[10px] font-semibold tracking-wide text-subtle uppercase">
+              Tarjetas
+            </span>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-4">
+              {String(cards.tactical_summary || cards.recommendation || 'Sin datos de tarjetas')}
+            </p>
+            {!!cards.recommendation && (
+              <span className="num mt-1.5 inline-block rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+                {String(cards.recommendation)}
+              </span>
+            )}
+          </div>
+        )}
+        {corners && (
+          <div className="rounded-lg border border-border bg-surface-inset p-3">
+            <span className="text-[10px] font-semibold tracking-wide text-subtle uppercase">
+              Córners
+            </span>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-4">
+              {String(corners.tactical_summary || corners.recommendation || 'Sin datos de córners')}
+            </p>
+            {!!corners.recommendation && (
+              <span className="num mt-1.5 inline-block rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+                {String(corners.recommendation)}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /* Risk Badge                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -408,6 +460,9 @@ function PreviewTab({
             </div>
           </div>
         </div>
+
+        {/* Córners y Tarjetas */}
+        <TacticalCardsSection tacticalAnalysis={enriched?.tacticalAnalysis ?? null} />
 
         {/* Bet Builder */}
         <BetBuilderSection betBuilder={enriched?.betBuilder ?? []} />

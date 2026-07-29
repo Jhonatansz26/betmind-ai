@@ -660,7 +660,7 @@ class PredictionOrchestrator:
             over_1_5=over_1_5.our_probability if over_1_5 else 0.0,
         )
 
-        # Construir análisis EV
+        # Construir análisis EV — incluir TODOS los mercados (con o sin odds)
         ev_analysis = []
         for market in quant.markets:
             if market.bookmaker_odds:
@@ -682,6 +682,17 @@ class PredictionOrchestrator:
                     expected_value=market.expected_value,
                     kelly_stake=kelly,
                     verdict=api_verdict,
+                ))
+            else:
+                ev_analysis.append(EVAnalysis(
+                    market=market.market_name,
+                    our_probability=market.our_probability,
+                    bookmaker_implied_probability=None,
+                    bookmaker_odds=None,
+                    edge_percentage=None,
+                    expected_value=None,
+                    kelly_stake=None,
+                    verdict=Verdict.INSUFFICIENT_DATA,
                 ))
 
         # Construir narrativa táctica

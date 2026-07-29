@@ -71,7 +71,7 @@ async def _has_narrative(session, match_id: int) -> bool:
     return pred_result.first() is not None
 
 
-async def main(limit: int = 0, skip: int = 0, mode: str = "quant") -> dict:
+async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool = False) -> dict:
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from sqlalchemy.orm import selectinload
@@ -158,7 +158,7 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant") -> dict:
                         away_name = match.away_team.name if match.away_team else "?"
                         league_name = match.league.name if match.league else "?"
 
-                        if include_tactical and await _has_narrative(session, match.id):
+                        if not force and include_tactical and await _has_narrative(session, match.id):
                             stats["skipped"] += 1
                             logger.info(
                                 "[%d/%d] SKIP %s vs %s (%s) — ya analizado",
@@ -219,12 +219,14 @@ if __name__ == "__main__":
     parser.add_argument("--skip", type=int, default=0, help="Matches to skip")
     parser.add_argument("--mode", choices=["quant", "full"], default="full",
                         help="quant = Fase 3 only, full = Fase 3 + Fase 4 (LLM narrativo + fallback estadístico)")
+    parser.add_argument("--force", action="store_true", help="Forzar recomputar todo (ignora idempotencia)")
     args = parser.parse_args()
 
     final_stats = asyncio.run(main(
         limit=args.limit,
         skip=args.skip,
         mode=args.mode,
+        force=args.force,
     ))
 
     print(f"\n--- BATCH COMPLETE ---")
