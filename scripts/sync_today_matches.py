@@ -191,7 +191,8 @@ async def sync_upcoming_matches():
 
                         if not existing_team:
                             import hashlib
-                            stable_id = int(hashlib.sha256(team_name.encode()).hexdigest()[:8], 16)
+                            raw_hash = int(hashlib.sha256(team_name.encode()).hexdigest()[:8], 16)
+                            stable_id = raw_hash % 2_000_000_000
                             new_team = await team_repo.upsert(Team(
                                 external_id=stable_id,
                                 name=team_name,
@@ -217,9 +218,10 @@ async def sync_upcoming_matches():
                             external_id = int(external_id)
                         except (ValueError, TypeError):
                             import hashlib
-                            external_id = int(hashlib.sha256(
+                            raw_hash = int(hashlib.sha256(
                                 f"{fixture['home_team']}{fixture['away_team']}{fixture['match_date']}".encode()
                             ).hexdigest()[:8], 16)
+                            external_id = raw_hash % 2_000_000_000
 
                     match = await match_repo.upsert_match(
                         external_id=external_id,
