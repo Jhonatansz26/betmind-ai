@@ -358,8 +358,9 @@ interface BackendLeaguesResponse {
   total: number
 }
 
-export async function fetchLeagues(): Promise<LeagueData[]> {
-  const res = await fetch(`${API_BASE}/api/v1/leagues/`)
+export async function fetchLeagues(targetDate?: string): Promise<LeagueData[]> {
+  const params = targetDate ? `?date=${targetDate}` : ""
+  const res = await fetch(`${API_BASE}/api/v1/leagues/${params}`)
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`)
   }

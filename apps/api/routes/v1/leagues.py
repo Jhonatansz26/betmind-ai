@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from datetime import date, datetime, time, timezone
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from apps.api.dependencies import get_async_session
 from apps.api.models.league import League
@@ -12,14 +13,22 @@ router = APIRouter(prefix="/leagues", tags=["Leagues"])
 
 @router.get("/")
 async def list_leagues(
+    date: date | None = Query(None, description="Fecha para filtrar (YYYY-MM-DD). Por defecto: hoy."),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """Retorna todas las ligas con conteo real de partidos activos (SCHEDULED + LIVE)."""
+    """Retorna solo las ligas que tienen al menos 1 partido activo (SCHEDULED + LIVE + INPLAY) en la fecha indicada."""
+    target_date = date or date.today()
+    day_start = datetime.combine(target_date, time.min, tzinfo=timezone.utc)
+    day_end = datetime.combine(target_date, time.max, tzinfo=timezone.utc)
     active_statuses = ["SCHEDULED", "LIVE", "INPLAY"]
 
     match_count_subquery = (
         select(Match.league_id, func.count(Match.id).label("match_count"))
-        .where(Match.status.in_(active_statuses))
+        .where(
+            Match.status.in_(active_statuses),
+            Match.match_date >= day_start,
+            Match.match_date <= day_end,
+        )
         .group_by(Match.league_id)
         .subquery()
     )
@@ -32,9 +41,9 @@ async def list_leagues(
             League.country,
             League.logo_url,
             League.tier,
-            func.coalesce(match_count_subquery.c.match_count, 0).label("active_matches"),
+            match_count_subquery.c.match_count.label("active_matches"),
         )
-        .outerjoin(match_count_subquery, League.id == match_count_subquery.c.league_id)
+        .join(match_count_subquery, League.id == match_count_subquery.c.league_id)
         .order_by(League.name)
     )
 
