@@ -39,6 +39,7 @@ def generate_bet_builder(
         n_suggestions=n_suggestions,
     )
 
+    combinations: list = []
     try:
         full_prompt = f"{SYSTEM_BASE}\n\n{user_prompt}"
         response = groq_client.chat.completions.create(
@@ -55,21 +56,21 @@ def generate_bet_builder(
         if isinstance(data, list):
             combinations = [BetBuilderCombination.model_validate(item) for item in data]
         else:
-            combinations = []
+            combinations = _generate_fallback_bet_builder(
+                home_team_name, away_team_name, league_name, markets_summary
+            )
         
-        logger.info(
-            "BetBuilder: %d combinadas generadas",
-            len(combinations),
-        )
-        return combinations
     except Exception as e:
         error_str = str(e)
         if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
             raise
         logger.warning("Error generando BetBuilder con LLM, usando fallback: %s", e)
-        return _generate_fallback_bet_builder(
+        combinations = _generate_fallback_bet_builder(
             home_team_name, away_team_name, league_name, markets_summary
         )
+
+    logger.info("BetBuilder: %d combinadas generadas", len(combinations))
+    return combinations
 
 
 def _generate_fallback_bet_builder(

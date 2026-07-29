@@ -31,7 +31,7 @@ class MarketNarrative(BaseModel):
     )
 
     pros: list[ProConPoint] = Field(
-        ..., min_length=2, max_length=5,
+        ..., min_length=1, max_length=5,
         description="Factores a FAVOR de la apuesta recomendada"
     )
     cons: list[ProConPoint] = Field(
