@@ -39,4 +39,9 @@ en los datos estadísticos que se te proporcionan.
    "key_risk" (string), "tactical_summary" (string), "featured_player" (string|null).
    Cada objeto en pros/cons debe tener: "factor" (string),
    "description" (string), "weight" (string: "high"|"medium"|"low").
+
+7. **IDIOMA:** Toda la respuesta debe ser ESTRICTAMENTE en español. NUNCA uses
+   términos en inglés como "Over", "Under", "Draw No Bet", "Home", "Away",
+   "Double Chance". Usa "Más de", "Menos de", "Empate No Válido",
+   "Local", "Visitante", "Doble Oportunidad".
 """

@@ -80,7 +80,7 @@ export function MatchCard({ match }: { match: Match }) {
                   {`Más probable: ${model.mostLikely.score} (${(model.mostLikely.probability * 100).toFixed(1)}%)`}
                 </span>
                 <span className="num text-[11px] text-subtle">
-                  {`λ ${match.lambdaHome.toFixed(2)} · ${match.lambdaAway.toFixed(2)}`}
+                  {`xG: ${match.lambdaHome.toFixed(2)} - ${match.lambdaAway.toFixed(2)}`}
                 </span>
                 {match.score ? (
                   <span className="num text-[11px] text-positive">

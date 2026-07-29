@@ -229,6 +229,18 @@ const EXPANDED_MARKETS_GROUPS = [
   },
 ]
 
+const MARKET_LABELS_ES: Record<string, string> = {
+  DOUBLE_1X: 'Doble Oportunidad 1X',
+  DOUBLE_X2: 'Doble Oportunidad X2',
+  DOUBLE_12: 'Doble Oportunidad 12',
+  DNB_HOME: 'Empate No Válido Local',
+  DNB_AWAY: 'Empate No Válido Visitante',
+  HOME_OVER_0_5: 'Local Más de 0.5 Goles',
+  HOME_OVER_1_5: 'Local Más de 1.5 Goles',
+  AWAY_OVER_0_5: 'Visitante Más de 0.5 Goles',
+  AWAY_OVER_1_5: 'Visitante Más de 1.5 Goles',
+}
+
 function ExpandedMarkets({ evAnalysis }: { evAnalysis: EnrichedMatch['evAnalysis'] | null }) {
   if (!evAnalysis || evAnalysis.length === 0) return null
 
@@ -249,8 +261,8 @@ function ExpandedMarkets({ evAnalysis }: { evAnalysis: EnrichedMatch['evAnalysis
                 if (!ev) return null
                 return (
                   <li key={key} className="flex items-center justify-between text-xs">
-                    <span className="text-subtle capitalize">
-                      {key.replace(/_/g, ' ').toLowerCase()}
+                    <span className="text-subtle">
+                      {MARKET_LABELS_ES[key] ?? key}
                     </span>
                     <span className="num text-muted-foreground">
                       {(ev.probability * 100).toFixed(1)}%
@@ -292,12 +304,13 @@ function PreviewTab({
   const isBayesian = lambdaAvailable && (enriched?.confidenceScore ?? 0) < 50
 
   return (
-    <div
-      id="match-panel-preview"
-      role="tabpanel"
-      aria-labelledby="match-tab-preview"
-      className="grid grid-cols-1 gap-6 lg:grid-cols-[3fr_2fr]"
-    >
+    <>
+      <div
+        id="match-panel-preview"
+        role="tabpanel"
+        aria-labelledby="match-tab-preview"
+        className="grid grid-cols-1 gap-6 lg:grid-cols-[3fr_2fr]"
+      >
       {/* ── COLUMNA IZQUIERDA (60%) ── */}
       <div className="flex flex-col gap-5">
         {/* Veredicto +EV destacado con botón Guardar en mi Boleto */}
@@ -463,11 +476,12 @@ function PreviewTab({
 
         {/* Córners y Tarjetas */}
         <TacticalCardsSection tacticalAnalysis={enriched?.tacticalAnalysis ?? null} />
-
-        {/* Bet Builder */}
-        <BetBuilderSection betBuilder={enriched?.betBuilder ?? []} />
       </div>
     </div>
+
+    {/* Bet Builder — full width below the grid */}
+    <BetBuilderSection betBuilder={enriched?.betBuilder ?? []} />
+    </>
   )
 }
 
@@ -489,12 +503,6 @@ function H2HTab({ match }: { match: Match }) {
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-4">
           <SectionTitle
-            badge={
-              <span className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                <SparklesIcon className="size-3" aria-hidden />
-                Potenciado por Groq · Llama 3.3
-              </span>
-            }
           >
             Análisis Táctico & H2H
           </SectionTitle>
@@ -621,11 +629,11 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
         <div className="mt-4 flex items-center gap-4">
           <div className="flex flex-1 items-center gap-3">
             <TeamLogo logoUrl={match.homeLogoUrl} teamName={match.home} size="lg" />
-            <h1 className="font-serif text-xl leading-tight text-foreground">{match.home || 'Local'}</h1>
+            <h1 className="font-sans font-bold text-xl leading-tight text-foreground">{match.home || 'Local'}</h1>
           </div>
           <span className="num shrink-0 text-sm text-subtle">vs</span>
           <div className="flex flex-1 items-center justify-end gap-3 text-right">
-            <span className="font-serif text-xl leading-tight text-foreground">{match.away || 'Visitante'}</span>
+            <span className="font-sans font-bold text-xl leading-tight text-foreground">{match.away || 'Visitante'}</span>
             <TeamLogo logoUrl={match.awayLogoUrl} teamName={match.away} size="lg" />
           </div>
         </div>
@@ -655,11 +663,6 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
         {hasPrediction && enriched && (
           <div className="mt-4 flex flex-col gap-2 rounded-lg border border-border bg-surface/50 p-3">
             <div className="flex items-center gap-2">
-              {enriched.llmModelUsed && enriched.llmModelUsed !== 'none' && (
-                <span className="num inline-flex items-center gap-1 rounded-md bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
-                  {enriched.llmModelUsed}
-                </span>
-              )}
               <span className="num text-xs text-muted-foreground">
                 Confianza: {enriched.confidenceScore}/100
               </span>

@@ -207,7 +207,7 @@ export function PoissonModalChart({
         </span>
         <span className="text-subtle">goles anotados</span>
         <span className="num ml-auto text-subtle">
-          {`Goles Esperados — Local: λ ${lambdaHome.toFixed(2)} · Visitante: λ ${lambdaAway.toFixed(2)}`}
+          {`Goles Esperados: ${homeLabel} ${lambdaHome.toFixed(2)} — ${awayLabel} ${lambdaAway.toFixed(2)}`}
         </span>
       </div>
     </div>

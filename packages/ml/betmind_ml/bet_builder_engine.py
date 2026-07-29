@@ -65,8 +65,8 @@ _MARKET_LABELS: dict[str, str] = {
     "DOUBLE_1X": "Doble Oportunidad 1X",
     "DOUBLE_X2": "Doble Oportunidad X2",
     "DOUBLE_12": "Doble Oportunidad 12",
-    "DNB_HOME": "Draw No Bet Local",
-    "DNB_AWAY": "Draw No Bet Visitante",
+    "DNB_HOME": "Empate No Válido Local",
+    "DNB_AWAY": "Empate No Válido Visitante",
     "OVER_0_5": "Más de 0.5 Goles",
     "OVER_1_5": "Más de 1.5 Goles",
     "OVER_2_5": "Más de 2.5 Goles",
@@ -77,16 +77,36 @@ _MARKET_LABELS: dict[str, str] = {
     "UNDER_3_5": "Menos de 3.5 Goles",
     "BTTS_YES": "Ambos Anotan Sí",
     "BTTS_NO": "Ambos Anotan No",
-    "HOME_OVER_0_5": "Local Más de 0.5",
-    "HOME_OVER_1_5": "Local Más de 1.5",
-    "AWAY_OVER_0_5": "Visitante Más de 0.5",
-    "AWAY_OVER_1_5": "Visitante Más de 1.5",
+    "HOME_OVER_0_5": "Local Más de 0.5 Goles",
+    "HOME_OVER_1_5": "Local Más de 1.5 Goles",
+    "AWAY_OVER_0_5": "Visitante Más de 0.5 Goles",
+    "AWAY_OVER_1_5": "Visitante Más de 1.5 Goles",
 }
+
+_MUTUALLY_EXCLUSIVE: list[set[str]] = [
+    {"BTTS_YES", "BTTS_NO"},
+    {"OVER_0_5", "UNDER_0_5"},
+    {"OVER_1_5", "UNDER_1_5"},
+    {"OVER_2_5", "UNDER_2_5"},
+    {"OVER_3_5", "UNDER_3_5"},
+    {"1X2_HOME", "1X2_DRAW", "1X2_AWAY"},
+    {"DOUBLE_1X", "DOUBLE_X2"},
+    {"DNB_HOME", "DNB_AWAY"},
+]
+
+
+def _is_exclusive(name: str, selected: set[str]) -> bool:
+    """Verifica si un mercado es mutuamente excluyente con los ya seleccionados."""
+    for group in _MUTUALLY_EXCLUSIVE:
+        if name in group:
+            if group & selected:
+                return True
+    return False
 
 
 def _pick_best(markets: list[MarketProbability], allowed: set[str], count: int,
                min_prob: float = 0.50, prefer_ev: bool = False) -> list[MarketProbability]:
-    """Selecciona los N mejores mercados del conjunto permitido."""
+    """Selecciona los N mejores mercados del conjunto permitido, evitando exclusiones."""
     candidates = [
         m for m in markets
         if m.market_name in allowed and m.our_probability >= min_prob
@@ -102,12 +122,28 @@ def _pick_best(markets: list[MarketProbability], allowed: set[str], count: int,
     else:
         candidates.sort(key=lambda m: m.our_probability, reverse=True)
 
-    if len(candidates) < count:
-        extra = [m for m in markets if m.our_probability > 0 and m.market_name not in {c.market_name for c in candidates}]
-        extra.sort(key=lambda m: m.our_probability, reverse=True)
-        candidates.extend(extra)
+    result: list[MarketProbability] = []
+    selected_names: set[str] = set()
+    for m in candidates:
+        if len(result) >= count:
+            break
+        if _is_exclusive(m.market_name, selected_names):
+            continue
+        result.append(m)
+        selected_names.add(m.market_name)
 
-    return candidates[:count]
+    if len(result) < count:
+        extra = [m for m in markets if m.our_probability > 0 and m.market_name not in selected_names]
+        extra.sort(key=lambda m: m.our_probability, reverse=True)
+        for m in extra:
+            if len(result) >= count:
+                break
+            if _is_exclusive(m.market_name, selected_names):
+                continue
+            result.append(m)
+            selected_names.add(m.market_name)
+
+    return result[:count]
 
 
 def _to_selection(m: MarketProbability) -> BetBuilderSelection:

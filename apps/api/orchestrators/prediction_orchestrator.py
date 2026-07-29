@@ -574,7 +574,9 @@ class PredictionOrchestrator:
 
         system = (
             "Eres un analista de fútbol profesional. Genera análisis táctico en JSON estricto. "
-            "Sé breve, preciso y basado en datos. NO inventes información."
+            "Sé breve, preciso y basado en datos. NO inventes información. "
+            "Responde SIEMPRE en español. Usa 'Más de', 'Menos de', 'Local', 'Visitante', "
+            "'Doble Oportunidad', 'Empate No Válido'. NUNCA en inglés."
         )
         user = (
             f"Analiza: {match.home_team.name} vs {match.away_team.name} ({match.league.name}).\n"
