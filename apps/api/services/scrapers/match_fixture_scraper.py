@@ -8,7 +8,7 @@ Endpoint: https://site.api.espn.com/apis/site/v2/sports/soccer/{league_slug}/sco
 Zona horaria: America/Bogota (UTC-5) para Colombia
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -142,15 +142,13 @@ class MatchFixtureScraper:
                 logger.debug(f"Missing home or away team in event {event.get('id')}")
                 return None
 
-            # Parsear fecha/hora y convertir a zona horaria de Colombia
+            # Parsear fecha/hora desde ESPN
             match_date_str = event.get("date", "")
             if match_date_str:
                 # ESPN retorna fechas en formato ISO UTC: "2026-07-25T23:30Z"
-                match_date_utc = datetime.fromisoformat(match_date_str.replace("Z", "+00:00"))
-                # Convertir a zona horaria de Colombia (UTC-5)
-                match_date_local = match_date_utc.astimezone(COLOMBIA_TZ)
+                match_date = datetime.fromisoformat(match_date_str.replace("Z", "+00:00"))
             else:
-                match_date_local = datetime.now(COLOMBIA_TZ)
+                match_date = datetime.now(timezone.utc)
 
             # Estado del partido
             status_info = competition.get("status", {})
@@ -174,7 +172,7 @@ class MatchFixtureScraper:
             return {
                 "home_team": home_team,
                 "away_team": away_team,
-                "match_date": match_date_local,
+                "match_date": match_date,
                 "league_key": league_key,
                 "source": "espn",
                 "external_id": event.get("id"),

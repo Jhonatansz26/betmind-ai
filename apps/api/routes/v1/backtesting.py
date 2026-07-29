@@ -46,7 +46,7 @@ async def run_backtest(
             "away_team_name": m.away_team.name if m.away_team else f"Team_{m.away_team_id}",
             "home_goals": m.home_score,
             "away_goals": m.away_score,
-            "match_date": str(m.match_date),
+            "match_date": m.match_date.isoformat(),
         }
         for m in all_matches
         if m.home_score is not None

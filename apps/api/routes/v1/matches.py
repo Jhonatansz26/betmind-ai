@@ -301,7 +301,7 @@ async def get_match_h2h(
         "h2h": [
             {
                 "id": m.id,
-                "match_date": str(m.match_date),
+                "match_date": m.match_date.isoformat(),
                 "home_team": m.home_team.name if m.home_team else "Unknown",
                 "away_team": m.away_team.name if m.away_team else "Unknown",
                 "home_score": m.home_score,
@@ -338,7 +338,7 @@ def _match_to_dict(m: Match) -> dict:
         "league_id": m.league_id,
         "home_team_id": m.home_team_id,
         "away_team_id": m.away_team_id,
-        "match_date": str(m.match_date),
+        "match_date": m.match_date.isoformat(),
         "status": m.status,
         "home_score": m.home_score,
         "away_score": m.away_score,
@@ -381,7 +381,7 @@ def _match_to_dict_full(m: Match, odds: dict[str, float] | None = None) -> dict:
         "away_team_id": m.away_team_id,
         "away_team_name": away_team_name,
         "away_team_logo_url": away_team_logo_url,
-        "match_date": str(m.match_date),
+        "match_date": m.match_date.isoformat(),
         "status": m.status,
         "home_score": m.home_score,
         "away_score": m.away_score,
