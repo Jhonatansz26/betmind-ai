@@ -14,6 +14,7 @@ from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.tactical_analysis_repository import TacticalAnalysisRepository
 from apps.api.schemas.prediction import OddsInput, PredictionResponse, TacticalAnalysisResponse
 from apps.api.services.cache_service import CacheService
+from apps.api.services.llm_cascade import LLMCascadeService, LLMCascadeResult
 
 from betmind_ml.pipeline.full_analysis_pipeline import run_full_analysis
 from betmind_ml.schemas.match_context import MatchContext, MatchImportance
@@ -463,11 +464,10 @@ class PredictionOrchestrator:
         bookmaker_odds: dict[str, float] | None,
     ) -> tuple[MatchPredictionOutput, TacticalAnalysis]:
         """
-        Ejecuta el pipeline completo (Fase 3 + Fase 4) con timeout.
-        Si el LLM excede el timeout o falla, retorna el analisis cuantitativo
-        intacto con un analisis tactico minimo de fallback.
+        Ejecuta el pipeline completo (Fase 3 + Fase 4) con timeout y cascada multi-proveedor.
 
-        La prediccion cuantitativa (Poisson + EV) nunca se pierde.
+        Capa 2: Groq → Gemini → Capa 1 (sintético)
+        Capa 1: La prediccion cuantitativa (Poisson + EV) nunca se pierde.
         """
         context = self._build_match_context(match)
 
@@ -494,27 +494,144 @@ class PredictionOrchestrator:
                 ),
                 timeout=settings.GROQ_TIMEOUT_SECONDS,
             )
+
+            if tactical_output.llm_model_used == "none":
+                logger.info(
+                    "Groq falló para match_id=%s (llm_model_used=none). "
+                    "Intentando Gemini como Capa 2...", match.id,
+                )
+                gemini_tactical = await self._try_gemini_analysis(match, quant_output)
+                if gemini_tactical is not None:
+                    return quant_output, gemini_tactical
+
             return quant_output, tactical_output
 
         except asyncio.TimeoutError:
             logger.warning(
                 "LLM tactical analysis TIMEOUT after %.1fs for match_id=%s. "
-                "Falling back to minimal tactical analysis.",
+                "Intentando Gemini (Capa 2)...",
                 settings.GROQ_TIMEOUT_SECONDS, match.id,
             )
-            quant_output = await self._run_quantitative_analysis(match, odds)
-            tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
-            return quant_output, tactical_output
+            return await self._fallback_quant_with_gemini(match, odds)
 
         except Exception as e:
             logger.warning(
                 "LLM tactical analysis failed for match_id=%s: %s. "
-                "Falling back to minimal tactical analysis.",
+                "Intentando Gemini (Capa 2)...",
                 match.id, e,
             )
-            quant_output = await self._run_quantitative_analysis(match, odds)
-            tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
-            return quant_output, tactical_output
+            return await self._fallback_quant_with_gemini(match, odds)
+
+    async def _fallback_quant_with_gemini(
+        self, match: Match, odds: OddsInput | None,
+    ) -> tuple[MatchPredictionOutput, TacticalAnalysis]:
+        """Capa 2: ejecuta análisis cuantitativo y prueba Gemini. Capa 1 si falla."""
+        quant_output = await self._run_quantitative_analysis(match, odds)
+        gemini_tactical = await self._try_gemini_analysis(match, quant_output)
+        if gemini_tactical is not None:
+            return quant_output, gemini_tactical
+        tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
+        return quant_output, tactical_output
+
+    async def _try_gemini_analysis(
+        self, match: Match, quant_output: MatchPredictionOutput,
+    ) -> TacticalAnalysis | None:
+        """Intenta generar análisis táctico via Gemini como fallback."""
+        try:
+            cascade = LLMCascadeService()
+            prompt_data = self._build_gemini_prompt(match, quant_output)
+            result = await cascade.generate_tactical_json(
+                system_prompt=prompt_data["system"],
+                user_prompt=prompt_data["user"],
+            )
+            if result.content is None:
+                return None
+            return self._gemini_result_to_tactical(match, quant_output, result)
+        except Exception as e:
+            logger.warning("Gemini fallback falló para match_id=%s: %s", match.id, e)
+            return None
+
+    def _build_gemini_prompt(
+        self, match: Match, quant: MatchPredictionOutput,
+    ) -> dict[str, str]:
+        """Construye prompt optimizado (<400 tokens) para análisis táctico vía LLM."""
+        markets = {m.market_name: m for m in quant.markets}
+
+        home_1x2 = markets.get("1X2_HOME")
+        draw = markets.get("1X2_DRAW")
+        away_1x2 = markets.get("1X2_AWAY")
+        over_25 = markets.get("OVER_2_5")
+
+        p_home = f"{home_1x2.our_probability:.1%}" if home_1x2 else "N/D"
+        p_draw = f"{draw.our_probability:.1%}" if draw else "N/D"
+        p_away = f"{away_1x2.our_probability:.1%}" if away_1x2 else "N/D"
+        p_over = f"{over_25.our_probability:.1%}" if over_25 else "N/D"
+
+        lambda_home = getattr(quant, "lambda_home", 0) or 0
+        lambda_away = getattr(quant, "lambda_away", 0) or 0
+        score_line = getattr(quant, "most_likely_score", None)
+        score_str = f"{getattr(score_line, 'home', '?')}-{getattr(score_line, 'away', '?')}" if score_line else "?"
+
+        system = (
+            "Eres un analista de fútbol profesional. Genera análisis táctico en JSON estricto. "
+            "Sé breve, preciso y basado en datos. NO inventes información."
+        )
+        user = (
+            f"Analiza: {match.home_team.name} vs {match.away_team.name} ({match.league.name}).\n"
+            f"xG local={lambda_home:.2f}, xG visitante={lambda_away:.2f}.\n"
+            f"Probabilidades: Local={p_home}, Empate={p_draw}, Visitante={p_away}, Over2.5={p_over}.\n"
+            f"Marcador más probable: {score_str}. Confianza modelo: {quant.confidence_score}/100.\n"
+            f"Responde SOLO JSON: {{\"resumen_tactico\": \"...\", \"puntos_clave\": [\"...\"], \"nivel_riesgo\": \"...\"}}"
+        )
+        return {"system": system, "user": user}
+
+    def _gemini_result_to_tactical(
+        self, match: Match, quant: MatchPredictionOutput, result: LLMCascadeResult,
+    ) -> TacticalAnalysis:
+        """Convierte el resultado JSON del LLM cascade a TacticalAnalysis."""
+        from betmind_ml.schemas.tactical_analysis import MarketNarrative, ProConPoint, SignalStrength
+        from betmind_ml.schemas.tactical_analysis import TacticalAnalysis as TA
+
+        content = result.content or {}
+        summary = content.get("resumen_tactico", "")
+        puntos = content.get("puntos_clave", [])
+        riesgo = content.get("nivel_riesgo", "MODERADO")
+
+        if not summary:
+            return self._build_minimal_tactical_analysis(match, quant)
+
+        markets = {m.market_name: m for m in quant.markets}
+        over_25 = markets.get("OVER_2_5")
+        p_over = over_25.our_probability if over_25 else 0.5
+
+        goals_narrative = MarketNarrative(
+            market_name="Goles (Más/Menos)",
+            our_probability=round(p_over, 4),
+            recommendation="Más de 2.5" if p_over > 0.5 else "Menos de 2.5",
+            pros=[ProConPoint(factor="Análisis IA", description=p, weight="HIGH") for p in puntos[:2]] or [
+                ProConPoint(factor="Modelo Poisson", description=summary[:80], weight="MEDIUM"),
+            ],
+            cons=[ProConPoint(factor="Riesgo", description=riesgo, weight="MEDIUM")],
+            signal_strength=SignalStrength.MODERATE,
+            key_risk=riesgo,
+            tactical_summary=summary,
+            featured_player=None,
+        )
+
+        return TA(
+            match_id=match.id,
+            model_version=f"cascade_{result.model_used}",
+            goals_narrative=goals_narrative,
+            cards_narrative=None,
+            corners_narrative=None,
+            player_props_narratives=None,
+            bet_builder_suggestions=None,
+            overall_confidence=quant.confidence_score,
+            match_preview_headline=f"{match.home_team.name} vs {match.away_team.name}: {summary[:60]}",
+            llm_model_used=result.model_used,
+            generation_tokens_used=result.tokens_used,
+            data_completeness_score=0.8,
+        )
 
     def _build_response(
         self,

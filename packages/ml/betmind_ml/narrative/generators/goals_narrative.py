@@ -108,7 +108,7 @@ def generate_goals_narrative(
             messages=[{"role": "user", "content": full_prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=750,
+            max_tokens=400,
         )
         
         response_text = response.choices[0].message.content

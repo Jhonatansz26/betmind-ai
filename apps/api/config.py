@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GROQ_API_KEYS: str = ""
     ANTHROPIC_API_KEY: str | None = None
+    GEMINI_API_KEY: str | None = None
 
     SECRET_KEY: str = "change-me-in-production"
     ALGORITHM: str = "HS256"

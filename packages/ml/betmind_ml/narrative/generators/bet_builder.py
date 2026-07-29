@@ -54,7 +54,7 @@ def generate_bet_builder(
             messages=[{"role": "user", "content": full_prompt}],
             response_format={"type": "json_object"},
             temperature=0.4,
-            max_tokens=750,
+            max_tokens=400,
         )
         
         response_text = response.choices[0].message.content
