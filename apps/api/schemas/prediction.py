@@ -70,6 +70,21 @@ class TacticalAnalysisResponse(BaseModel):
     data_completeness_score: float = Field(..., ge=0, le=1)
 
 
+class BetBuilderSelectionSchema(BaseModel):
+    market_name: str
+    label: str
+    probability: float
+    odds_estimate: float
+
+
+class BetBuilderProfileSchema(BaseModel):
+    profile: str
+    label: str
+    selections: list[BetBuilderSelectionSchema]
+    combined_odds: float
+    combined_probability: float
+
+
 class PredictionResponse(BaseModel):
     """
     DTO de salida del endpoint GET /api/v1/predictions/{match_id}.
@@ -90,6 +105,7 @@ class PredictionResponse(BaseModel):
     risk_level: str = Field("MEDIUM", description="LOW | MEDIUM | HIGH — nivel de riesgo de la predicción")
     tactical_narrative: str = Field(..., description="Explicación en lenguaje natural")
     tactical_analysis: TacticalAnalysisResponse | None = Field(None, description="Análisis táctico completo (Fase 4)")
+    bet_builder: list[BetBuilderProfileSchema] = Field(default_factory=list, description="Bet Builder automático por perfil")
 
     @computed_field
     @property

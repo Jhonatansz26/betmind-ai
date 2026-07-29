@@ -96,6 +96,125 @@ function SectionTitle({
 }
 
 /* ------------------------------------------------------------------ */
+/* Risk Badge                                                          */
+/* ------------------------------------------------------------------ */
+
+const RISK_STYLES: Record<string, string> = {
+  LOW: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  MEDIUM: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+  HIGH: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+}
+const RISK_LABELS: Record<string, string> = {
+  LOW: 'Riesgo Bajo',
+  MEDIUM: 'Riesgo Medio',
+  HIGH: 'Riesgo Alto',
+}
+
+function RiskBadge({ level }: { level: string }) {
+  const style = RISK_STYLES[level] ?? RISK_STYLES.MEDIUM
+  const label = RISK_LABELS[level] ?? RISK_LABELS.MEDIUM
+  return (
+    <span className={`num inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${style}`}>
+      {label}
+    </span>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Bet Builder Section                                                  */
+/* ------------------------------------------------------------------ */
+
+function BetBuilderSection({ betBuilder }: { betBuilder: EnrichedMatch['betBuilder'] }) {
+  if (!betBuilder || betBuilder.length === 0) return null
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <SectionTitle>Bet Builder Sugerido</SectionTitle>
+      <div className="mt-3 flex flex-col gap-3">
+        {betBuilder.map((profile) => (
+          <div
+            key={profile.profile}
+            className="rounded-lg border border-border bg-surface-inset p-3"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-foreground">{profile.label}</span>
+              <span className="num text-xs text-muted-foreground">
+                Cuota comb: {profile.combined_odds.toFixed(2)}
+              </span>
+            </div>
+            <ul className="mt-2 flex flex-col gap-1">
+              {profile.selections.map((sel) => (
+                <li key={sel.market_name} className="flex items-center justify-between text-xs">
+                  <span className="text-subtle">{sel.label}</span>
+                  <span className="num text-muted-foreground">
+                    {sel.odds_estimate.toFixed(2)} ({(sel.probability * 100).toFixed(0)}%)
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Expanded Markets (Doble Oportunidad, DNB, Goles Individuales)       */
+/* ------------------------------------------------------------------ */
+
+const EXPANDED_MARKETS_GROUPS = [
+  {
+    title: 'Doble Oportunidad',
+    keys: ['DOUBLE_1X', 'DOUBLE_X2', 'DOUBLE_12'],
+  },
+  {
+    title: 'Empate No Válido (DNB)',
+    keys: ['DNB_HOME', 'DNB_AWAY'],
+  },
+  {
+    title: 'Goles de Equipo',
+    keys: ['HOME_OVER_0_5', 'HOME_OVER_1_5', 'AWAY_OVER_0_5', 'AWAY_OVER_1_5'],
+  },
+]
+
+function ExpandedMarkets({ evAnalysis }: { evAnalysis: EnrichedMatch['evAnalysis'] | null }) {
+  if (!evAnalysis || evAnalysis.length === 0) return null
+
+  const byMarket = new Map(evAnalysis.map((ev) => [ev.market, ev]))
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <SectionTitle>Mercados Adicionales</SectionTitle>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {EXPANDED_MARKETS_GROUPS.map((group) => (
+          <div key={group.title} className="rounded-lg border border-border bg-surface-inset p-3">
+            <span className="text-[10px] font-semibold tracking-wide text-subtle uppercase">
+              {group.title}
+            </span>
+            <ul className="mt-1.5 flex flex-col gap-1">
+              {group.keys.map((key) => {
+                const ev = byMarket.get(key)
+                if (!ev) return null
+                return (
+                  <li key={key} className="flex items-center justify-between text-xs">
+                    <span className="text-subtle capitalize">
+                      {key.replace(/_/g, ' ').toLowerCase()}
+                    </span>
+                    <span className="num text-muted-foreground">
+                      {(ev.probability * 100).toFixed(1)}%
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /* Tab: Previa & Pronóstico                                            */
 /* ------------------------------------------------------------------ */
 
@@ -228,6 +347,9 @@ function PreviewTab({
             )}
           </div>
         </div>
+
+        {/* Mercados Expandidos: Doble Oportunidad, DNB, Goles Individuales */}
+        <ExpandedMarkets evAnalysis={enriched?.evAnalysis ?? null} />
       </div>
 
       {/* ── COLUMNA DERECHA (40%) ── */}
@@ -286,6 +408,9 @@ function PreviewTab({
             </div>
           </div>
         </div>
+
+        {/* Bet Builder */}
+        <BetBuilderSection betBuilder={enriched?.betBuilder ?? []} />
       </div>
     </div>
   )
@@ -483,6 +608,7 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
               <span className="num text-xs text-muted-foreground">
                 Confianza: {enriched.confidenceScore}/100
               </span>
+              <RiskBadge level={enriched.riskLevel} />
             </div>
             {enriched.tacticalHeadline && (
               <p className="text-xs leading-relaxed text-foreground">

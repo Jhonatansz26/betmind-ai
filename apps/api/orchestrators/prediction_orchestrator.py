@@ -690,6 +690,8 @@ class PredictionOrchestrator:
         # Construir análisis táctico completo
         tactical_analysis = self._build_tactical_analysis_response(tactical)
 
+        bet_builder = self._build_bet_builder(quant)
+
         return PredictionResponse(
             match_id=match.id,
             home_team=match.home_team.name,
@@ -704,6 +706,7 @@ class PredictionOrchestrator:
             risk_level=getattr(quant, 'risk_level', 'MEDIUM') or 'MEDIUM',
             tactical_narrative=tactical_narrative,
             tactical_analysis=tactical_analysis,
+            bet_builder=bet_builder,
         )
 
     def _build_tactical_narrative(self, tactical: TacticalAnalysis) -> str:
@@ -758,3 +761,30 @@ class PredictionOrchestrator:
             llm_model_used=tactical.llm_model_used,
             data_completeness_score=tactical.data_completeness_score,
         )
+
+    def _build_bet_builder(self, quant: MatchPredictionOutput) -> list:
+        """Construye perfiles de Bet Builder automático desde los mercados calculados."""
+        try:
+            from betmind_ml.bet_builder_engine import build_bet_profiles
+            profiles = build_bet_profiles(quant.markets)
+            return [
+                {
+                    "profile": p.profile,
+                    "label": p.label,
+                    "selections": [
+                        {
+                            "market_name": s.market_name,
+                            "label": s.label,
+                            "probability": s.probability,
+                            "odds_estimate": s.odds_estimate,
+                        }
+                        for s in p.selections
+                    ],
+                    "combined_odds": p.combined_odds,
+                    "combined_probability": p.combined_probability,
+                }
+                for p in profiles
+            ]
+        except Exception as e:
+            logger.warning("Error building bet profiles: %s", e)
+            return []

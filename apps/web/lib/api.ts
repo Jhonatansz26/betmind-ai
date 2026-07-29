@@ -417,6 +417,19 @@ interface BackendPrediction {
   tactical_narrative: string
   tactical_analysis: BackendTacticalAnalysis | null
   confidence_level: string
+  risk_level: string
+  bet_builder: Array<{
+    profile: string
+    label: string
+    selections: Array<{
+      market_name: string
+      label: string
+      probability: number
+      odds_estimate: number
+    }>
+    combined_odds: number
+    combined_probability: number
+  }>
 }
 
 export interface EnrichedMatch extends Match {
@@ -436,9 +449,22 @@ export interface EnrichedMatch extends Match {
     verdict: string
   }>
   confidenceScore: number
+  riskLevel: string
   tacticalNarrative: string
   tacticalHeadline: string
   llmModelUsed: string
+  betBuilder: Array<{
+    profile: string
+    label: string
+    selections: Array<{
+      market_name: string
+      label: string
+      probability: number
+      odds_estimate: number
+    }>
+    combined_odds: number
+    combined_probability: number
+  }>
 }
 
 function mapBackendPrediction(raw: BackendPrediction, baseMatch: Match): EnrichedMatch {
@@ -462,9 +488,11 @@ function mapBackendPrediction(raw: BackendPrediction, baseMatch: Match): Enriche
       verdict: ev.verdict,
     })),
     confidenceScore: raw.confidence_score,
+    riskLevel: raw.risk_level ?? 'MEDIUM',
     tacticalNarrative: raw.tactical_narrative,
     tacticalHeadline: raw.tactical_analysis?.match_preview_headline ?? '',
     llmModelUsed: raw.tactical_analysis?.llm_model_used ?? 'none',
+    betBuilder: raw.bet_builder ?? [],
   }
 }
 
@@ -504,9 +532,11 @@ export async function fetchMatchPrediction(matchId: string): Promise<EnrichedMat
       probabilities: { home_win: 0, draw: 0, away_win: 0, over_2_5: 0, over_1_5: 0 },
       evAnalysis: [],
       confidenceScore: 0,
+      riskLevel: 'MEDIUM',
       tacticalNarrative: '',
       tacticalHeadline: '',
       llmModelUsed: 'none',
+      betBuilder: [],
     }
   }
 
