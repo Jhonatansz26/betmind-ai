@@ -5826,3 +5826,121 @@ pytest (58 tests subset)→  58 passed (Poisson, tickets, Kelly, anti-cascara)
 - **Shrinkage Bayesiano:** Verificado en logs: `Bayesian blend λ_home=1.307 (weight=0.20, prior=1.46, N=1)`. 
 
 ---
+
+
+## 🔴 SESIÓN 2026-07-29: Auditoría, Resiliencia, Expansión de Mercados y Polish Visual
+
+### 📋 Resumen de 13 Commits Realizados
+
+| # | Commit | Área |
+|---|--------|------|
+| 1 | `feat(redis)` | Docker Redis, ConnectionPool asíncrono, Rate Limiter |
+| 2 | `feat(leagues)` | Filtrado dinámico de ligas por partidos del día |
+| 3 | `fix(sync)` | Corrección int32 overflow en hash de IDs |
+| 4 | `fix(timezone)` | Fechas UTC consistentes + ISO 8601 |
+| 5 | `feat(predictions)` | Sistema 5-capas de resiliencia IA |
+| 6 | `fix(batch)` | Fix imports, Pydantic validation, optimización Groq |
+| 7 | `fix(audit)` | Corrección bugs críticos de resiliencia |
+| 8 | `feat(markets)` | Expansión de mercados matemáticos + risk_level |
+| 9 | `feat(bet-builder)` | Motor Bet Builder + badges riesgo + nuevos mercados UI |
+| 10 | `fix(ui)` | Fix ExpandedMarkets vacío, Córners/Tarjetas, Bet Builder modal |
+| 11 | `fix(batch)` | Fix fallback schemas, BetBuilder engine, Groq 429 instant |
+| 12 | `fix(batch)` | Micro-fix validación Cards + log BetBuilder |
+| 13 | `feat(ui)` | Traducción español, exclusión mutua BetBuilder, polish visual |
+
+---
+
+### 🐳 1. Optimización Integral de Redis (Docker + ConnectionPool + Rate Limiter)
+
+**`docker-compose.yml`** (nuevo): Redis 7-alpine, persistencia AOF, maxmemory 512MB LRU, healthcheck.
+
+**`cache_service.py`** (refactor): `ConnectionPool` global 20 conexiones, timeouts 2s, `close_redis_pool()` en lifespan. `set_json`/`get_json` con `ttl_seconds` y retorno `bool`. `CacheService.__init__()` acepta `redis_url` opcional (backward compat).
+
+**`main.py`**: Rate Limiter `slowapi` con Redis: 200 req/min, 2000 req/hour. Endpoint `/api/v1/health/redis`. Handler `SQLAlchemyError` → 503.
+
+---
+
+### 🔍 2. Filtrado Dinámico de Ligas
+
+**`routes/v1/leagues.py`**: `?date=YYYY-MM-DD`, `INNER JOIN` — solo ligas con ≥1 partido en la fecha. `fetchLeagues(targetDate?)` en frontend.
+
+---
+
+### 🐛 3. Fix int32 Overflow + Zona Horaria + ISO 8601
+
+**`sync_today_matches.py`**: Hash IDs con `% 2_000_000_000` (evita overflow INTEGER PostgreSQL en Liga Argentina/MLS).
+
+**`match_fixture_scraper.py`**: `_parse_event()` mantiene `match_date` UTC (sin convertir a COT).
+
+**`routes/v1/matches.py`** + **`backtesting.py`**: `str(m.match_date)` → `m.match_date.isoformat()` (ISO 8601 válido con `T` separator).
+
+---
+
+### 🛡️ 4. Sistema 5-Capas de Resiliencia IA
+
+| Capa | Descripción |
+|------|-------------|
+| **1** | Motor Poisson base (0 tokens): `_build_minimal_tactical_analysis()` existente, predicción nunca se pierde |
+| **2** | Cascada Groq → Gemini → Sintético: `LLMCascadeService` (nuevo), `google-genai` SDK, `GEMINI_API_KEY` |
+| **3** | Prompts optimizados: `json_schema` eliminado (~1000 tokens), `max_tokens` 400→800, campos explícitos |
+| **4** | Idempotencia: `_has_narrative()` consulta DB, skip automático, `--force` flag |
+| **5** | Lotes: `BATCH_SIZE=5`, `asyncio.sleep(2)` entre lotes |
+
+---
+
+### 🩺 5. Auditoría de Resiliencia — Bugs Críticos Corregidos
+
+- **api_football.py + football_data_provider.py**: `response.json()` con guard `try/except ValueError`.
+- **main.py**: Handler global `SQLAlchemyError` → 503 `DB_UNAVAILABLE`.
+- **Scripts CLI**: `pool_size` desde `settings` (antes 5, 75% menor), `engine.dispose()` en `try/finally`.
+- **sync_today_matches.py**: Validación `team_name.strip()` contra nombres vacíos.
+
+---
+
+### 📊 6. Expansión de Mercados (13 → 22)
+
+| Categoría | Nuevos mercados |
+|---|---|
+| Double Chance | `DOUBLE_1X`, `DOUBLE_X2`, `DOUBLE_12` |
+| Draw No Bet | `DNB_HOME`, `DNB_AWAY` |
+| Indiv. Team Goals | `HOME_OVER_0_5/1_5`, `AWAY_OVER_0_5/1_5` |
+
+- `risk_level`: LOW (≥75%), MEDIUM (55-74%), HIGH (<55%). Campo en `MatchPredictionOutput` y `PredictionResponse`.
+
+---
+
+### 🎯 7. Bet Builder Engine + Badges de Riesgo + UI
+
+- **`bet_builder_engine.py`** (nuevo): 3 perfiles automáticos, `_MUTUALLY_EXCLUSIVE` (8 grupos), siempre 3 perfiles con fallback robusto.
+- **API**: `PredictionResponse.bet_builder` con `BetBuilderProfileSchema`.
+- **Frontend**: `RiskBadge` (🟢🟡🔴), `BetBuilderSection`, `ExpandedMarkets` con `MARKET_LABELS_ES`, `TacticalCardsSection`, `MatchModal` con fetch al abrir.
+
+---
+
+### 🎨 8. Polish Visual y Traducción 100% Español
+
+- **Debug tags ocultos**: badge `llama-3.1-8b-instant`, `Potenciado por Groq`.
+- **Fuente equipos**: `font-serif` → `font-sans font-bold`.
+- **Lambda label**: `Goles Esperados: Local X.XX — Visitante Y.YY` (sin λ).
+- **Grid**: BetBuilder full-width debajo del grid 2-col.
+- **Idioma**: `_MARKET_LABELS` español, `MARKET_LABELS_ES` en frontend, `SYSTEM_BASE` regla 7, Gemini prompt español.
+- **Groq 429**: `max_retries=0`, fallback en <1s (antes ~40s).
+- **Validación Cards**: `pros min_length=2→1`.
+
+---
+
+### 📊 Archivos Totales: ~55 archivos modificados + 5 nuevos
+
+| Capa | Nuevos |
+|------|--------|
+| Infraestructura | `docker-compose.yml` |
+| Servicios | `llm_cascade.py` |
+| ML Engine | `bet_builder_engine.py` |
+
+### ✅ Verificación
+
+- batch_predict --force --limit 3: 3/3 éxito, ev_mkts=22
+- BetBuilder: 3 perfiles, 0 exclusiones mutuas
+- TypeScript: compila sin errores
+- Groq 429: sin esperas SDK
+- Sincronización: 20 partidos de 4 ligas (Brasil 10, Argentina 8, Colombia 1, MLS 1)
