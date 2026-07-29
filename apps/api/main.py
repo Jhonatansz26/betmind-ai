@@ -11,6 +11,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from apps.api.config import settings
 from apps.api.core.exceptions import (
@@ -21,14 +24,22 @@ from apps.api.core.exceptions import (
 )
 from apps.api.db.database import init_db, dispose_engine, ping_db
 from apps.api.routes.v1.router import api_router
+from apps.api.dependencies import close_redis_pool
 
 logger = logging.getLogger(__name__)
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=settings.REDIS_URL,
+    default_limits=["200 per minute", "2000 per hour"],
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     yield
+    await close_redis_pool()
     await dispose_engine()
 
 
@@ -38,6 +49,9 @@ app = FastAPI(
     description="BetMind AI - Smart sports prediction platform",
     lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -108,6 +122,22 @@ async def health_check():
 @app.get("/api/v1/health/db", tags=["health"])
 async def health_db():
     return await ping_db()
+
+
+@app.get("/api/v1/health/redis", tags=["health"])
+async def health_redis():
+    from apps.api.services.cache_service import get_redis_pool
+    import redis.asyncio as redis
+    try:
+        pool = get_redis_pool()
+        client = redis.Redis(connection_pool=pool)
+        await client.ping()
+        return {"status": "ok", "redis": "connected"}
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "redis": f"unavailable: {e}"},
+        )
 
 
 if __name__ == "__main__":

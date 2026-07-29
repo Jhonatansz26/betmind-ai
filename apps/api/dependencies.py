@@ -4,7 +4,7 @@ from fastapi import Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db.database import get_async_session as _get_async_session
-from apps.api.services.cache_service import CacheService
+from apps.api.services.cache_service import CacheService, get_redis_pool, close_redis_pool
 from apps.api.config import settings
 
 
@@ -24,7 +24,7 @@ _cache_service_instance: CacheService | None = None
 def get_cache_service() -> CacheService:
     global _cache_service_instance
     if _cache_service_instance is None:
-        _cache_service_instance = CacheService(settings.REDIS_URL)
+        _cache_service_instance = CacheService()
     return _cache_service_instance
 
 
