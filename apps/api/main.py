@@ -25,6 +25,7 @@ from apps.api.core.exceptions import (
 from apps.api.db.database import init_db, dispose_engine, ping_db
 from apps.api.routes.v1.router import api_router
 from apps.api.dependencies import close_redis_pool
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,15 @@ async def external_api_handler(request: Request, exc: ExternalAPIException):
     return JSONResponse(
         status_code=503,
         content={"detail": str(exc), "code": "EXTERNAL_API_ERROR", "service": exc.service},
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
+    logger.error("Database error: %s", exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database service unavailable", "code": "DB_UNAVAILABLE"},
     )
 
 

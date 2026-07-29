@@ -91,7 +91,13 @@ class FootballDataProvider(DataProviderPort):
                         detail=f"HTTP {response.status_code}: {response.text[:200]}",
                     )
 
-                return response.json()
+                try:
+                    return response.json()
+                except (ValueError, Exception) as e:
+                    raise ExternalAPIException(
+                        service="football-data.org",
+                        detail=f"Invalid JSON response: {str(e)[:200]}",
+                    )
 
             except httpx.TimeoutException:
                 raise ExternalAPIException(

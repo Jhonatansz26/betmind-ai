@@ -43,11 +43,14 @@ engine_kwargs = {
 if settings.DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
 else:
+    engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
+    engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+    engine_kwargs["pool_timeout"] = settings.DB_POOL_TIMEOUT
+    engine_kwargs["pool_pre_ping"] = True
     engine_kwargs["connect_args"] = {
         "statement_cache_size": 0,
         "prepared_statement_cache_size": 0,
     }
-    engine_kwargs["pool_pre_ping"] = True
 
 engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
 async_session_factory = async_sessionmaker(
@@ -187,6 +190,9 @@ async def sync_upcoming_matches():
                 teams_synced = 0
                 for fixture in fixtures:
                     for team_name in [fixture["home_team"], fixture["away_team"]]:
+                        if not team_name or not team_name.strip():
+                            logger.warning("Nombre de equipo vacío o solo espacios, omitiendo")
+                            continue
                         existing_team = await team_repo._find_by_normalized_name(team_name)
 
                         if not existing_team:
@@ -301,6 +307,11 @@ def main():
         print(f"\nError fatal: {e}")
         logger.exception("Error fatal en sync_today_matches")
         sys.exit(1)
+    finally:
+        try:
+            asyncio.run(engine.dispose())
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

@@ -91,8 +91,9 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant") -> dict:
 
     engine = create_async_engine(
         settings.DATABASE_URL,
-        pool_size=5,
-        max_overflow=5,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_timeout=settings.DB_POOL_TIMEOUT,
         pool_pre_ping=True,
         connect_args={
             "statement_cache_size": 0,
@@ -103,110 +104,110 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant") -> dict:
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     stats = {"total": 0, "success": 0, "errors": 0, "skipped": 0, "batches": 0}
 
-    async with session_factory() as session:
-        stmt = (
-            select(Match)
-            .where(
-                Match.status.in_(["SCHEDULED", "LIVE", "INPLAY"]),
-                Match.match_date >= datetime.now(timezone.utc),
+    try:
+        async with session_factory() as session:
+            stmt = (
+                select(Match)
+                .where(
+                    Match.status.in_(["SCHEDULED", "LIVE", "INPLAY"]),
+                    Match.match_date >= datetime.now(timezone.utc),
+                )
+                .order_by(Match.match_date.asc())
+                .options(
+                    selectinload(Match.home_team),
+                    selectinload(Match.away_team),
+                    selectinload(Match.league),
+                )
             )
-            .order_by(Match.match_date.asc())
-            .options(
-                selectinload(Match.home_team),
-                selectinload(Match.away_team),
-                selectinload(Match.league),
+            if limit > 0:
+                stmt = stmt.offset(skip).limit(limit)
+            elif skip > 0:
+                stmt = stmt.offset(skip)
+
+            result = await session.execute(stmt)
+            all_matches = list(result.scalars().all())
+            stats["total"] = len(all_matches)
+            logger.info("Found %d SCHEDULED matches to process", stats["total"])
+
+            match_ids = [m.id for m in all_matches]
+
+            odds_repo = BookmakerOddsRepository(session)
+            odds_grouped = await odds_repo.get_odds_for_matches(match_ids)
+
+            cache = CacheService(settings.REDIS_URL)
+            repo = MatchRepository(session)
+            tactical_repo = TacticalAnalysisRepository(session)
+            orchestrator = PredictionOrchestrator(
+                match_repo=repo,
+                tactical_repo=tactical_repo,
+                cache=cache,
             )
-        )
-        if limit > 0:
-            stmt = stmt.offset(skip).limit(limit)
-        elif skip > 0:
-            stmt = stmt.offset(skip)
 
-        result = await session.execute(stmt)
-        all_matches = list(result.scalars().all())
-        stats["total"] = len(all_matches)
-        logger.info("Found %d SCHEDULED matches to process", stats["total"])
+            for batch_start in range(0, len(all_matches), BATCH_SIZE):
+                batch = all_matches[batch_start:batch_start + BATCH_SIZE]
+                stats["batches"] += 1
 
-        match_ids = [m.id for m in all_matches]
+                if batch_start > 0:
+                    logger.info("--- Capa 5: pausa de %.0fs entre lotes ---", BATCH_DELAY_SECONDS)
+                    await asyncio.sleep(BATCH_DELAY_SECONDS)
 
-        odds_repo = BookmakerOddsRepository(session)
-        odds_grouped = await odds_repo.get_odds_for_matches(match_ids)
-
-        cache = CacheService(settings.REDIS_URL)
-        repo = MatchRepository(session)
-        tactical_repo = TacticalAnalysisRepository(session)
-        orchestrator = PredictionOrchestrator(
-            match_repo=repo,
-            tactical_repo=tactical_repo,
-            cache=cache,
-        )
-
-        # ── Capa 4 + Capa 5: procesar en lotes con idempotencia ──
-        for batch_start in range(0, len(all_matches), BATCH_SIZE):
-            batch = all_matches[batch_start:batch_start + BATCH_SIZE]
-            stats["batches"] += 1
-            batch_num = stats["batches"]
-
-            if batch_start > 0:
-                logger.info("--- Capa 5: pausa de %.0fs entre lotes ---", BATCH_DELAY_SECONDS)
-                await asyncio.sleep(BATCH_DELAY_SECONDS)
-
-            for i, match in enumerate(batch):
-                global_idx = batch_start + i + 1
-                try:
-                    home_name = match.home_team.name if match.home_team else "?"
-                    away_name = match.away_team.name if match.away_team else "?"
-                    league_name = match.league.name if match.league else "?"
-
-                    # Capa 4: idempotencia — omitir partidos ya analizados
-                    if include_tactical and await _has_narrative(session, match.id):
-                        stats["skipped"] += 1
-                        logger.info(
-                            "[%d/%d] SKIP %s vs %s (%s) — ya analizado",
-                            global_idx, stats["total"], home_name, away_name, league_name,
-                        )
-                        continue
-
-                    match_odds_rows = odds_grouped.get(match.id, [])
-                    odds_input = None
-                    if match_odds_rows:
-                        odds_map = {o.market_name: o.odds_value for o in match_odds_rows}
-                        odds_input = OddsInput(
-                            home_win=odds_map.get("1X2_HOME"),
-                            draw=odds_map.get("1X2_DRAW"),
-                            away_win=odds_map.get("1X2_AWAY"),
-                            over_2_5=odds_map.get("OVER_2_5"),
-                        )
-
-                    match_time = match.match_date.strftime("%Y-%m-%d %H:%M") if match.match_date else "?"
-
-                    logger.info("[%d/%d] %s vs %s (%s) %s",
-                                global_idx, stats["total"], home_name, away_name, league_name, match_time)
-
-                    await cache.delete(f"prediction:{match.id}")
-
-                    prediction = await orchestrator.get_prediction(
-                        match_id=match.id,
-                        odds=odds_input,
-                        include_tactical_analysis=include_tactical,
-                    )
-
-                    stats["success"] += 1
-                    logger.info("  => OK | conf=%d | ev_mkts=%d",
-                                prediction.confidence_score, len(prediction.ev_analysis))
-
-                    await session.commit()
-
-                except Exception as e:
-                    stats["errors"] += 1
-                    logger.error("  => ERROR: %s", str(e)[:300])
-                    logger.debug("Traceback:\n%s", traceback.format_exc())
+                for i, match in enumerate(batch):
+                    global_idx = batch_start + i + 1
                     try:
-                        await session.rollback()
-                    except Exception:
-                        pass
+                        home_name = match.home_team.name if match.home_team else "?"
+                        away_name = match.away_team.name if match.away_team else "?"
+                        league_name = match.league.name if match.league else "?"
 
-    await engine.dispose()
+                        if include_tactical and await _has_narrative(session, match.id):
+                            stats["skipped"] += 1
+                            logger.info(
+                                "[%d/%d] SKIP %s vs %s (%s) — ya analizado",
+                                global_idx, stats["total"], home_name, away_name, league_name,
+                            )
+                            continue
+
+                        match_odds_rows = odds_grouped.get(match.id, [])
+                        odds_input = None
+                        if match_odds_rows:
+                            odds_map = {o.market_name: o.odds_value for o in match_odds_rows}
+                            odds_input = OddsInput(
+                                home_win=odds_map.get("1X2_HOME"),
+                                draw=odds_map.get("1X2_DRAW"),
+                                away_win=odds_map.get("1X2_AWAY"),
+                                over_2_5=odds_map.get("OVER_2_5"),
+                            )
+
+                        match_time = match.match_date.strftime("%Y-%m-%d %H:%M") if match.match_date else "?"
+
+                        logger.info("[%d/%d] %s vs %s (%s) %s",
+                                    global_idx, stats["total"], home_name, away_name, league_name, match_time)
+
+                        await cache.delete(f"prediction:{match.id}")
+
+                        prediction = await orchestrator.get_prediction(
+                            match_id=match.id,
+                            odds=odds_input,
+                            include_tactical_analysis=include_tactical,
+                        )
+
+                        stats["success"] += 1
+                        logger.info("  => OK | conf=%d | ev_mkts=%d",
+                                    prediction.confidence_score, len(prediction.ev_analysis))
+
+                        await session.commit()
+
+                    except Exception as e:
+                        stats["errors"] += 1
+                        logger.error("  => ERROR: %s", str(e)[:300])
+                        logger.debug("Traceback:\n%s", traceback.format_exc())
+                        try:
+                            await session.rollback()
+                        except Exception:
+                            pass
+
+    finally:
+        await engine.dispose()
+
     return stats
 
 

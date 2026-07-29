@@ -71,8 +71,9 @@ async def main(season: int, last_matches: int) -> None:
 
     engine = create_async_engine(
         settings.DATABASE_URL,
-        pool_size=5,
-        max_overflow=5,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_timeout=settings.DB_POOL_TIMEOUT,
         pool_pre_ping=True,
         connect_args={
             "statement_cache_size": 0,
@@ -83,34 +84,36 @@ async def main(season: int, last_matches: int) -> None:
 
     totals = {"leagues": 0, "teams": 0, "matches": 0, "errors": 0}
 
-    async with session_factory() as session:
-        api_service = APIFootballService()
-        ingestion = DataIngestionService(session, api_service)
+    try:
+        async with session_factory() as session:
+            api_service = APIFootballService()
+            ingestion = DataIngestionService(session, api_service)
 
-        for league_id, league_name in ALL_LEAGUES:
-            try:
-                logger.info("=" * 60)
-                logger.info("Syncing %s (ID: %d)", league_name, league_id)
-                result = await ingestion.full_sync_league(
-                    external_league_id=league_id,
-                    season=season,
-                    last_matches=last_matches,
-                )
-                totals["leagues"] += result.leagues_synced
-                totals["teams"] += result.teams_synced
-                totals["matches"] += result.matches_synced
-                totals["errors"] += len(result.errors)
-                logger.info(
-                    "  => %d teams, %d matches | errors: %s",
-                    result.teams_synced, result.matches_synced, len(result.errors)
-                )
-                for err in result.errors:
-                    logger.error("  [ERR] %s", err)
-            except Exception as e:
-                totals["errors"] += 1
-                logger.error("  [FATAL] %s", str(e)[:300])
+            for league_id, league_name in ALL_LEAGUES:
+                try:
+                    logger.info("=" * 60)
+                    logger.info("Syncing %s (ID: %d)", league_name, league_id)
+                    result = await ingestion.full_sync_league(
+                        external_league_id=league_id,
+                        season=season,
+                        last_matches=last_matches,
+                    )
+                    totals["leagues"] += result.leagues_synced
+                    totals["teams"] += result.teams_synced
+                    totals["matches"] += result.matches_synced
+                    totals["errors"] += len(result.errors)
+                    logger.info(
+                        "  => %d teams, %d matches | errors: %s",
+                        result.teams_synced, result.matches_synced, len(result.errors)
+                    )
+                    for err in result.errors:
+                        logger.error("  [ERR] %s", err)
+                except Exception as e:
+                    totals["errors"] += 1
+                    logger.error("  [FATAL] %s", str(e)[:300])
 
-    await engine.dispose()
+    finally:
+        await engine.dispose()
 
     logger.info("=" * 60)
     logger.info(

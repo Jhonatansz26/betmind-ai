@@ -64,8 +64,14 @@ class APIFootballService:
                         detail=f"HTTP {response.status_code}: {response.text[:200]}",
                     )
                 
-                data = response.json()
-                
+                try:
+                    data = response.json()
+                except (ValueError, Exception) as e:
+                    raise ExternalAPIException(
+                        service="api-football",
+                        detail=f"Invalid JSON response: {str(e)[:200]}",
+                    )
+                                
                 if data.get("errors"):
                     error_msg = data["errors"]
                     if isinstance(error_msg, dict):
