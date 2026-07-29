@@ -35,7 +35,7 @@ async def close_redis_pool() -> None:
         try:
             await redis_pool.disconnect()
         except Exception as e:
-            logger.warning(f"Error closing Redis pool: {e}")
+            logger.debug(f"Error closing Redis pool: {e}")
         finally:
             redis_pool = None
 
@@ -69,7 +69,7 @@ class CacheService:
                 return model.model_validate_json(raw)
             return raw
         except (RedisError, ConnectionError, OSError) as e:
-            logger.warning(f"Error leyendo de Redis key '{key}': {e}")
+            logger.debug(f"Error leyendo de Redis key '{key}': {e}")
             return None
 
     async def set(self, key: str, value: Any, ttl: int = 300) -> None:
@@ -82,14 +82,14 @@ class CacheService:
                 serialized = str(value)
             await self.client.set(key, serialized, ex=ttl)
         except (RedisError, ConnectionError, OSError) as e:
-            logger.warning(f"Error escribiendo en Redis key '{key}': {e}")
+            logger.debug(f"Error escribiendo en Redis key '{key}': {e}")
 
     async def delete(self, key: str) -> bool:
         try:
             await self.client.delete(key)
             return True
         except (RedisError, ConnectionError, OSError) as e:
-            logger.warning(f"Error eliminando de Redis key '{key}': {e}")
+            logger.debug(f"Error eliminando de Redis key '{key}': {e}")
             return False
 
     async def get_json(self, key: str) -> Optional[Any]:
@@ -97,7 +97,7 @@ class CacheService:
             data = await self.client.get(key)
             return json.loads(data) if data else None
         except (RedisError, ConnectionError, OSError) as e:
-            logger.warning(f"Error leyendo JSON de Redis key '{key}': {e}")
+            logger.debug(f"Error leyendo JSON de Redis key '{key}': {e}")
             return None
 
     async def set_json(self, key: str, value: Any, ttl_seconds: int = 3600) -> bool:
@@ -106,16 +106,16 @@ class CacheService:
             await self.client.set(key, serialized, ex=ttl_seconds)
             return True
         except (RedisError, ConnectionError, OSError) as e:
-            logger.warning(f"Error escribiendo JSON en Redis key '{key}': {e}")
+            logger.debug(f"Error escribiendo JSON en Redis key '{key}': {e}")
             return False
 
     async def close(self) -> None:
         try:
             await self.client.aclose()
         except (RedisError, ConnectionError, OSError) as e:
-            logger.warning(f"Error cerrando cliente Redis: {e}")
+            logger.debug(f"Error cerrando cliente Redis: {e}")
         if self._dedicated_pool is not None:
             try:
                 await self._dedicated_pool.disconnect()
             except Exception as e:
-                logger.warning(f"Error cerrando pool dedicado Redis: {e}")
+                logger.debug(f"Error cerrando pool dedicado Redis: {e}")

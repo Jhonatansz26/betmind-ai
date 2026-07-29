@@ -125,7 +125,7 @@ def _generate_fallback_cards_narrative(
     league: str,
 ) -> MarketNarrative:
     """Genera narrativa de respaldo para tarjetas basada en promedios de liga."""
-    from betmind_ml.schemas.tactical_analysis import NarrativeSignal
+    from betmind_ml.schemas.tactical_analysis import SignalStrength, ProConPoint
     
     summary = (
         f"Análisis de tarjetas para {home_team} vs {away_team} en {league}. "
@@ -134,16 +134,18 @@ def _generate_fallback_cards_narrative(
     
     return MarketNarrative(
         market_name="Tarjetas totales",
+        our_probability=0.5,
         recommendation="Mercado neutral - datos insuficientes",
         tactical_summary=summary,
         pros=[
-            "Mercado disponible para análisis",
+            ProConPoint(factor="mercado", description="Mercado de tarjetas disponible para análisis", weight="medium"),
+            ProConPoint(factor="contexto", description="Liga con historial de tarjetas moderado", weight="low"),
         ],
         cons=[
-            "Sin datos del árbitro asignado",
-            "Sin historial de tarjetas de los equipos",
-            "Se recomienda evitar apuestas complejas en este mercado",
+            ProConPoint(factor="datos", description="Sin datos del árbitro asignado", weight="high"),
+            ProConPoint(factor="datos", description="Sin historial de tarjetas de los equipos", weight="high"),
         ],
-        signal_strength=NarrativeSignal.LOW,
+        key_risk="Datos insuficientes para análisis confiable de tarjetas",
+        signal_strength=SignalStrength.WEAK,
         featured_player=None,
     )

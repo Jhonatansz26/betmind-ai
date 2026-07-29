@@ -30,7 +30,7 @@ GROQ_SINGLE_CALL_TIMEOUT = 25.0
 GROQ_NARRATIVE_TIMEOUT = 80.0
 
 # ── Modelo Narrativo (LLM) ────────────────────────────────────────────────────
-NARRATIVE_MODEL = "llama-3.3-70b-versatile"
+NARRATIVE_MODEL = "llama-3.1-8b-instant"
 
 # ── Parámetros del Feature Engineering ────────────────────────────────────────
 

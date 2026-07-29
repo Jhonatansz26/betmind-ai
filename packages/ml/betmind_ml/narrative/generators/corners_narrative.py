@@ -99,7 +99,7 @@ def _generate_fallback_corners_narrative(
     league: str,
 ) -> MarketNarrative:
     """Genera narrativa de respaldo para córneres basada en estadísticas básicas."""
-    from betmind_ml.schemas.tactical_analysis import NarrativeSignal
+    from betmind_ml.schemas.tactical_analysis import SignalStrength, ProConPoint
     
     summary = (
         f"Análisis de córneres para {home_team} vs {away_team} en {league}. "
@@ -108,16 +108,18 @@ def _generate_fallback_corners_narrative(
     
     return MarketNarrative(
         market_name="Córneres totales",
+        our_probability=0.5,
         recommendation="Mercado neutral - datos insuficientes",
         tactical_summary=summary,
         pros=[
-            "Mercado disponible para análisis",
+            ProConPoint(factor="mercado", description="Mercado de córneres disponible para análisis", weight="medium"),
+            ProConPoint(factor="contexto", description="Estilo de juego puede generar oportunidades", weight="low"),
         ],
         cons=[
-            "Sin datos de estilo de juego de los equipos",
-            "Sin historial de córneres de la liga",
-            "Se recomienda evitar apuestas complejas en este mercado",
+            ProConPoint(factor="datos", description="Sin datos de estilo de juego de los equipos", weight="high"),
+            ProConPoint(factor="datos", description="Sin historial de córneres de la liga", weight="high"),
         ],
-        signal_strength=NarrativeSignal.LOW,
+        key_risk="Datos insuficientes para análisis confiable de córneres",
+        signal_strength=SignalStrength.WEAK,
         featured_player=None,
     )

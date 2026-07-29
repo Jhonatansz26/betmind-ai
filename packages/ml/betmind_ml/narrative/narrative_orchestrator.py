@@ -23,9 +23,6 @@ from betmind_ml.providers.web_search_provider import fetch_match_live_context
 
 logger = logging.getLogger(__name__)
 
-PRIMARY_MODEL = "llama-3.3-70b-versatile"
-FALLBACK_MODEL = "llama-3.1-8b-instant"
-
 
 def _is_rate_limit_error(error: Exception) -> bool:
     """Verifica si el error es un rate limit (429) de Groq API."""
@@ -60,45 +57,32 @@ class NarrativeOrchestrator:
         self._semaphore = asyncio.Semaphore(len(self._api_keys) or 1)
 
     async def _execute_with_retry(self, func, *args, **kwargs) -> object | None:
-        """Cascada de modelos: 70B → 8B → siguiente key → repite."""
-        models = [PRIMARY_MODEL, FALLBACK_MODEL]
+        """Cascada de modelos: 8B → siguiente key → repite. Sin reintentos del SDK."""
         total_keys = len(self._api_keys)
 
         for key_idx, key in enumerate(self._api_keys):
-            for model in models:
-                try:
-                    client = Groq(api_key=key)
-                    kwargs.pop('groq_client', None)
+            try:
+                client = Groq(api_key=key, max_retries=1)
+                kwargs.pop('groq_client', None)
 
-                    async with self._semaphore:
-                        result = await asyncio.to_thread(
-                            func, *args, groq_client=client, model=model, **kwargs,
-                        )
-                    if model == FALLBACK_MODEL:
-                        logger.info(
-                            "Narrativa generada con modelo 8B (key %d/%d)",
-                            key_idx + 1, total_keys,
-                        )
-                    return result
+                async with self._semaphore:
+                    result = await asyncio.to_thread(
+                        func, *args, groq_client=client, model=self._model, **kwargs,
+                    )
+                return result
 
-                except Exception as e:
-                    if _is_rate_limit_error(e) and model == PRIMARY_MODEL:
-                        logger.warning(
-                            "Cuota de 70B agotada (key %d/%d). Conmutando a Llama 3.1 8B Instant...",
-                            key_idx + 1, total_keys,
-                        )
-                        continue
-                    elif _is_rate_limit_error(e) and key_idx < total_keys - 1:
-                        logger.warning(
-                            "Key %d/%d agotada (429). Rotando a la siguiente...",
-                            key_idx + 1, total_keys,
-                        )
-                        break
-                    else:
-                        logger.error("Error ejecutando %s: %s", func.__name__, e)
-                        return None
+            except Exception as e:
+                if _is_rate_limit_error(e) and key_idx < total_keys - 1:
+                    logger.warning(
+                        "Key %d/%d agotada (429). Rotando a la siguiente...",
+                        key_idx + 1, total_keys,
+                    )
+                    continue
+                else:
+                    logger.error("Error ejecutando %s: %s", func.__name__, e)
+                    return None
 
-        logger.error("Todas las %d keys y modelos agotados", total_keys)
+        logger.error("Todas las %d keys agotadas", total_keys)
         return None
 
     async def generate_full_analysis(

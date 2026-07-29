@@ -155,7 +155,7 @@ def _generate_fallback_narrative(
     most_likely_prob: float,
 ) -> MarketNarrative:
     """Genera narrativa de respaldo basada en probabilidades de Poisson."""
-    from betmind_ml.schemas.tactical_analysis import SignalStrength
+    from betmind_ml.schemas.tactical_analysis import SignalStrength, ProConPoint
     
     expected_goals = lambda_home + lambda_away
     recommendation = "Más de 2.5" if p_over_25 > 0.55 else "Menos de 2.5" if p_over_25 < 0.45 else "Mercado neutral"
@@ -169,20 +169,18 @@ def _generate_fallback_narrative(
     
     return MarketNarrative(
         market_name="Más/Menos de 2.5 goles",
+        our_probability=p_over_25,
         recommendation=recommendation,
         tactical_summary=summary,
         pros=[
-            f"Goles esperados: {expected_goals:.1f} (λ_home={lambda_home:.2f}, λ_away={lambda_away:.2f})",
-            f"Probabilidad Over 2.5: {p_over_25*100:.1f}%",
-            f"Marcador más probable: {most_likely_score} ({most_likely_prob*100:.0f}%)",
+            ProConPoint(factor="Poisson", description=f"Goles esperados: {expected_goals:.1f} (λ_local={lambda_home:.2f}, λ_visitante={lambda_away:.2f})", weight="high"),
+            ProConPoint(factor="Probabilidad", description=f"Over 2.5: {p_over_25*100:.1f}%", weight="medium"),
         ],
         cons=[
-            "Análisis basado únicamente en modelo estadístico Poisson",
-            "Sin datos contextuales de lesiones, clima o motivación",
-        ] if p_over_25 < 0.55 else [
-            f"Probabilidad BTTS: {p_btts*100:.1f}%",
-            "Análisis basado en modelo estadístico",
+            ProConPoint(factor="Poisson", description="Análisis basado únicamente en modelo estadístico", weight="medium"),
+            ProConPoint(factor="Contexto", description=f"BTTS: {p_btts*100:.1f}% — sin datos de lesiones o clima", weight="low"),
         ],
+        key_risk="Modelo puramente estadístico sin factores contextuales",
         signal_strength=SignalStrength.MODERATE,
         featured_player=None,
     )
