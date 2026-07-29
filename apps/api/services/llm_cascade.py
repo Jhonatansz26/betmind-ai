@@ -61,7 +61,7 @@ class LLMCascadeService:
             return
         try:
             from groq import Groq
-            self._groq_client = Groq(api_key=keys[0], max_retries=1)
+            self._groq_client = Groq(api_key=keys[0], max_retries=0)
             logger.info("Groq client inicializado")
         except Exception as e:
             logger.error(f"Error inicializando Groq: {e}")

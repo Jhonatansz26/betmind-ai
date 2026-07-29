@@ -32,6 +32,11 @@ en los datos estadísticos que se te proporcionan.
    Si no hay datos de jugadores, NO hagas props de jugadores.
    Ajusta tu análisis solo a los datos disponibles.
 
-6. **Formato:** Responde ÚNICAMENTE con el JSON schema especificado.
-   Cero texto fuera del JSON. Cero markdown. Cero explicaciones adicionales.
+6. **Formato:** Responde ÚNICAMENTE con un objeto JSON. Usa estos campos exactos:
+   "market_name" (string), "our_probability" (number 0-1),
+   "recommendation" (string), "pros" (array, mínimo 2 objetos),
+   "cons" (array, mínimo 1 objeto), "signal_strength" ("strong"|"moderate"|"weak"),
+   "key_risk" (string), "tactical_summary" (string), "featured_player" (string|null).
+   Cada objeto en pros/cons debe tener: "factor" (string),
+   "description" (string), "weight" (string: "high"|"medium"|"low").
 """

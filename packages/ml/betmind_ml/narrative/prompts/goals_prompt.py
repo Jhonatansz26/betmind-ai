@@ -54,8 +54,7 @@ Analiza el mercado de GOLES para el siguiente partido y devuelve el JSON.
 Basándote SOLO en los datos anteriores, genera el análisis para el mercado de Más/Menos de 2.5 goles.
 La recommendation debe ser la opción con mayor valor esperado o mayor probabilidad si no hay cuotas.
 
-Responde con exactamente este JSON schema:
-{json_schema}
+Responde con un objeto JSON usando los campos especificados en las reglas del sistema.
 """
 
 BOOKMAKER_SECTION_WITH_ODDS = """

@@ -91,13 +91,21 @@ def _pick_best(markets: list[MarketProbability], allowed: set[str], count: int,
         m for m in markets
         if m.market_name in allowed and m.our_probability >= min_prob
     ]
-    if not candidates and min_prob > 0.3:
+    if not candidates:
         candidates = [m for m in markets if m.market_name in allowed]
+
+    if not candidates:
+        candidates = [m for m in markets if m.our_probability > 0]
 
     if prefer_ev:
         candidates.sort(key=lambda m: (m.expected_value or 0), reverse=True)
     else:
         candidates.sort(key=lambda m: m.our_probability, reverse=True)
+
+    if len(candidates) < count:
+        extra = [m for m in markets if m.our_probability > 0 and m.market_name not in {c.market_name for c in candidates}]
+        extra.sort(key=lambda m: m.our_probability, reverse=True)
+        candidates.extend(extra)
 
     return candidates[:count]
 

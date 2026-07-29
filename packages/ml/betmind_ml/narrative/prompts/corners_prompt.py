@@ -41,6 +41,5 @@ Analiza el mercado de CÓRNERES para el siguiente partido.
 Los córneres tienen alta varianza. El signal_strength raramente debe ser "strong"
 a menos que el modelo indique > 68% de probabilidad Y los datos H2H lo confirmen.
 
-Responde con exactamente este JSON schema:
-{json_schema}
+Responde con un objeto JSON usando los campos especificados en las reglas del sistema.
 """

@@ -57,12 +57,12 @@ class NarrativeOrchestrator:
         self._semaphore = asyncio.Semaphore(len(self._api_keys) or 1)
 
     async def _execute_with_retry(self, func, *args, **kwargs) -> object | None:
-        """Cascada de modelos: 8B → siguiente key → repite. Sin reintentos del SDK."""
+        """Cascada de modelos: 8B → siguiente key → fallback. Sin reintentos."""
         total_keys = len(self._api_keys)
 
         for key_idx, key in enumerate(self._api_keys):
             try:
-                client = Groq(api_key=key, max_retries=1)
+                client = Groq(api_key=key, max_retries=0)
                 kwargs.pop('groq_client', None)
 
                 async with self._semaphore:
@@ -72,17 +72,17 @@ class NarrativeOrchestrator:
                 return result
 
             except Exception as e:
-                if _is_rate_limit_error(e) and key_idx < total_keys - 1:
-                    logger.warning(
-                        "Key %d/%d agotada (429). Rotando a la siguiente...",
-                        key_idx + 1, total_keys,
-                    )
-                    continue
+                if _is_rate_limit_error(e):
+                    if key_idx < total_keys - 1:
+                        logger.warning("Key %d/%d agotada (429). Rotando...", key_idx + 1, total_keys)
+                        continue
+                    else:
+                        logger.warning("Todas las keys agotadas (429). Usando fallback.")
+                        return None
                 else:
                     logger.error("Error ejecutando %s: %s", func.__name__, e)
                     return None
 
-        logger.error("Todas las %d keys agotadas", total_keys)
         return None
 
     async def generate_full_analysis(

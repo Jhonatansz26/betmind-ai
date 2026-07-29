@@ -43,8 +43,7 @@ El árbitro es el factor con MAYOR peso en este mercado (>40% del análisis).
 Si no hay datos confiables del árbitro (matches_sample < 5), indícalo explícitamente
 en un "con" y reduce el signal_strength a "weak" o "moderate" máximo.
 
-Responde con exactamente este JSON schema:
-{json_schema}
+Responde con un objeto JSON usando los campos especificados en las reglas del sistema.
 """
 
 REFEREE_DATA_AVAILABLE = """

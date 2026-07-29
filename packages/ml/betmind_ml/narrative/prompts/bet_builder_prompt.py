@@ -33,6 +33,7 @@ Genera exactamente {n_suggestions} combinadas que tengan sentido táctico.
 Cada combinada debe tener 2-4 legs y estar justificada por correlación real.
 RECHAZA cualquier combinada con correlación negativa.
 
-Responde con exactamente este JSON schema:
-{json_schema}
+Responde con un array JSON de objetos. Cada objeto debe tener los campos:
+"name" (string), "legs" (array de strings), "combined_probability" (float 0-1),
+"combined_odds_estimate" (float), "correlation_rationale" (string), "risk_level" (string).
 """

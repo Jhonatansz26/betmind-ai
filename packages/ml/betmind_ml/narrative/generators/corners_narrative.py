@@ -69,7 +69,6 @@ def generate_corners_narrative(
         home_high_press_index=corners_data.get("home_high_press_index", "N/D"),
         away_wide_play_index=corners_data.get("away_wide_play_index", "N/D"),
         bookmaker_corners_section=bookmaker_section,
-        json_schema=json.dumps(MarketNarrative.model_json_schema(), ensure_ascii=False, indent=2),
     )
 
     try:
@@ -79,7 +78,7 @@ def generate_corners_narrative(
             messages=[{"role": "user", "content": full_prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=400,
+            max_tokens=800,
         )
         
         response_text = response.choices[0].message.content

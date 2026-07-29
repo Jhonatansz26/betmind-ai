@@ -95,7 +95,6 @@ def generate_cards_narrative(
         cards_line=cards_line,
         expected_total_cards=round(expected_total_cards, 1),
         bookmaker_cards_section=bookmaker_section,
-        json_schema=json.dumps(MarketNarrative.model_json_schema(), ensure_ascii=False, indent=2),
     )
 
     try:
@@ -105,7 +104,7 @@ def generate_cards_narrative(
             messages=[{"role": "user", "content": full_prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
-            max_tokens=400,
+            max_tokens=800,
         )
         
         response_text = response.choices[0].message.content

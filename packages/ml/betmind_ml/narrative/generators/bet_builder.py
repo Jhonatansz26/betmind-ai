@@ -37,14 +37,6 @@ def generate_bet_builder(
         markets_summary=markets_summary,
         all_analysis_data=all_analysis_data,
         n_suggestions=n_suggestions,
-        json_schema=json.dumps(
-            {
-                "type": "array",
-                "items": BetBuilderCombination.model_json_schema(),
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
     )
 
     try:
@@ -54,7 +46,7 @@ def generate_bet_builder(
             messages=[{"role": "user", "content": full_prompt}],
             response_format={"type": "json_object"},
             temperature=0.4,
-            max_tokens=400,
+            max_tokens=800,
         )
         
         response_text = response.choices[0].message.content
