@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models.team import Team
-from apps.api.services.team_normalizer import canonical_team_name
+from apps.api.services.team_normalizer import canonical_team_name, fuzzy_match_team
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,7 @@ class TeamRepository:
         """
         Busca equipo existente por nombre canonicalizado (cross-provider matching).
         Carga todos los equipos y compara en memoria con canonical_team_name().
+        Si no hay match exacto, intenta fuzzy matching.
         """
         norm_target = canonical_team_name(name)
         if not norm_target:
@@ -61,6 +62,18 @@ class TeamRepository:
                     name, None, team.name, team.external_id, team.id,
                 )
                 return team
+
+        # Fuzzy fallback
+        candidates = [t.name for t in all_teams]
+        matched_name = fuzzy_match_team(name, candidates)
+        if matched_name:
+            for team in all_teams:
+                if team.name == matched_name:
+                    logger.info(
+                        "Fuzzy match: '%s' → '%s' (id=%s)",
+                        name, team.name, team.id,
+                    )
+                    return team
 
         return None
 

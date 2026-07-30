@@ -258,14 +258,39 @@ function mapBackendMatch(raw: BackendMatch): Match {
   const leagueLogoUrl = raw.league_logo_url || leagueMeta.logoUrl
 
   const statusMap: Record<string, MatchStatus> = {
-    SCHEDULED: 'UPCOMING',
-    LIVE: 'LIVE',
-    INPLAY: 'LIVE',
-    FINISHED: 'FT',
-    CANCELLED: 'FT',
-    POSTPONED: 'UPCOMING',
+    // API-Football short codes
+    '1H': 'IN_PLAY',
+    '2H': 'IN_PLAY',
+    HT: 'PAUSED',
+    ET: 'IN_PLAY',
+    BT: 'PAUSED',
+    P: 'PAUSED',
+    NS: 'SCHEDULED',
+    TBD: 'SCHEDULED',
+    PST: 'FINISHED',
+    POST: 'FINISHED',
+    // Long form codes
+    SCHEDULED: 'SCHEDULED',
+    LIVE: 'IN_PLAY',
+    INPLAY: 'IN_PLAY',
+    IN_PLAY: 'IN_PLAY',
+    FIRST_HALF: 'IN_PLAY',
+    SECOND_HALF: 'IN_PLAY',
+    HALF_TIME: 'PAUSED',
+    PAUSED: 'PAUSED',
+    SUSPENDED: 'PAUSED',
+    INTERRUPTED: 'PAUSED',
+    FINISHED: 'FINISHED',
+    FT: 'FINISHED',
+    AET: 'FINISHED',
+    PEN: 'FINISHED',
+    CANCELLED: 'FINISHED',
+    POSTPONED: 'SCHEDULED',
+    ABANDONED: 'FINISHED',
+    NOT_STARTED: 'SCHEDULED',
+    UPCOMING: 'SCHEDULED',
   }
-  const matchStatus = statusMap[raw.status] ?? 'UPCOMING'
+  let matchStatus = statusMap[raw.status] ?? statusMap[raw.status?.toUpperCase()] ?? 'SCHEDULED'
 
   const matchDate = new Date(raw.match_date)
   const cotTime = matchDate.toLocaleTimeString('en-US', {
@@ -289,6 +314,16 @@ function mapBackendMatch(raw: BackendMatch): Match {
   const realOdds = raw.odds ?? { home: undefined, draw: undefined, away: undefined, over25: undefined, btts: undefined }
   const prediction = raw.prediction ?? null
 
+  // Score: 0 is valid, only null/undefined means "no score data"
+  const homeScoreRaw = raw.home_score
+  const awayScoreRaw = raw.away_score
+  const homeScoreNum = typeof homeScoreRaw === 'number' ? homeScoreRaw
+    : typeof homeScoreRaw === 'string' ? parseFloat(homeScoreRaw) : null
+  const awayScoreNum = typeof awayScoreRaw === 'number' ? awayScoreRaw
+    : typeof awayScoreRaw === 'string' ? parseFloat(awayScoreRaw) : null
+  const hasScores = typeof homeScoreNum === 'number' && !isNaN(homeScoreNum)
+    && typeof awayScoreNum === 'number' && !isNaN(awayScoreNum)
+
   return {
     id: String(raw.id),
     leagueId,
@@ -299,10 +334,13 @@ function mapBackendMatch(raw: BackendMatch): Match {
     leagueLogoUrl,
     homeLogoUrl: raw.home_team_logo_url,
     awayLogoUrl: raw.away_team_logo_url,
+    homeTeamId: raw.home_team_id,
+    awayTeamId: raw.away_team_id,
     time: timeStr,
     status: matchStatus,
-    minute: matchStatus === 'LIVE' ? (raw.minute ?? undefined) : undefined,
-    score: raw.home_score != null && raw.away_score != null ? [raw.home_score, raw.away_score] : undefined,
+    minute: matchStatus === 'IN_PLAY' || matchStatus === 'PAUSED' ? (raw.minute ?? undefined) : undefined,
+    elapsed: raw.minute ?? null,
+    score: hasScores ? [homeScoreNum as number, awayScoreNum as number] : undefined,
     home: raw.home_team_name || 'Local',
     away: raw.away_team_name || 'Visitante',
     lambdaHome: prediction?.lambda_home ?? 0,
@@ -327,7 +365,7 @@ export async function fetchMatches(dateFilter?: string): Promise<Match[]> {
   const params = new URLSearchParams({
     limit: '200',
     include_upcoming: 'true',
-    include_finished: 'false',
+    include_finished: 'true',
   })
   if (dateFilter) {
     params.set('date_filter', dateFilter)

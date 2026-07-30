@@ -18,15 +18,18 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy import select, and_
 
 from apps.api.config import settings, FEATURED_LEAGUES
 from apps.api.services.scrapers.match_fixture_scraper import MatchFixtureScraper
 from apps.api.services.odds_service import OddsService
+from apps.api.services.api_football import APIFootballService
 from apps.api.repositories.league_repository import LeagueRepository
 from apps.api.repositories.team_repository import TeamRepository
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.models.base import Base
 from apps.api.models.team import Team
+from apps.api.models.match import Match
 
 COLOMBIA_TZ = ZoneInfo("America/Bogota")
 
@@ -209,62 +212,71 @@ async def sync_upcoming_matches():
 
                 matches_data = []
                 for fixture in fixtures:
-                    home_team = await team_repo._find_by_normalized_name(fixture["home_team"])
-                    away_team = await team_repo._find_by_normalized_name(fixture["away_team"])
+                    try:
+                        home_team = await team_repo._find_by_normalized_name(fixture["home_team"])
+                        away_team = await team_repo._find_by_normalized_name(fixture["away_team"])
 
-                    if not home_team or not away_team:
-                        logger.warning(
-                            f"Equipos no encontrados: {fixture['home_team']} vs {fixture['away_team']}"
+                        if not home_team or not away_team:
+                            logger.warning(
+                                f"Equipos no encontrados: {fixture['home_team']} vs {fixture['away_team']}"
+                            )
+                            continue
+
+                        external_id = fixture["external_id"]
+                        if isinstance(external_id, str):
+                            try:
+                                external_id = int(external_id)
+                            except (ValueError, TypeError):
+                                import hashlib
+                                raw_hash = int(hashlib.sha256(
+                                    f"{fixture['home_team']}{fixture['away_team']}{fixture['match_date']}".encode()
+                                ).hexdigest()[:8], 16)
+                                external_id = raw_hash % 2_000_000_000
+
+                        match = await match_repo.upsert_match(
+                            external_id=external_id,
+                            league_id=league.id,
+                            home_team_id=home_team.id,
+                            away_team_id=away_team.id,
+                            match_date=fixture["match_date"],
+                            status=fixture["status"],
+                            home_score=fixture.get("home_score"),
+                            away_score=fixture.get("away_score"),
+                            regulation_time_only=True,
                         )
+
+                        match_date_val = fixture["match_date"]
+                        if hasattr(match_date_val, 'date'):
+                            match_date_str = match_date_val.strftime("%Y-%m-%d")
+                        else:
+                            match_date_str = str(match_date_val)
+
+                        matches_data.append({
+                            "match_id": match.id,
+                            "match_date": fixture["match_date"],
+                            "home_team_name": fixture["home_team"],
+                            "away_team_name": fixture["away_team"],
+                            "status": fixture["status"],
+                            "odds_count": 0,
+                        })
+
+                        odds_to_sync.append({
+                            "match_id": match.id,
+                            "league_external_id": external_league_id,
+                            "match_date_str": match_date_str,
+                            "home_team_name": fixture["home_team"],
+                            "away_team_name": fixture["away_team"],
+                    })
+
+                        total_matches += 1
+
+                    except Exception as e:
+                        logger.error(
+                            f"Error procesando partido {fixture.get('home_team', '?')} vs "
+                            f"{fixture.get('away_team', '?')} en {league_name}: {e}"
+                        )
+                        errors.append(f"{league_name}/{fixture.get('home_team', '?')} vs {fixture.get('away_team', '?')}: {str(e)}")
                         continue
-
-                    external_id = fixture["external_id"]
-                    if isinstance(external_id, str):
-                        try:
-                            external_id = int(external_id)
-                        except (ValueError, TypeError):
-                            import hashlib
-                            raw_hash = int(hashlib.sha256(
-                                f"{fixture['home_team']}{fixture['away_team']}{fixture['match_date']}".encode()
-                            ).hexdigest()[:8], 16)
-                            external_id = raw_hash % 2_000_000_000
-
-                    match = await match_repo.upsert_match(
-                        external_id=external_id,
-                        league_id=league.id,
-                        home_team_id=home_team.id,
-                        away_team_id=away_team.id,
-                        match_date=fixture["match_date"],
-                        status=fixture["status"],
-                        home_score=None,
-                        away_score=None,
-                        regulation_time_only=True,
-                    )
-
-                    match_date_val = fixture["match_date"]
-                    if hasattr(match_date_val, 'date'):
-                        match_date_str = match_date_val.strftime("%Y-%m-%d")
-                    else:
-                        match_date_str = str(match_date_val)
-
-                    matches_data.append({
-                        "match_id": match.id,
-                        "match_date": fixture["match_date"],
-                        "home_team_name": fixture["home_team"],
-                        "away_team_name": fixture["away_team"],
-                        "status": fixture["status"],
-                        "odds_count": 0,
-                    })
-
-                    odds_to_sync.append({
-                        "match_id": match.id,
-                        "league_external_id": external_league_id,
-                        "match_date_str": match_date_str,
-                        "home_team_name": fixture["home_team"],
-                        "away_team_name": fixture["away_team"],
-                    })
-
-                    total_matches += 1
 
                 print_league_summary(league_key, league_name, country, matches_data)
 
@@ -291,6 +303,143 @@ async def sync_upcoming_matches():
             error_msg = f"Odds sync: {str(e)}"
             errors.append(error_msg)
             logger.error(f"Error sincronizando cuotas: {e}")
+
+    # ── API-Football score fallback + missing leagues ──────────────────
+    print("\n" + "=" * 80)
+    print("SINCRONIZACION DE MARCADORES (API-Football fallback)")
+    print("=" * 80)
+
+    new_matches = 0
+    score_updates = 0
+
+    try:
+        af_service = APIFootballService()
+        dates_to_fetch = [today_cot.strftime("%Y-%m-%d"), tomorrow_cot.strftime("%Y-%m-%d")]
+
+        # Collect featured league API IDs
+        featured_ids = {info["api_football_id"] for info in FEATURED_LEAGUES.values()}
+
+        for fetch_date in dates_to_fetch:
+            raw_fixtures = await af_service.get_fixtures_by_date(fetch_date)
+            if not raw_fixtures:
+                continue
+
+            # Parse raw fixtures to internal format
+            fixtures = [af_service.parse_fixture_to_match_data(f) for f in raw_fixtures]
+
+            async with async_session_factory() as session:
+                match_repo = MatchRepository(session)
+                team_repo = TeamRepository(session)
+                league_repo = LeagueRepository(session)
+
+                for f_data in fixtures:
+                    try:
+                        api_league_id = f_data.get("league_external_id", 0)
+                        api_league_name = f_data.get("league_name", "")
+                        api_fixture_id = f_data.get("external_id")
+                        home_name = f_data.get("home_team_name", "")
+                        away_name = f_data.get("away_team_name", "")
+                        api_status = f_data.get("status", "SCHEDULED")
+                        api_home_score = f_data.get("home_score")
+                        api_away_score = f_data.get("away_score")
+                        match_date_raw = f_data.get("match_date")
+
+                        if not home_name or not away_name or not api_fixture_id:
+                            continue
+
+                        # Only process our featured leagues
+                        if api_league_id not in featured_ids:
+                            continue
+
+                        # Get or create league
+                        league = await league_repo.get_by_external_id(api_league_id)
+                        if not league:
+                            league = await league_repo.create_or_update(
+                                external_id=api_league_id,
+                                name=api_league_name,
+                                country="",
+                            )
+
+                        # Get or create teams
+                        for team_name in [home_name, away_name]:
+                            if not team_name or not team_name.strip():
+                                continue
+                            existing = await team_repo._find_by_normalized_name(team_name)
+                            if not existing:
+                                import hashlib
+                                raw_hash = int(hashlib.sha256(team_name.encode()).hexdigest()[:8], 16)
+                                stable_id = raw_hash % 2_000_000_000
+                                await team_repo.upsert(Team(
+                                    external_id=stable_id,
+                                    name=team_name,
+                                ))
+
+                        home_team = await team_repo._find_by_normalized_name(home_name)
+                        away_team = await team_repo._find_by_normalized_name(away_name)
+
+                        if not home_team or not away_team:
+                            logger.warning(f"AF fallback: teams not found for {home_name} vs {away_name}")
+                            continue
+
+                        mapped_status = api_status  # Already parsed: SCHEDULED/LIVE/FINISHED
+
+                        # Find or create match
+                        match = await match_repo.get_by_external_id(int(api_fixture_id))
+
+                        if match:
+                            # Update existing match
+                            needs_update = False
+                            if match.status == "SCHEDULED" and mapped_status != "SCHEDULED":
+                                match.status = mapped_status
+                                needs_update = True
+                            if api_home_score is not None and match.home_score is None:
+                                match.home_score = api_home_score
+                                needs_update = True
+                            if api_away_score is not None and match.away_score is None:
+                                match.away_score = api_away_score
+                                needs_update = True
+                            if needs_update:
+                                await session.flush()
+                                score_updates += 1
+                                logger.info(
+                                    f"AF updated: {home_name} {api_home_score}-{api_away_score} "
+                                    f"{away_name} (status={mapped_status})"
+                                )
+                        else:
+                            # Create new match (for leagues not in ESPN)
+                            match_date_dt = match_date_raw if match_date_raw else datetime.now()
+                            match = await match_repo.upsert_match(
+                                external_id=int(api_fixture_id),
+                                league_id=league.id,
+                                home_team_id=home_team.id,
+                                away_team_id=away_team.id,
+                                match_date=match_date_dt,
+                                status=mapped_status,
+                                home_score=api_home_score,
+                                away_score=api_away_score,
+                                regulation_time_only=True,
+                            )
+                            new_matches += 1
+                            logger.info(
+                                f"AF created: {home_name} vs {away_name} "
+                                f"({api_league_name}, status={mapped_status})"
+                            )
+
+                    except Exception as e:
+                        logger.error(f"AF fixture error: {e}")
+                        continue
+
+                await session.commit()
+
+        print(f"\n  Partidos nuevos desde API-Football: {new_matches}")
+        print(f"  Marcadores actualizados via API-Football: {score_updates}")
+
+        total_matches += new_matches
+
+    except Exception as e:
+        error_msg = f"API-Football fallback: {str(e)}"
+        errors.append(error_msg)
+        logger.error(f"Error en fallback de marcadores: {e}")
 
     print_final_summary(total_leagues, total_teams, total_matches, total_odds, errors)
 

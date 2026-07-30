@@ -133,6 +133,16 @@ FEATURED_LEAGUES: dict[str, dict] = {
         "name": "Liga BetPlay Dimayor",
         "country": "Colombia",
     },
+    "copa_colombia": {
+        "api_football_id": 241,
+        "name": "Copa Colombia",
+        "country": "Colombia",
+    },
+    "sudamericana": {
+        "api_football_id": 11,
+        "name": "CONMEBOL Sudamericana",
+        "country": "Sudamérica",
+    },
     "serie_a_bra": {
         "api_football_id": 71,
         "name": "Serie A",
@@ -164,8 +174,8 @@ FEATURED_LEAGUES: dict[str, dict] = {
         "country": "Ecuador",
     },
     "liga_1_peru": {
-        "api_football_id": 294,
-        "name": "Liga 1",
+        "api_football_id": 281,
+        "name": "Liga 1 Perú",
         "country": "Perú",
     },
     "allsvenskan": {

@@ -5944,3 +5944,89 @@ pytest (58 tests subset)→  58 passed (Poisson, tickets, Kelly, anti-cascara)
 - TypeScript: compila sin errores
 - Groq 429: sin esperas SDK
 - Sincronización: 20 partidos de 4 ligas (Brasil 10, Argentina 8, Colombia 1, MLS 1)
+
+---
+
+### 🔵 Fase 2: Rediseño UI, Marcadores en Vivo, Sincronización Universal y Limpieza de Datos (2026-07-29)
+
+#### 1. Reemplazo UI de Detalle de Partido con diseño v0.dev
+
+- **`apps/web/app/partidos/[id]/page.tsx`** reescrito con componentes v0: `MatchHero`, `ConfidenceBar`, `EVTable`, `AdditionalMarkets`, `TopScorers`, `ModelProbabilities`, `CornersCards`, `BetBuilder`, `H2HTab`, `ArbitroTab`.
+- **`apps/web/components/betmind/match-modal.tsx`** — mismo diseño en contexto Dialog (`Modal*` variants).
+- Todas las props cableadas a `fetchMatchPrediction`, `buildModel`, `marketRows`, `resolveLeague` — cero datos estáticos.
+
+#### 2. Fix de Caracteres Unicode escapados
+
+- Reemplazados `\u2013`, `\u00B7`, `\u03BB`, `\uD83D\uDCA1`, acentos escapados, etc. por caracteres UTF-8 directos en `page.tsx` y `match-modal.tsx`.
+
+#### 3. Componente TeamLogo con 3 capas de fallback
+
+- **`apps/web/components/ui/team-logo.tsx`** — 3-tier: URL directa → CDN api-sports.io (si hay `teamId`) → SVG shield badge con gradiente e iniciales inteligentes.
+- Añadidos `homeTeamId` / `awayTeamId` al tipo `Match` y al mapper de API.
+- 6 instancias de `<TeamLogo>` actualizadas (page, modal, match-card).
+
+#### 4. Estados de Partido y Marcadores Dinámicos
+
+- `MatchStatus` ampliado: `'SCHEDULED' | 'IN_PLAY' | 'PAUSED' | 'FINISHED'` (+ compatibilidad `'UPCOMING' | 'LIVE' | 'FT'`).
+- `MatchHero`, `ModalHeader`, `MatchCard` renderizan condicionalmente según datos reales:
+  - **IN_PLAY**: Badge verde `EN VIVO {elapsed}'`, marcador central grande.
+  - **FINISHED**: Badge gris, resultado final, sin Poisson/1X2. Si no hay scores: `Resultado pendiente`.
+  - **SCHEDULED**: Hora + VS + Poisson + probabilidades.
+- Validación estricta: `hasRealScore` solo si `typeof score[0] === 'number'`, nunca `null → 0`.
+
+#### 5. Eliminación de Inferencia Falsa por Hora
+
+- **Eliminado** el fallback que forzaba `IN_PLAY`/`FINISHED` basado en hora del sistema en `lib/api.ts` mapper.
+- Estado del partido responde 100% a datos reales de API/Supabase.
+
+#### 6. Fix: Partidos Finalizados Desaparecían
+
+- **`apps/web/lib/api.ts`**: `include_finished: 'false'` → `'true'`.
+- **Backend `routes/v1/matches.py`**: Status filter incluye `"IN_PLAY"` y `"FINISHED" | "FT"`.
+
+#### 7. Fix: Marcador Duplicado en MatchCard
+
+- Eliminados números individuales de score junto a cada equipo. Solo se muestra el marcador central `{homeScore} – {awayScore}`.
+
+#### 8. Scraper ESPN — Extracción de Scores y Elapsed
+
+- **`match_fixture_scraper.py`**: `_parse_event()` ahora extrae `home_score`, `away_score` de `competitors[].score` y `elapsed` de `status.displayClock`.
+
+#### 9. Fix: Scores Hardcodeados a None en Sync
+
+- **`sync_today_matches.py`**: `home_score=None, away_score=None` → `fixture.get("home_score"), fixture.get("away_score")`.
+- **`match_repository.py`**: `upsert_match()` solo actualiza scores si el valor entrante no es `None`.
+
+#### 10. Fuzzy Matching de Equipos + Aliases
+
+- **`team_normalizer.py`**: 60+ aliases manuales (`TEAM_NAME_ALIASES`), strip de prefijos (`Atlético`, `Club`, `CD`, `Deportivo`...), `fuzzy_match_team()` con token overlap ≥ 60%.
+- **`team_repository.py`**: `_find_by_normalized_name()` con fallback fuzzy.
+
+#### 11. API-Football Fallback Universal
+
+- **`sync_today_matches.py`**: Nueva sección post-ESPN que consulta `get_fixtures_by_date()` de API-Football. Crea matches nuevos para ligas sin cobertura ESPN. Actualiza scores/states para matches existentes. Solo procesa `FEATURED_LEAGUES`.
+- **`api_football.py`**: Status map ampliado (`1H`/`2H` → `LIVE`, `PEN`/`PST` → `FINISHED`).
+- **`config.py`**: Añadidas `copa_colombia` (241) y `sudamericana` (11) a `FEATURED_LEAGUES`.
+
+#### 12. Limpieza de Datos Basura en BD
+
+- **296 partidos fake eliminados** (ligas con IDs inventados 9001-9011: Champions League, Serie B Brasil, etc.).
+- **5 ligas fake eliminadas**, Sudamericana merge (9011 → 11).
+- **12 partidos Korean/Manchester purgados** de Liga 1 Perú (Busan I Park, Siheung Citizen, Gwangju FC, etc.).
+- Nombres de ligas corregidos, `liga_1_peru` ID 294 → 281.
+- **`.next` cache eliminada**.
+
+#### 13. Diagnóstico API-Football
+
+- Rate limits: 66/100 — sin problemas.
+- Zona horaria COT confirmada correcta.
+- API-Football SÍ retorna Copa Colombia (241) y Sudamericana (11) con scores reales.
+
+### ✅ Verificación Final
+
+- TypeScript frontend: compila sin errores.
+- Python backend: sintaxis válida en todos los scripts modificados.
+- DB: 15 ligas, 578 partidos, 0 duplicados, 0 basura.
+- Copa Colombia: 6 partidos con scores reales (Inter Palmira 1-2 Inter Bogotá, Barranquilla 3-3 Junior, etc.).
+- Sudamericana: 6 partidos con scores reales (Vasco 1-0 Medellín, Cienciano 3-0 Lanús, etc.).
+- 13 ligas totales sincronizadas desde API-Football + ESPN.

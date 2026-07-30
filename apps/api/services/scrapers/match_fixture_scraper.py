@@ -33,6 +33,8 @@ ESPN_LEAGUE_SLUGS = {
     "allsvenskan": "swe.1",
     "superliga_den": "den.1",
     "super_league_sui": "sui.1",
+    # No ESPN slug available — synced via API-Football fallback only:
+    # "copa_colombia", "sudamericana"
 }
 
 
@@ -127,16 +129,21 @@ class MatchFixtureScraper:
             # ESPN retorna home/away en orden variable, identificar por homeAway field
             home_team = None
             away_team = None
-            
+            home_score = None
+            away_score = None
+
             for competitor in competitors:
                 team_info = competitor.get("team", {})
                 team_name = team_info.get("displayName", "")
                 is_home = competitor.get("homeAway", "").lower() == "home"
-                
+                raw_score = competitor.get("score")
+
                 if is_home:
                     home_team = team_name
+                    home_score = int(raw_score) if raw_score is not None and str(raw_score).isdigit() else None
                 else:
                     away_team = team_name
+                    away_score = int(raw_score) if raw_score is not None and str(raw_score).isdigit() else None
 
             if not home_team or not away_team:
                 logger.debug(f"Missing home or away team in event {event.get('id')}")
@@ -154,7 +161,17 @@ class MatchFixtureScraper:
             status_info = competition.get("status", {})
             status_type = status_info.get("type", {})
             status_name = status_type.get("name", "STATUS_UNPLAYED")
-            
+            display_clock = status_info.get("displayClock", "")
+
+            # Extraer minutos transcurridos (ej: "73:00" → 73)
+            elapsed = None
+            if display_clock and ":" in str(display_clock):
+                try:
+                    parts = str(display_clock).split(":")
+                    elapsed = int(parts[0])
+                except (ValueError, IndexError):
+                    pass
+
             # Mapear estados de ESPN a estados internos
             status_map = {
                 "STATUS_SCHEDULED": "SCHEDULED",
@@ -177,6 +194,9 @@ class MatchFixtureScraper:
                 "source": "espn",
                 "external_id": event.get("id"),
                 "status": status,
+                "home_score": home_score,
+                "away_score": away_score,
+                "elapsed": elapsed,
                 "matchday": event.get("season", {}).get("slug"),
             }
 

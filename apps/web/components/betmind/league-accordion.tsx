@@ -24,7 +24,7 @@ export function LeagueAccordion({
   onToggle,
 }: LeagueAccordionProps) {
   const meta = resolveLeague(leagueExternalId, leagueName)
-  const liveCount = matches.filter((m) => m.status === 'LIVE').length
+  const liveCount = matches.filter((m) => m.status === 'LIVE' || m.status === 'IN_PLAY').length
   const logoUrl = matches[0]?.leagueLogoUrl || meta.logoUrl
 
   return (

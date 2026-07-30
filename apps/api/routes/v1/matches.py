@@ -80,9 +80,9 @@ async def list_matches(
 
     status_filter = []
     if include_upcoming:
-        status_filter.extend(["SCHEDULED", "LIVE", "INPLAY"])
+        status_filter.extend(["SCHEDULED", "IN_PLAY", "LIVE", "INPLAY"])
     if include_finished:
-        status_filter.append("FINISHED")
+        status_filter.extend(["FINISHED", "FT"])
     
     if status_filter:
         conditions.append(Match.status.in_(status_filter))

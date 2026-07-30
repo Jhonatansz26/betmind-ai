@@ -1,7 +1,7 @@
 // BetMind AI — Poisson model helpers and mock intelligence data.
 
 export type Mode = 'EDGE' | 'VALUE' | 'BOLD'
-export type MatchStatus = 'UPCOMING' | 'LIVE' | 'FT'
+export type MatchStatus = 'SCHEDULED' | 'IN_PLAY' | 'PAUSED' | 'FINISHED' | 'UPCOMING' | 'LIVE' | 'FT'
 export type Impact = 'HIGH' | 'MEDIUM' | 'LOW'
 
 export interface League {
@@ -45,9 +45,12 @@ export interface Match {
   leagueLogoUrl: string | null
   homeLogoUrl: string | null
   awayLogoUrl: string | null
+  homeTeamId: number | null
+  awayTeamId: number | null
   time: string
   status: MatchStatus
   minute?: number
+  elapsed?: number | null
   score?: [number, number]
   home: string
   away: string

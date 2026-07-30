@@ -392,13 +392,24 @@ class APIFootballService:
         status_map = {
             "NS": "SCHEDULED",
             "TBD": "SCHEDULED",
-            "LIVE": "LIVE",
+            "1H": "LIVE",
+            "2H": "LIVE",
             "HT": "LIVE",
+            "ET": "LIVE",
+            "BT": "LIVE",
+            "P": "LIVE",
+            "SUSP": "LIVE",
+            "INT": "LIVE",
+            "LIVE": "LIVE",
             "FT": "FINISHED",
             "AET": "FINISHED",
-            "P": "FINISHED",
-            "CANC": "CANCELLED",
-            "POST": "POSTPONED",
+            "PEN": "FINISHED",
+            "PST": "FINISHED",
+            "CANC": "FINISHED",
+            "ABD": "FINISHED",
+            "AWD": "FINISHED",
+            "WO": "FINISHED",
+            "POST": "SCHEDULED",
         }
         
         return {

@@ -223,8 +223,11 @@ class MatchRepository:
             existing.away_team_id = away_team_id
             existing.match_date = match_date
             existing.status = status
-            existing.home_score = home_score
-            existing.away_score = away_score
+            # Solo actualiza scores cuando tienen valor real (no perder datos existentes)
+            if home_score is not None:
+                existing.home_score = home_score
+            if away_score is not None:
+                existing.away_score = away_score
             existing.regulation_time_only = regulation_time_only
             await self._session.flush()
             await self._session.refresh(existing)
