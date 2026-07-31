@@ -193,7 +193,7 @@ def calculate_corners_markets(
     if expected_corners <= 0:
         expected_corners = expected_league
 
-    lines = [7.5, 8.5, 9.5, 10.5]
+    lines = [6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5]
     p = 1.0 / K_DISPERSION
     r = expected_corners / (K_DISPERSION - 1)
 
@@ -226,7 +226,7 @@ def calculate_cards_markets(
     if expected_cards <= 0:
         expected_cards = league_line
 
-    lines = [3.5, 4.5, 5.5]
+    lines = [3.5, 4.5, 5.5, 6.5, 7.5]
     markets: list[MarketProbability] = []
 
     for line in lines:
@@ -263,7 +263,7 @@ def calculate_shots_on_target_markets(
     if expected_sot <= 0:
         expected_sot = expected_league
 
-    lines = [6.5, 7.5, 8.5, 9.5]
+    lines = [6.5, 7.5, 8.5, 9.5, 10.5]
     markets: list[MarketProbability] = []
 
     for line in lines:
