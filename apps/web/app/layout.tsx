@@ -47,7 +47,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`bg-background ${inter.variable} ${playfair.variable}`}>
+    <html lang="es" className={`bg-background ${inter.variable} ${playfair.variable}`}>
       <body className="font-sans antialiased">
         {children}
         <Toaster position="bottom-right" />

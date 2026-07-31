@@ -40,7 +40,7 @@ export function TopNav({ active, onChange, onToggleSidebar }: TopNavProps) {
           <span>
             Bet<span className="font-bold">Mind</span>
           </span>
-          <span className="ml-1.5 rounded-full border border-primary/30 bg-primary/20 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+          <span className="ml-1.5 rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary shadow-sm backdrop-blur-md">
             AI
           </span>
         </p>

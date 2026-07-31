@@ -64,8 +64,8 @@ export function ConfidenceBar({ score, className, showLabel = true }: Confidence
       )}
       <div className="h-[3px] w-full overflow-hidden rounded-full bg-border">
         <div
-          className={cn('h-full rounded-full transition-[width] duration-[600ms] ease-out', colorForScore(score))}
-          style={{ width: `${width}%` }}
+          className={cn('h-full w-full origin-left rounded-full transition-transform duration-[600ms] ease-out', colorForScore(score))}
+          style={{ transform: `scaleX(${width / 100})` }}
           role="progressbar"
           aria-valuenow={score}
           aria-valuemin={0}

@@ -22,7 +22,7 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
   }
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-border bg-card">
+    <div className="flex h-full flex-col rounded-xl border border-border bg-card ring-1 ring-white/5">
       {/* Mode accent strip — top 3px bar */}
       <div className={cn('h-[3px] w-full shrink-0 rounded-t-xl', meta.accent)} aria-hidden />
 
@@ -58,11 +58,11 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
       </div>
 
       {/* ── LEGS — fills remaining vertical space ── */}
-      <div className="flex flex-1 flex-col gap-2 px-4 pb-4">
+      <ul className="flex flex-1 list-none flex-col gap-2 px-4 pb-4">
         {ticket.legs.map((leg, i) => (
           <TicketLeg key={`${leg.match}-${leg.market}`} leg={leg} index={i} />
         ))}
-      </div>
+      </ul>
 
       {/* ── FOOTER — pinned to bottom ── */}
       <div className="mt-auto flex flex-col gap-2 border-t border-border/40 px-4 py-3">
