@@ -33,14 +33,14 @@ export function TopNav({ active, onChange, onToggleSidebar }: TopNavProps) {
           onClick={onToggleSidebar}
           aria-label="Toggle league sidebar"
         >
-          <MenuIcon />
+          <MenuIcon aria-hidden="true" />
         </Button>
 
         <p className="flex shrink-0 items-center text-base font-bold tracking-tight text-foreground">
           <span>
             Bet<span className="font-bold">Mind</span>
           </span>
-          <span className="ml-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold text-indigo-400">
+          <span className="ml-1.5 rounded-full border border-primary/30 bg-primary/20 px-1.5 py-0.5 text-[10px] font-bold text-primary">
             AI
           </span>
         </p>

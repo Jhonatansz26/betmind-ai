@@ -268,13 +268,10 @@ class MatchRepository:
 
         start_utc = start_dt.astimezone(timezone.utc)
         end_utc = end_dt.astimezone(timezone.utc)
-        now_utc = datetime.now(timezone.utc)
 
         conditions = [
             Match.match_date >= start_utc,
             Match.match_date <= end_utc,
-            Match.match_date > now_utc,
-            Match.status.in_(["SCHEDULED", "INPLAY"]),
         ]
 
         if league_keys:

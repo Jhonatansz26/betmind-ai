@@ -20,6 +20,13 @@ import {
   Zap,
   BarChart2,
   User,
+  Footprints,
+  Goal,
+  ClipboardList,
+  LayoutList,
+  Lock,
+  Home,
+  Lightbulb,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -35,12 +42,12 @@ import { fetchMatchPrediction, type EnrichedMatch } from '@/lib/api'
 import { resolveLeague } from '@/lib/league-metadata'
 import { cn } from '@/lib/utils'
 import { TeamLogo } from '@/components/ui/team-logo'
+import { MatchTabBar, type MatchTab } from '@/components/betmind/match-tab-bar'
 
 /* ------------------------------------------------------------------ */
 /* Local types                                                         */
 /* ------------------------------------------------------------------ */
 
-type DetailTab = 'previa' | 'h2h' | 'arbitro'
 type FormResult = 'V' | 'E' | 'D'
 
 interface MarketConfig {
@@ -167,7 +174,7 @@ function buildDetail(match: Match, enriched: EnrichedMatch | null, model: MatchM
 
 function sectionLabel({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <p className={cn('text-[10px] font-bold text-zinc-500 uppercase tracking-widest', className)}>
+    <p className={cn('text-[10px] font-bold text-subtle uppercase tracking-widest', className)}>
       {children}
     </p>
   )
@@ -176,19 +183,19 @@ function sectionLabel({ children, className }: { children: React.ReactNode; clas
 function EmptyCard({ icon, title, subtitle }: { icon?: React.ReactNode; title: string; subtitle: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-10 text-center">
-      <div className="w-12 h-12 rounded-full bg-zinc-800/80 border border-zinc-700 flex items-center justify-center mb-3">
-        {icon ?? <User size={18} className="text-zinc-500" />}
+      <div className="w-12 h-12 rounded-full bg-surface/80 border border-border flex items-center justify-center mb-3">
+        {icon ?? <User size={18} className="text-subtle" />}
       </div>
-      <p className="text-sm font-semibold text-zinc-300 mb-1">{title}</p>
-      <p className="text-xs text-zinc-600 max-w-xs leading-relaxed">{subtitle}</p>
+      <p className="text-sm font-semibold text-foreground mb-1">{title}</p>
+      <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">{subtitle}</p>
     </div>
   )
 }
 
 const RISK_COLORS: Record<string, string> = {
-  LOW: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
-  MEDIUM: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
-  HIGH: 'bg-rose-500/15 text-rose-400 border-rose-500/25',
+  LOW: 'bg-positive/15 text-positive border-positive/25',
+  MEDIUM: 'bg-warning/15 text-warning border-warning/25',
+  HIGH: 'bg-negative/15 text-negative border-negative/25',
 }
 
 const RISK_LABELS: Record<string, string> = {
@@ -196,13 +203,13 @@ const RISK_LABELS: Record<string, string> = {
 }
 
 const FORM_STYLES: Record<FormResult, { bg: string; text: string; border: string }> = {
-  V: { bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/40' },
-  E: { bg: 'bg-zinc-700/40', text: 'text-zinc-300', border: 'border-zinc-600/50' },
-  D: { bg: 'bg-rose-500/15', text: 'text-rose-400', border: 'border-rose-500/30' },
+  V: { bg: 'bg-positive/20', text: 'text-positive', border: 'border-positive/40' },
+  E: { bg: 'bg-muted/40', text: 'text-foreground', border: 'border-border/50' },
+  D: { bg: 'bg-negative/15', text: 'text-negative', border: 'border-negative/30' },
 }
 
 function FormBubbles({ form }: { form: FormResult[] }) {
-  if (form.length === 0) return <span className="text-[10px] text-zinc-600">Sin datos</span>
+  if (form.length === 0) return <span className="text-[10px] text-muted-foreground">Sin datos</span>
   return (
     <div className="flex gap-1.5">
       {form.map((r, i) => {
@@ -220,16 +227,16 @@ function FormBubbles({ form }: { form: FormResult[] }) {
   )
 }
 
-const NARRATIVE_SECTIONS: { key: string; icon: string; label: string }[] = [
-  { key: 'Goles:', icon: '⚽', label: 'Goles' },
-  { key: 'Tarjetas:', icon: '🟨', label: 'Tarjetas' },
-  { key: 'Corners:', icon: '📐', label: 'Corners' },
-  { key: 'Resumen:', icon: '📋', label: 'Resumen' },
+const NARRATIVE_SECTIONS: { key: string; icon: React.ElementType; label: string }[] = [
+  { key: 'Goles:', icon: Goal, label: 'Goles' },
+  { key: 'Tarjetas:', icon: Footprints, label: 'Tarjetas' },
+  { key: 'Corners:', icon: LayoutList, label: 'Corners' },
+  { key: 'Resumen:', icon: ClipboardList, label: 'Resumen' },
 ]
 
 function stripLambdas(text: string): string {
   return text
-    .replace(/\(λ[^)]*\)/g, '')
+    .replace(/(λ[^)]*)/g, '')
     .replace(/\([^)]*λ[^)]*\)/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
@@ -240,8 +247,8 @@ function NarrativeBody({ text }: { text: string }) {
   const regex = new RegExp(`(${allKeys.map(k => k.replace(':', '\\:')).join('|')})`, 'g')
   const rawParts = text.split(regex).filter(Boolean)
 
-  const segments: { icon: string; label: string; content: string }[] = []
-  let pendingKey: { icon: string; label: string } | null = null
+  const segments: { icon: React.ElementType; label: string; content: string }[] = []
+  let pendingKey: { icon: React.ElementType; label: string } | null = null
 
   for (const part of rawParts) {
     const match = NARRATIVE_SECTIONS.find(s => s.key === part)
@@ -253,26 +260,29 @@ function NarrativeBody({ text }: { text: string }) {
     } else {
       const cleaned = stripLambdas(part.trim())
       if (cleaned) {
-        segments.push({ icon: '📋', label: 'Análisis', content: cleaned })
+        segments.push({ icon: ClipboardList, label: 'Análisis', content: cleaned })
       }
     }
   }
 
   if (!segments.length) {
-    return <p className="text-sm text-zinc-300 leading-relaxed">{stripLambdas(text)}</p>
+    return <p className="text-sm text-foreground leading-relaxed">{stripLambdas(text)}</p>
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {segments.map((seg, i) => (
-        <div key={i} className="flex gap-3">
-          <span className="shrink-0 text-base leading-none mt-0.5">{seg.icon}</span>
-          <div>
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-0.5">{seg.label}</p>
-            <p className="text-sm text-zinc-300 leading-relaxed">{seg.content}</p>
+      {segments.map((seg, i) => {
+        const Icon = seg.icon
+        return (
+          <div key={i} className="flex gap-3">
+            <Icon size={12} className="shrink-0 mt-0.5 text-subtle" />
+            <div>
+              <p className="text-[10px] font-bold text-subtle uppercase tracking-wider mb-0.5">{seg.label}</p>
+              <p className="text-sm text-foreground leading-relaxed">{seg.content}</p>
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -305,12 +315,12 @@ function MatchHero({ match, leagueMeta, model }: {
     <span className={cn(
       'ml-1 text-[10px] font-bold px-2 py-0.5 rounded-md',
       isLive
-        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+        ? 'bg-positive/15 text-positive border border-positive/20'
         : isPaused
-          ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25'
+          ? 'bg-warning/15 text-warning border border-warning/25'
           : isFinished
-            ? 'bg-zinc-700/60 text-zinc-400 border border-zinc-600/50'
-            : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+            ? 'bg-muted text-subtle border border-border/50'
+            : 'bg-surface text-subtle border border-border'
     )}>
       {isLive
         ? hasElapsed ? `EN VIVO ${match.elapsed}'` : 'EN VIVO'
@@ -323,43 +333,43 @@ function MatchHero({ match, leagueMeta, model }: {
   )
 
   return (
-    <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-5">
+    <div className="bg-card border border-border rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-4">
         <span className="text-base">{leagueMeta.flag}</span>
-        <span className="text-xs font-semibold text-zinc-400">{leagueMeta.name}</span>
-        <span className="text-zinc-700 text-xs">·</span>
-        <span className="text-xs text-zinc-500 tabular-nums">{match.time}</span>
+        <span className="text-xs font-semibold text-subtle">{leagueMeta.name}</span>
+        <span className="text-muted-foreground text-xs">·</span>
+        <span className="text-xs text-subtle tabular-nums">{match.time}</span>
         {statusBadge}
       </div>
 
       <div className="flex items-center gap-4 mb-5">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <TeamLogo src={match.homeLogoUrl} teamName={match.home} teamId={match.homeTeamId} size={40} />
-          <span className="text-xl font-bold text-white truncate">{match.home}</span>
+          <span className="text-xl font-bold text-foreground truncate">{match.home}</span>
         </div>
 
         {/* Center: score or VS */}
         <div className="shrink-0 flex flex-col items-center">
           {showScore ? (
-            <span className="text-2xl font-black tabular-nums text-white tracking-wide">
+            <span className="text-2xl font-black tabular-nums text-foreground tracking-wide">
               {match.score![0]} – {match.score![1]}
             </span>
           ) : isFinished ? (
-            <span className="text-xs text-zinc-500 italic">Resultado pendiente</span>
+            <span className="text-xs text-subtle italic">Resultado pendiente</span>
           ) : (
-            <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">vs</span>
+            <div className="w-10 h-10 rounded-full bg-surface border border-border flex items-center justify-center">
+              <span className="text-[10px] font-bold text-subtle uppercase tracking-widest">vs</span>
             </div>
           )}
           {isLive && hasElapsed && (
-            <span className="text-[9px] font-semibold text-zinc-500 mt-1">
+            <span className="text-[9px] font-semibold text-subtle mt-1">
               {match.elapsed}&apos;
             </span>
           )}
         </div>
 
         <div className="flex items-center gap-3 flex-1 min-w-0 justify-end">
-          <span className="text-xl font-bold text-white truncate text-right">{match.away}</span>
+          <span className="text-xl font-bold text-foreground truncate text-right">{match.away}</span>
           <TeamLogo src={match.awayLogoUrl} teamName={match.away} teamId={match.awayTeamId} size={40} />
         </div>
       </div>
@@ -368,24 +378,24 @@ function MatchHero({ match, leagueMeta, model }: {
       {!isLive && !isPaused && !isFinished && (
         <>
           <div className="grid grid-cols-3 gap-2 mb-3">
-            <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 text-center">
-              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Local</p>
-              <p className="text-lg font-black tabular-nums text-indigo-400">{(model.home * 100).toFixed(1)}%</p>
+            <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
+              <p className="text-[10px] font-semibold text-subtle uppercase tracking-wider mb-1.5">Local</p>
+              <p className="text-lg font-black tabular-nums text-primary">{(model.home * 100).toFixed(1)}%</p>
             </div>
-            <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 text-center">
-              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Empate</p>
-              <p className="text-lg font-black tabular-nums text-zinc-200">{(model.draw * 100).toFixed(1)}%</p>
+            <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
+              <p className="text-[10px] font-semibold text-subtle uppercase tracking-wider mb-1.5">Empate</p>
+              <p className="text-lg font-black tabular-nums text-foreground">{(model.draw * 100).toFixed(1)}%</p>
             </div>
-            <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 text-center">
-              <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Visitante</p>
-              <p className="text-lg font-black tabular-nums text-amber-400">{(model.away * 100).toFixed(1)}%</p>
+            <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
+              <p className="text-[10px] font-semibold text-subtle uppercase tracking-wider mb-1.5">Visitante</p>
+              <p className="text-lg font-black tabular-nums text-warning">{(model.away * 100).toFixed(1)}%</p>
             </div>
           </div>
 
           <div className="flex h-1.5 rounded-full overflow-hidden gap-px">
-            <div className="bg-indigo-500 rounded-l-full" style={{ width: `${hw}%` }} />
-            <div className="bg-zinc-500" style={{ width: `${dw}%` }} />
-            <div className="bg-amber-500 rounded-r-full" style={{ width: `${aw}%` }} />
+            <div className="bg-primary rounded-l-full" style={{ width: `${hw}%` }} />
+            <div className="bg-muted" style={{ width: `${dw}%` }} />
+            <div className="bg-warning rounded-r-full" style={{ width: `${aw}%` }} />
           </div>
         </>
       )}
@@ -402,33 +412,33 @@ function ConfidenceBar({ detail, model }: { detail: MatchDetailData; model: Matc
   const riskLabel = RISK_LABELS[detail.riskLevel] ?? RISK_LABELS.MEDIUM
 
   return (
-    <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl px-5 py-4">
+    <div className="bg-card border border-border rounded-2xl px-5 py-4">
       <div className="flex items-center gap-3 mb-3">
-        <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider shrink-0">Confianza IA</span>
-        <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+        <span className="text-[11px] font-bold text-subtle uppercase tracking-wider shrink-0">Confianza IA</span>
+        <div className="flex-1 h-2 bg-surface rounded-full overflow-hidden">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-indigo-400 transition-all"
+            className="h-full rounded-full bg-gradient-to-r from-primary to-primary/70 transition-all"
             style={{ width: `${detail.confidenceScore}%` }}
           />
         </div>
-        <span className="text-[11px] font-bold text-zinc-300 tabular-nums shrink-0">{detail.confidenceScore}/100</span>
+        <span className="text-[11px] font-bold text-foreground tabular-nums shrink-0">{detail.confidenceScore}/100</span>
         <span className={cn('text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0', riskColor)}>
           {riskLabel}
         </span>
       </div>
       <div className="flex flex-wrap gap-2">
         {detail.probableScore !== '--' && (
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 rounded-full px-3 py-1">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-primary/80 bg-primary/10 border border-primary/20 rounded-full px-3 py-1">
             <BarChart2 size={10} />
             Marcador probable: {detail.probableScore}
           </span>
         )}
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-full px-3 py-1">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-warning/80 bg-warning/10 border border-warning/20 rounded-full px-3 py-1">
           <Flame size={10} />
           {detail.underOverLabel} — {detail.underOverProb}%
         </span>
         {detail.aiSummaryPill && (
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-zinc-400 bg-zinc-800 border border-zinc-700 rounded-full px-3 py-1">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-subtle bg-surface border border-border rounded-full px-3 py-1">
             <Sparkles size={10} className="text-pink-400" />
             {detail.aiSummaryPill}
           </span>
@@ -450,26 +460,26 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
   const selectable = rows.filter(r => r.edge >= 0.03)
 
   const modeMeta: Record<Mode, { label: string; border: string; bg: string; accent: string }> = {
-    EDGE:   { label: 'Modo Edge', border: 'border-indigo-500/40', bg: 'bg-indigo-500/15', accent: 'text-indigo-300' },
-    VALUE:  { label: 'Modo Value', border: 'border-amber-500/40', bg: 'bg-amber-500/15', accent: 'text-amber-300' },
-    BOLD:   { label: 'Modo Bold', border: 'border-rose-500/40', bg: 'bg-rose-500/15', accent: 'text-rose-300' },
+    EDGE:   { label: 'Modo Edge', border: 'border-primary/40', bg: 'bg-primary/15', accent: 'text-primary/80' },
+    VALUE:  { label: 'Modo Value', border: 'border-warning/40', bg: 'bg-warning/15', accent: 'text-warning/80' },
+    BOLD:   { label: 'Modo Bold', border: 'border-negative/40', bg: 'bg-negative/15', accent: 'text-negative/80' },
   }
 
   return (
     <div className="flex flex-col gap-4">
       {/* EV+ Banner */}
       {best && (
-        <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-4">
+        <div className="rounded-xl bg-positive/5 border border-positive/20 p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 min-w-0">
-              <span className="shrink-0 mt-0.5 text-[10px] font-black text-emerald-400 bg-emerald-500/15 border border-emerald-500/25 rounded-md px-1.5 py-0.5">EV+</span>
+              <span className="shrink-0 mt-0.5 text-[10px] font-black text-positive bg-positive/15 border border-positive/25 rounded-md px-1.5 py-0.5">EV+</span>
               <div>
-                <p className="text-sm font-bold text-white">
+                <p className="text-sm font-bold text-foreground">
                   {best.label}
-                  <span className="text-zinc-500 font-normal ml-2">+{(best.edge * 100).toFixed(1)}% edge</span>
-                  <span className="text-zinc-500 font-normal ml-1">· Cuota {best.odds.toFixed(2)}</span>
+                  <span className="text-subtle font-normal ml-2">+{(best.edge * 100).toFixed(1)}% edge</span>
+                  <span className="text-subtle font-normal ml-1">· Cuota {best.odds.toFixed(2)}</span>
                 </p>
-                <p className="text-xs text-emerald-400 mt-0.5">Edge positivo sobre la probabilidad implícita del mercado</p>
+                <p className="text-xs text-positive mt-0.5">Edge positivo sobre la probabilidad implícita del mercado</p>
               </div>
             </div>
             <button
@@ -477,11 +487,11 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
               className={cn(
                 'shrink-0 flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg border transition-all',
                 saved
-                  ? 'bg-amber-500/15 border-amber-500/30 text-amber-400'
-                  : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-indigo-500/50 hover:text-white'
+                  ? 'bg-warning/15 border-warning/30 text-warning'
+                  : 'bg-surface border-border text-foreground hover:border-primary/50 hover:text-foreground'
               )}
             >
-              <Star size={12} className={saved ? 'fill-amber-400 text-amber-400' : ''} />
+              <Star size={12} className={saved ? 'fill-warning text-warning' : ''} />
               {saved ? 'Guardado' : 'Guardar en mi Boleto'}
             </button>
           </div>
@@ -493,13 +503,13 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
         {sectionLabel({ children: 'Tendencias del Partido', className: 'mb-2' })}
         <div className="flex flex-wrap gap-2">
           {rows.find(r => r.key === 'over25' && r.verdict === 'EV+') && (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-3 py-1">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-warning bg-warning/10 border border-warning/20 rounded-full px-3 py-1">
               <Flame size={10} />
               Más de 2.5 probable · {((rows.find(r => r.key === 'over25')?.probability ?? 0) * 100).toFixed(1)}%
             </span>
           )}
           {best && (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-3 py-1">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-positive bg-positive/10 border border-positive/20 rounded-full px-3 py-1">
               <Activity size={10} />
               Edge alto detectado · +{(best.edge * 100).toFixed(1)}%
             </span>
@@ -508,17 +518,17 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
       </div>
 
       {/* Table */}
-      <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden">
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="px-4 pt-4 pb-2">
           {sectionLabel({ children: 'Análisis de Valor Esperado (+EV)' })}
         </div>
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-zinc-800/80">
-              <th className="text-left px-4 py-2 text-zinc-600 font-semibold">Mercado</th>
-              <th className="text-right px-3 py-2 text-zinc-600 font-semibold">Prob.</th>
-              <th className="text-right px-3 py-2 text-zinc-600 font-semibold">Edge</th>
-              <th className="text-right px-4 py-2 text-zinc-600 font-semibold">Veredicto</th>
+            <tr className="border-b border-border">
+              <th className="text-left px-4 py-2 text-muted-foreground font-semibold">Mercado</th>
+              <th className="text-right px-3 py-2 text-muted-foreground font-semibold">Prob.</th>
+              <th className="text-right px-3 py-2 text-muted-foreground font-semibold">Edge</th>
+              <th className="text-right px-4 py-2 text-muted-foreground font-semibold">Veredicto</th>
             </tr>
           </thead>
           <tbody>
@@ -527,28 +537,28 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
                 key={row.key}
                 onClick={() => setSelectedMarket(row.key)}
                 className={cn(
-                  'border-b border-zinc-800/50 last:border-0 cursor-pointer transition-colors',
-                  row.verdict === 'EV+' && 'bg-emerald-500/5 hover:bg-emerald-500/10',
-                  row.verdict !== 'EV+' && 'hover:bg-zinc-800/30',
-                  selectedMarket === row.key && 'ring-1 ring-inset ring-indigo-500/30 bg-indigo-500/5'
+                  'border-b border-border/50 last:border-0 cursor-pointer transition-colors',
+                  row.verdict === 'EV+' && 'bg-positive/5 hover:bg-positive/10',
+                  row.verdict !== 'EV+' && 'hover:bg-surface/30',
+                  selectedMarket === row.key && 'ring-1 ring-inset ring-primary/30 bg-primary/5'
                 )}
               >
-                <td className="px-4 py-3 font-semibold text-zinc-200">{row.label}</td>
-                <td className="px-3 py-3 text-right tabular-nums text-zinc-400">{(row.probability * 100).toFixed(1)}%</td>
-                <td className={cn('px-3 py-3 text-right tabular-nums font-bold', row.edge > 0 ? 'text-emerald-400' : 'text-rose-400')}>
+                <td className="px-4 py-3 font-semibold text-foreground">{row.label}</td>
+                <td className="px-3 py-3 text-right tabular-nums text-subtle">{(row.probability * 100).toFixed(1)}%</td>
+                <td className={cn('px-3 py-3 text-right tabular-nums font-bold', row.edge > 0 ? 'text-positive' : 'text-negative')}>
                   {row.edge > 0 ? '+' : ''}{(row.edge * 100).toFixed(1)}%
                 </td>
                 <td className="px-4 py-3 text-right">
                   {row.verdict === 'EV+' ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-1.5 py-0.5">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black text-positive bg-positive/10 border border-positive/20 rounded-md px-1.5 py-0.5">
                       <CheckCircle2 size={9} /> EV+
                     </span>
                   ) : row.verdict === 'AVOID' ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-black text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-md px-1.5 py-0.5">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black text-negative bg-negative/10 border border-negative/20 rounded-md px-1.5 py-0.5">
                       <XCircle size={9} /> AVOID
                     </span>
                   ) : (
-                    <span className="text-[10px] text-zinc-500">{row.verdict}</span>
+                    <span className="text-[10px] text-subtle">{row.verdict}</span>
                   )}
                 </td>
               </tr>
@@ -558,18 +568,18 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
       </div>
 
       {/* Add to ticket */}
-      <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4">
         {sectionLabel({ children: 'Añadir al Boleto', className: 'mb-3' })}
         {selectedMarket && (() => {
           const row = rows.find(r => r.key === selectedMarket)
           if (!row) return null
           const sel = selectable.find(r => r.key === selectedMarket)
           return (
-            <div className="flex items-center gap-3 bg-zinc-800/50 border border-zinc-700/50 rounded-lg px-3 py-2.5 mb-3">
-              <div className="w-4 h-4 rounded-full bg-indigo-500 border-2 border-indigo-400 shrink-0" />
-              <span className="text-sm font-semibold text-zinc-200 flex-1">{row.label}</span>
-              <span className="text-sm font-bold text-zinc-300 tabular-nums">{row.odds.toFixed(2)}</span>
-              <span className={cn('text-xs font-bold', row.edge > 0 ? 'text-emerald-400' : 'text-rose-400')}>
+            <div className="flex items-center gap-3 bg-surface/50 border border-border/50 rounded-lg px-3 py-2.5 mb-3">
+              <div className="w-4 h-4 rounded-full bg-primary border-2 border-primary/70 shrink-0" />
+              <span className="text-sm font-semibold text-foreground flex-1">{row.label}</span>
+              <span className="text-sm font-bold text-foreground tabular-nums">{row.odds.toFixed(2)}</span>
+              <span className={cn('text-xs font-bold', row.edge > 0 ? 'text-positive' : 'text-negative')}>
                 {row.edge > 0 ? '+' : ''}{(row.edge * 100).toFixed(1)}%
               </span>
             </div>
@@ -586,7 +596,7 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
                   'flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all',
                   mode === m
                     ? cn(meta.bg, meta.border, meta.accent)
-                    : 'bg-zinc-800/60 border-zinc-700 text-zinc-500 hover:text-zinc-300'
+                    : 'bg-surface/60 border-border text-subtle hover:text-foreground'
                 )}
               >
                 {m === 'EDGE' && <Zap size={10} />}
@@ -605,7 +615,7 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
               description: `${row?.label} · ${match.home} vs ${match.away} · modo ${mode}`,
             })
           }}
-          className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white font-bold text-sm py-2.5 rounded-lg transition-colors"
+          className="w-full bg-primary hover:bg-primary/80 disabled:bg-muted disabled:text-subtle text-foreground font-bold text-sm py-2.5 rounded-lg transition-colors"
         >
           Añadir al Boleto
         </button>
@@ -624,18 +634,18 @@ function AdditionalMarkets({ detail }: { detail: MatchDetailData }) {
   if (!hasAny) return null
 
   return (
-    <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+    <div className="bg-card border border-border rounded-xl p-4">
       {sectionLabel({ children: 'Mercados Adicionales', className: 'mb-3' })}
       <div className="grid grid-cols-2 gap-4">
         <div>
           {am.dobleOportunidad.length > 0 && (
             <>
-              <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider mb-2">Doble Oportunidad</p>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Doble Oportunidad</p>
               <div className="flex flex-col gap-1.5 mb-3">
                 {am.dobleOportunidad.map(m => (
-                  <div key={m.label} className="flex items-center justify-between bg-zinc-800/40 border border-zinc-800 rounded-lg px-2.5 py-1.5">
-                    <span className="text-xs text-zinc-300">{m.label}</span>
-                    <span className="text-xs font-bold text-zinc-200 tabular-nums">{m.prob}%</span>
+                  <div key={m.label} className="flex items-center justify-between bg-surface/40 border border-border rounded-lg px-2.5 py-1.5">
+                    <span className="text-xs text-foreground">{m.label}</span>
+                    <span className="text-xs font-bold text-foreground tabular-nums">{m.prob}%</span>
                   </div>
                 ))}
               </div>
@@ -643,12 +653,12 @@ function AdditionalMarkets({ detail }: { detail: MatchDetailData }) {
           )}
           {am.dnb.length > 0 && (
             <>
-              <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider mb-2">Empate No Válido (DNB)</p>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Empate No Válido (DNB)</p>
               <div className="flex flex-col gap-1.5">
                 {am.dnb.map(m => (
-                  <div key={m.label} className="flex items-center justify-between bg-zinc-800/40 border border-zinc-800 rounded-lg px-2.5 py-1.5">
-                    <span className="text-xs text-zinc-300">{m.label}</span>
-                    <span className="text-xs font-bold text-zinc-200 tabular-nums">{m.prob}%</span>
+                  <div key={m.label} className="flex items-center justify-between bg-surface/40 border border-border rounded-lg px-2.5 py-1.5">
+                    <span className="text-xs text-foreground">{m.label}</span>
+                    <span className="text-xs font-bold text-foreground tabular-nums">{m.prob}%</span>
                   </div>
                 ))}
               </div>
@@ -658,12 +668,12 @@ function AdditionalMarkets({ detail }: { detail: MatchDetailData }) {
         <div>
           {am.golesEquipo.length > 0 && (
             <>
-              <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider mb-2">Goles de Equipo</p>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Goles de Equipo</p>
               <div className="flex flex-col gap-1.5">
                 {am.golesEquipo.map(m => (
-                  <div key={m.label} className="flex items-center justify-between bg-zinc-800/40 border border-zinc-800 rounded-lg px-2.5 py-1.5">
-                    <span className="text-xs text-zinc-300">{m.label}</span>
-                    <span className="text-xs font-bold text-zinc-200 tabular-nums">{m.prob}%</span>
+                  <div key={m.label} className="flex items-center justify-between bg-surface/40 border border-border rounded-lg px-2.5 py-1.5">
+                    <span className="text-xs text-foreground">{m.label}</span>
+                    <span className="text-xs font-bold text-foreground tabular-nums">{m.prob}%</span>
                   </div>
                 ))}
               </div>
@@ -686,7 +696,7 @@ function TopScorers({ topScores }: { topScores: MatchModel['topScores'] }) {
   const maxProb = valid[0]?.probability ?? 1
 
   return (
-    <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+    <div className="bg-card border border-border rounded-xl p-4">
       {sectionLabel({ children: 'Top Marcadores Más Probables', className: 'mb-4' })}
       <div className="flex flex-col gap-3">
         {valid.map((s, i) => {
@@ -697,23 +707,23 @@ function TopScorers({ topScores }: { topScores: MatchModel['topScores'] }) {
               <div className={cn(
                 'shrink-0 w-14 text-center font-black tabular-nums rounded-lg py-1.5 text-sm border',
                 i === 0
-                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
-                  : 'bg-zinc-800/60 border-zinc-700/60 text-zinc-300'
+                  ? 'bg-positive/10 border-positive/25 text-positive'
+                  : 'bg-surface/60 border-border/60 text-foreground'
               )}>
                 {s.score}
               </div>
-              <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+              <div className="flex-1 h-1.5 bg-surface rounded-full overflow-hidden">
                 <div
-                  className={cn('h-full rounded-full transition-all', i === 0 ? 'bg-emerald-500' : 'bg-indigo-500/60')}
+                  className={cn('h-full rounded-full transition-all', i === 0 ? 'bg-positive' : 'bg-primary/60')}
                   style={{ width: `${barWidth}%` }}
                 />
               </div>
               <div className="shrink-0 flex items-center gap-2">
-                <span className={cn('text-xs font-bold tabular-nums w-10 text-right', i === 0 ? 'text-emerald-400' : 'text-zinc-400')}>
+                <span className={cn('text-xs font-bold tabular-nums w-10 text-right', i === 0 ? 'text-positive' : 'text-subtle')}>
                   {pct}%
                 </span>
                 {i === 0 && (
-                  <span className="text-[9px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 rounded-md px-1.5 py-0.5 whitespace-nowrap">
+                  <span className="text-[9px] font-black text-positive bg-positive/10 border border-positive/25 rounded-md px-1.5 py-0.5 whitespace-nowrap">
                     Más probable
                   </span>
                 )}
@@ -767,32 +777,32 @@ function ModelProbabilities({
   const awayShort = match.away.split(' ')[0]
 
   return (
-    <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+    <div className="bg-card border border-border rounded-xl p-4">
       <div className="grid grid-cols-3 items-center mb-3 text-[10px] font-bold uppercase tracking-wider">
-        <span className="text-indigo-400">{homeShort}</span>
-        <span className="text-zinc-500 text-center">Probabilidades</span>
-        <span className="text-amber-400 text-right">{awayShort}</span>
+        <span className="text-primary">{homeShort}</span>
+        <span className="text-subtle text-center">Probabilidades</span>
+        <span className="text-warning text-right">{awayShort}</span>
       </div>
       <div className="flex flex-col gap-3">
         {rows.map(row => (
           <div key={row.label}>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-200 tabular-nums w-10 shrink-0">{row.home.toFixed(1)}%</span>
+              <span className="text-xs font-bold text-foreground tabular-nums w-10 shrink-0">{row.home.toFixed(1)}%</span>
               <div className="flex-1 flex gap-px">
-                <div className="flex-1 h-1.5 bg-zinc-800 rounded-l-full overflow-hidden">
-                  <div className="h-full bg-indigo-500 rounded-l-full ml-auto" style={{ width: `${Math.min(row.home, 100)}%` }} />
+                <div className="flex-1 h-1.5 bg-surface rounded-l-full overflow-hidden">
+                  <div className="h-full bg-primary rounded-l-full ml-auto" style={{ width: `${Math.min(row.home, 100)}%` }} />
                 </div>
-                <div className="flex-1 h-1.5 bg-zinc-800 rounded-r-full overflow-hidden">
-                  <div className="h-full bg-amber-500 rounded-r-full" style={{ width: `${Math.min(row.away, 100)}%` }} />
+                <div className="flex-1 h-1.5 bg-surface rounded-r-full overflow-hidden">
+                  <div className="h-full bg-warning rounded-r-full" style={{ width: `${Math.min(row.away, 100)}%` }} />
                 </div>
               </div>
-              <span className="text-xs font-bold text-zinc-200 tabular-nums w-10 shrink-0 text-right">{row.away.toFixed(1)}%</span>
+              <span className="text-xs font-bold text-foreground tabular-nums w-10 shrink-0 text-right">{row.away.toFixed(1)}%</span>
             </div>
-            <p className="text-[10px] text-zinc-600 text-center mt-0.5">{row.label}</p>
+            <p className="text-[10px] text-muted-foreground text-center mt-0.5">{row.label}</p>
           </div>
         ))}
       </div>
-      <p className="text-[10px] text-zinc-600 mt-3 pt-3 border-t border-zinc-800">
+      <p className="text-[10px] text-muted-foreground mt-3 pt-3 border-t border-border">
         Basado en el modelo cuantitativo Poisson calibrado con datos reales.
       </p>
     </div>
@@ -805,29 +815,29 @@ function ModelProbabilities({
 
 function CornersCards({ detail }: { detail: MatchDetailData }) {
   return (
-    <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+    <div className="bg-card border border-border rounded-xl p-4">
       {sectionLabel({ children: 'Corners y Tarjetas', className: 'mb-3' })}
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3">
+        <div className="bg-surface/50 border border-border/50 rounded-xl p-3">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-5 h-5 rounded-sm bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
-              <span className="text-[9px] font-black text-amber-400">C</span>
+            <div className="w-5 h-5 rounded-sm bg-warning/20 border border-warning/30 flex items-center justify-center">
+              <span className="text-[9px] font-black text-warning">C</span>
             </div>
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Corners</span>
+            <span className="text-[10px] font-bold text-subtle uppercase tracking-wider">Corners</span>
           </div>
-          <p className="text-xl font-black text-white tabular-nums">+{detail.cornersLine}</p>
-          <p className="text-xs text-zinc-500 mt-0.5">Prob. Over: <span className="text-zinc-300 font-semibold">{detail.cornersProb}%</span></p>
+          <p className="text-xl font-black text-foreground tabular-nums">+{detail.cornersLine}</p>
+          <p className="text-xs text-subtle mt-0.5">Prob. Over: <span className="text-foreground font-semibold">{detail.cornersProb}%</span></p>
         </div>
-        <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3">
+        <div className="bg-surface/50 border border-border/50 rounded-xl p-3">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-5 h-5 rounded-sm bg-rose-500/20 border border-rose-500/30 flex items-center justify-center">
-              <span className="text-[9px] font-black text-rose-400">T</span>
+            <div className="w-5 h-5 rounded-sm bg-negative/20 border border-negative/30 flex items-center justify-center">
+              <span className="text-[9px] font-black text-negative">T</span>
             </div>
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Tarjetas</span>
+            <span className="text-[10px] font-bold text-subtle uppercase tracking-wider">Tarjetas</span>
           </div>
-          <p className="text-xl font-black text-white tabular-nums">{detail.cardsLine}+</p>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            Fricción <span className={cn('font-semibold', detail.cardsFriction.includes('Alta') ? 'text-rose-400' : 'text-amber-400')}>{detail.cardsFriction}</span>
+          <p className="text-xl font-black text-foreground tabular-nums">{detail.cardsLine}+</p>
+          <p className="text-xs text-subtle mt-0.5">
+            Fricción <span className={cn('font-semibold', detail.cardsFriction.includes('Alta') ? 'text-negative' : 'text-warning')}>{detail.cardsFriction}</span>
           </p>
         </div>
       </div>
@@ -853,31 +863,31 @@ const BET_BUILDER_CONFIG: Record<string, {
     label: 'Conservador',
     risk: 'Bajo Riesgo',
     gradient: 'from-emerald-950/80 to-zinc-900/90',
-    border: 'border-emerald-500/20',
-    accent: 'text-emerald-400',
-    badge: 'bg-emerald-500/15 border-emerald-500/25 text-emerald-300',
-    btn: 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/30',
-    dot: 'bg-emerald-500',
+    border: 'border-positive/20',
+    accent: 'text-positive',
+    badge: 'bg-positive/15 border-positive/25 text-positive/80',
+    btn: 'bg-positive/20 hover:bg-positive/30 text-positive/80 border-positive/30',
+    dot: 'bg-positive',
   },
   moderado: {
     label: 'Moderado',
     risk: 'Riesgo Medio',
     gradient: 'from-amber-950/80 to-zinc-900/90',
-    border: 'border-amber-500/20',
-    accent: 'text-amber-400',
-    badge: 'bg-amber-500/15 border-amber-500/25 text-amber-300',
-    btn: 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/30',
-    dot: 'bg-amber-500',
+    border: 'border-warning/20',
+    accent: 'text-warning',
+    badge: 'bg-warning/15 border-warning/25 text-warning/80',
+    btn: 'bg-warning/20 hover:bg-warning/30 text-warning/80 border-warning/30',
+    dot: 'bg-warning',
   },
   cazador: {
     label: 'Cazador / +EV',
     risk: '+EV Máximo',
     gradient: 'from-rose-950/80 to-zinc-900/90',
-    border: 'border-rose-500/20',
-    accent: 'text-rose-400',
-    badge: 'bg-rose-500/15 border-rose-500/25 text-rose-300',
-    btn: 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/30',
-    dot: 'bg-rose-500',
+    border: 'border-negative/20',
+    accent: 'text-negative',
+    badge: 'bg-negative/15 border-negative/25 text-negative/80',
+    btn: 'bg-negative/20 hover:bg-negative/30 text-negative/80 border-negative/30',
+    dot: 'bg-negative',
   },
 }
 
@@ -897,8 +907,8 @@ function BetBuilder({ detail }: { detail: MatchDetailData }) {
     <div>
       <div className="flex items-center justify-between mb-3">
         {sectionLabel({ children: 'Bet Builder Sugerido' })}
-        <div className="flex items-center gap-1 text-[10px] text-zinc-600">
-          <Sparkles size={9} className="text-zinc-500" />
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <Sparkles size={9} className="text-subtle" />
           IA · Groq
         </div>
       </div>
@@ -915,23 +925,23 @@ function BetBuilder({ detail }: { detail: MatchDetailData }) {
                 <span className={cn('text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border', cfg.badge)}>
                   {cfg.risk}
                 </span>
-                <span className="text-[10px] text-zinc-500 font-semibold">Cuota comb.</span>
+                <span className="text-[10px] text-subtle font-semibold">Cuota comb.</span>
               </div>
               <div>
-                <p className="text-[11px] font-bold text-zinc-300">{cfg.label}</p>
+                <p className="text-[11px] font-bold text-foreground">{cfg.label}</p>
                 <p className={cn('text-3xl font-black tabular-nums', cfg.accent)}>{bb.combined_odds.toFixed(2)}</p>
               </div>
               <div className="flex flex-col gap-1.5">
                 {bb.selections.map(sel => (
                   <div key={sel.label} className="flex items-center gap-2">
                     <CheckCircle2 size={11} className={cfg.accent} />
-                    <span className="text-xs text-zinc-300 flex-1 leading-tight">{sel.label}</span>
-                    <span className="text-xs font-bold text-zinc-400 tabular-nums shrink-0">{sel.odds_estimate.toFixed(2)}</span>
+                    <span className="text-xs text-foreground flex-1 leading-tight">{sel.label}</span>
+                    <span className="text-xs font-bold text-subtle tabular-nums shrink-0">{sel.odds_estimate.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
               <div className="flex items-center justify-between pt-1">
-                <span className="text-[10px] text-zinc-500">Prob. comb. <span className="text-zinc-400 font-semibold">{(bb.combined_probability * 100).toFixed(0)}%</span></span>
+                <span className="text-[10px] text-subtle">Prob. comb. <span className="text-subtle font-semibold">{(bb.combined_probability * 100).toFixed(0)}%</span></span>
                 <button className={cn('flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all', cfg.btn)}>
                   <Copy size={9} />
                   Copiar al boleto →
@@ -941,7 +951,7 @@ function BetBuilder({ detail }: { detail: MatchDetailData }) {
           )
         })}
       </div>
-      <p className="text-center text-[10px] text-zinc-700 mt-3 flex items-center justify-center gap-1.5">
+      <p className="text-center text-[10px] text-muted-foreground mt-3 flex items-center justify-center gap-1.5">
         <Sparkles size={9} />
         Modelo Poisson · calibrado con redes neuronales
       </p>
@@ -987,7 +997,7 @@ function PreviaTab({
 
       {/* Bet Builder full width */}
       {detail.betBuilder.length > 0 && (
-        <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+        <div className="bg-card border border-border rounded-xl p-4">
           <BetBuilder detail={detail} />
         </div>
       )}
@@ -1015,29 +1025,29 @@ function H2HTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-center">
-        <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 bg-zinc-800/60 border border-zinc-700 rounded-full px-3 py-1">
-          <Sparkles size={10} className="text-indigo-400" />
+        <div className="flex items-center gap-1.5 text-[11px] text-subtle bg-surface/60 border border-border rounded-full px-3 py-1">
+          <Sparkles size={10} className="text-primary" />
           Análisis Táctico · Groq · Llama 3.3
         </div>
       </div>
 
-      <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden">
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="px-4 pt-4 pb-3">
           {sectionLabel({ children: 'Análisis Táctico & H2H' })}
         </div>
 
         <div className="px-4 pb-4 flex flex-col gap-4">
           {/* Recent form */}
-          <div className="bg-zinc-800/40 border border-zinc-800 rounded-xl p-4">
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Forma Reciente · Últimos 5</p>
+          <div className="bg-surface/40 border border-border rounded-xl p-4">
+            <p className="text-[10px] font-bold text-subtle uppercase tracking-widest mb-3">Forma Reciente · Últimos 5</p>
             <div className="flex items-center gap-3">
               <div className="flex flex-col gap-1.5 flex-1">
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{match.home}</p>
+                <p className="text-[10px] font-bold text-subtle uppercase tracking-wider">{match.home}</p>
                 <FormBubbles form={detail.homeRecentForm} />
               </div>
-              <span className="text-[10px] font-bold text-zinc-600 uppercase">vs</span>
+              <span className="text-[10px] font-bold text-muted-foreground uppercase">vs</span>
               <div className="flex flex-col gap-1.5 flex-1 items-end">
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">{match.away}</p>
+                <p className="text-[10px] font-bold text-subtle uppercase tracking-wider text-right">{match.away}</p>
                 <FormBubbles form={detail.awayRecentForm} />
               </div>
             </div>
@@ -1045,57 +1055,59 @@ function H2HTab({
 
           {/* Quantitative model */}
           {hasLambdas && (
-            <div className="bg-zinc-800/40 border border-zinc-800 rounded-xl p-4">
+            <div className="bg-surface/40 border border-border rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Modelo Cuantitativo</p>
+                <p className="text-[10px] font-bold text-subtle uppercase tracking-widest">Modelo Cuantitativo</p>
                 <div className="flex items-center gap-3 text-[10px]">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" /><span className="text-zinc-400">{match.home.split(' ')[0]}</span></span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /><span className="text-zinc-400">{match.away.split(' ')[0]}</span></span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-primary inline-block" /><span className="text-subtle">{match.home.split(' ')[0]}</span></span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-warning inline-block" /><span className="text-subtle">{match.away.split(' ')[0]}</span></span>
                 </div>
               </div>
               <div className="flex flex-col gap-3">
                 {/* xG row */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-black tabular-nums text-indigo-400">{detail.homeExpectedGoals.toFixed(2)}</span>
-                    <span className="text-[10px] text-zinc-500">Goles Esperados</span>
-                    <span className="text-sm font-black tabular-nums text-amber-400">{detail.awayExpectedGoals.toFixed(2)}</span>
+                    <span className="text-sm font-black tabular-nums text-primary">{detail.homeExpectedGoals.toFixed(2)}</span>
+                    <span className="text-[10px] text-subtle">Goles Esperados</span>
+                    <span className="text-sm font-black tabular-nums text-warning">{detail.awayExpectedGoals.toFixed(2)}</span>
                   </div>
                   <div className="flex h-2 gap-px">
-                    <div className="flex-1 bg-zinc-800 rounded-l-full overflow-hidden">
-                      <div className="h-full bg-indigo-500 rounded-l-full ml-auto" style={{ width: `${Math.min((detail.homeExpectedGoals / 3) * 100, 100)}%` }} />
+                    <div className="flex-1 bg-surface rounded-l-full overflow-hidden">
+                      <div className="h-full bg-primary rounded-l-full ml-auto" style={{ width: `${Math.min((detail.homeExpectedGoals / 3) * 100, 100)}%` }} />
                     </div>
-                    <div className="flex-1 bg-zinc-800 rounded-r-full overflow-hidden">
-                      <div className="h-full bg-amber-500 rounded-r-full" style={{ width: `${Math.min((detail.awayExpectedGoals / 3) * 100, 100)}%` }} />
+                    <div className="flex-1 bg-surface rounded-r-full overflow-hidden">
+                      <div className="h-full bg-warning rounded-r-full" style={{ width: `${Math.min((detail.awayExpectedGoals / 3) * 100, 100)}%` }} />
                     </div>
                   </div>
                 </div>
                 {/* Total goals row */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-black tabular-nums text-indigo-400">{detail.totalExpectedGoals.toFixed(2)} tot.</span>
-                    <span className="text-[10px] text-zinc-500">Total Goles</span>
-                    <span className="text-sm font-black tabular-nums text-amber-400">{detail.totalExpectedGoals.toFixed(2)} tot.</span>
+                    <span className="text-sm font-black tabular-nums text-primary">{detail.totalExpectedGoals.toFixed(2)} tot.</span>
+                    <span className="text-[10px] text-subtle">Total Goles</span>
+                    <span className="text-sm font-black tabular-nums text-warning">{detail.totalExpectedGoals.toFixed(2)} tot.</span>
                   </div>
                   <div className="flex h-2 gap-px">
-                    <div className="flex-1 bg-zinc-800 rounded-l-full overflow-hidden">
-                      <div className="h-full bg-indigo-500/70 rounded-l-full ml-auto" style={{ width: `${Math.min((detail.totalExpectedGoals / 5) * 100, 100)}%` }} />
+                    <div className="flex-1 bg-surface rounded-l-full overflow-hidden">
+                      <div className="h-full bg-primary/70 rounded-l-full ml-auto" style={{ width: `${Math.min((detail.totalExpectedGoals / 5) * 100, 100)}%` }} />
                     </div>
-                    <div className="flex-1 bg-zinc-800 rounded-r-full overflow-hidden">
-                      <div className="h-full bg-amber-500/70 rounded-r-full" style={{ width: `${Math.min((detail.totalExpectedGoals / 5) * 100, 100)}%` }} />
+                    <div className="flex-1 bg-surface rounded-r-full overflow-hidden">
+                      <div className="h-full bg-warning/70 rounded-r-full" style={{ width: `${Math.min((detail.totalExpectedGoals / 5) * 100, 100)}%` }} />
                     </div>
                   </div>
                 </div>
               </div>
               <div className="flex gap-2 mt-3">
                 {detail.totalExpectedGoals < 2.2 && (
-                  <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-zinc-400 bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-1">
-                    🔒 Duelo cerrado
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-subtle bg-surface border border-border rounded-full px-2.5 py-1">
+                    <Lock size={10} />
+                    Duelo cerrado
                   </span>
                 )}
                 {detail.homeExpectedGoals > detail.awayExpectedGoals + 0.5 && (
-                  <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-zinc-400 bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-1">
-                    🏠 Local dominante
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-subtle bg-surface border border-border rounded-full px-2.5 py-1">
+                    <Home size={10} />
+                    Local dominante
                   </span>
                 )}
               </div>
@@ -1103,19 +1115,19 @@ function H2HTab({
           )}
 
           {/* Signal & narrative */}
-          <div className="bg-zinc-800/40 border border-zinc-800 rounded-xl p-4">
+          <div className="bg-surface/40 border border-border rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
-              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+              <p className="text-[10px] font-bold text-subtle uppercase tracking-widest">
                 {detail.signalStrength === 3 ? 'Señal Fuerte' : detail.signalStrength === 2 ? 'Señal Media' : 'Señal Débil'}
               </p>
               <div className="flex gap-1">
                 {[1, 2, 3].map(i => (
-                  <div key={i} className={cn('w-2 h-2 rounded-full', i <= detail.signalStrength ? 'bg-indigo-400' : 'bg-zinc-700')} />
+                  <div key={i} className={cn('w-2 h-2 rounded-full', i <= detail.signalStrength ? 'bg-primary' : 'bg-muted')} />
                 ))}
               </div>
             </div>
-            <p className="text-sm text-zinc-300 leading-relaxed">
-              <span className="font-bold text-white">Resumen:</span> {detail.aiSummaryPill || `${match.home} vs ${match.away}`} — {match.league}
+            <p className="text-sm text-foreground leading-relaxed">
+              <span className="font-bold text-foreground">Resumen:</span> {detail.aiSummaryPill || `${match.home} vs ${match.away}`} — {match.league}
             </p>
           </div>
         </div>
@@ -1123,14 +1135,14 @@ function H2HTab({
 
       {/* Narrative */}
       {detail.narrative && (
-        <div className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-4">
+        <div className="bg-card/40 border border-border rounded-xl p-4">
           {sectionLabel({ children: 'Narrativa del Modelo', className: 'mb-3' })}
           <NarrativeBody text={detail.narrative} />
         </div>
       )}
 
       {!detail.narrative && enriched?.tacticalNarrative === '' && (
-        <p className="rounded-xl border border-zinc-800 bg-zinc-900/30 px-4 py-3 text-[11px] text-zinc-500 text-center">
+        <p className="rounded-xl border border-border bg-card/30 px-4 py-3 text-[11px] text-subtle text-center">
           El análisis táctico detallado se genera 14 horas antes del inicio del partido.
         </p>
       )}
@@ -1148,37 +1160,37 @@ function ArbitroTab({ match, detail }: { match: Match; detail: MatchDetailData }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl overflow-hidden">
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-4 pt-4 pb-3">
           {sectionLabel({ children: 'Perfil del Árbitro' })}
-          <span className="text-[10px] text-zinc-500 bg-zinc-800 border border-zinc-700 rounded-md px-2 py-0.5">
+          <span className="text-[10px] text-subtle bg-surface border border-border rounded-md px-2 py-0.5">
             {hasReferee ? match.referee.name : 'Por confirmar'}
           </span>
         </div>
         <div className="px-4 pb-4">
           {hasReferee ? (
             <div className="grid grid-cols-3 gap-3">
-              <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 text-center">
-                <p className="text-xl font-black tabular-nums text-amber-400">{match.referee.yellows}</p>
-                <p className="text-[10px] text-zinc-500 mt-0.5">Amarillas prom.</p>
+              <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
+                <p className="text-xl font-black tabular-nums text-warning">{match.referee.yellows}</p>
+                <p className="text-[10px] text-subtle mt-0.5">Amarillas prom.</p>
               </div>
-              <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 text-center">
-                <p className="text-xl font-black tabular-nums text-rose-400">{match.referee.reds}</p>
-                <p className="text-[10px] text-zinc-500 mt-0.5">Rojas prom.</p>
+              <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
+                <p className="text-xl font-black tabular-nums text-negative">{match.referee.reds}</p>
+                <p className="text-[10px] text-subtle mt-0.5">Rojas prom.</p>
               </div>
-              <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 text-center">
-                <p className="text-xl font-black tabular-nums text-white">{match.referee.strictness}</p>
-                <p className="text-[10px] text-zinc-500 mt-0.5">Rigor (0–100)</p>
+              <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
+                <p className="text-xl font-black tabular-nums text-foreground">{match.referee.strictness}</p>
+                <p className="text-[10px] text-subtle mt-0.5">Rigor (0–100)</p>
               </div>
             </div>
           ) : (
-            <div className="flex flex-col items-center py-8 text-center border border-dashed border-zinc-800 rounded-xl">
-              <div className="w-14 h-14 rounded-full bg-zinc-800/80 border border-zinc-700 flex items-center justify-center mb-4">
-                <User size={22} className="text-zinc-600" />
+            <div className="flex flex-col items-center py-8 text-center border border-dashed border-border rounded-xl">
+              <div className="w-14 h-14 rounded-full bg-surface/80 border border-border flex items-center justify-center mb-4">
+                <User size={22} className="text-muted-foreground" />
               </div>
-              <p className="text-sm font-bold text-zinc-300 mb-1">Árbitro pendiente de confirmación</p>
-              <p className="text-xs text-zinc-600 mb-4 leading-relaxed">
-                Normalmente se confirma <span className="font-semibold text-zinc-400">4–6 horas</span>
+              <p className="text-sm font-bold text-foreground mb-1">Árbitro pendiente de confirmación</p>
+              <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+                Normalmente se confirma <span className="font-semibold text-subtle">4–6 horas</span>
                 <br />antes del partido
               </p>
               <button
@@ -1186,11 +1198,11 @@ function ArbitroTab({ match, detail }: { match: Match; detail: MatchDetailData }
                 className={cn(
                   'flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-lg border transition-all',
                   notified
-                    ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-400'
-                    : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-indigo-500/40 hover:text-white'
+                    ? 'bg-primary/15 border-primary/30 text-primary'
+                    : 'bg-surface border-border text-foreground hover:border-primary/40 hover:text-foreground'
                 )}
               >
-                <Bell size={12} className={notified ? 'text-indigo-400' : ''} />
+                <Bell size={12} className={notified ? 'text-primary' : ''} />
                 {notified ? 'Notificación activada' : 'Notificarme cuando se confirme'}
               </button>
             </div>
@@ -1199,39 +1211,39 @@ function ArbitroTab({ match, detail }: { match: Match; detail: MatchDetailData }
       </div>
 
       {/* League context */}
-      <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4">
         {sectionLabel({ children: 'Contexto de la Liga', className: 'mb-3' })}
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 text-center">
-            <div className="w-7 h-7 rounded-md bg-amber-500/20 border border-amber-500/30 flex items-center justify-center mx-auto mb-2">
-              <div className="w-3 h-4 bg-amber-400 rounded-sm" />
+          <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
+            <div className="w-7 h-7 rounded-md bg-warning/20 border border-warning/30 flex items-center justify-center mx-auto mb-2">
+              <div className="w-3 h-4 bg-warning rounded-sm" />
             </div>
-            <p className="text-xl font-black tabular-nums text-white">{detail.avgCards}</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5">Tarjetas prom. Liga</p>
-            <p className="text-[10px] text-zinc-600">por partido</p>
+            <p className="text-xl font-black tabular-nums text-foreground">{detail.avgCards}</p>
+            <p className="text-[10px] text-subtle mt-0.5">Tarjetas prom. Liga</p>
+            <p className="text-[10px] text-muted-foreground">por partido</p>
           </div>
-          <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 text-center">
-            <div className="w-7 h-7 rounded-md bg-rose-500/20 border border-rose-500/30 flex items-center justify-center mx-auto mb-2">
-              <div className="w-3 h-4 bg-rose-400 rounded-sm" />
+          <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
+            <div className="w-7 h-7 rounded-md bg-negative/20 border border-negative/30 flex items-center justify-center mx-auto mb-2">
+              <div className="w-3 h-4 bg-negative rounded-sm" />
             </div>
-            <p className="text-xl font-black tabular-nums text-white">{detail.avgReds}</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5">Rojas prom. Liga</p>
-            <p className="text-[10px] text-zinc-600">por partido</p>
+            <p className="text-xl font-black tabular-nums text-foreground">{detail.avgReds}</p>
+            <p className="text-[10px] text-subtle mt-0.5">Rojas prom. Liga</p>
+            <p className="text-[10px] text-muted-foreground">por partido</p>
           </div>
-          <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 text-center">
-            <div className="w-7 h-7 rounded-md bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mx-auto mb-2">
-              <ShieldAlert size={14} className="text-zinc-400" />
+          <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
+            <div className="w-7 h-7 rounded-md bg-muted border border-border flex items-center justify-center mx-auto mb-2">
+              <ShieldAlert size={14} className="text-subtle" />
             </div>
-            <p className="text-xl font-black tabular-nums text-white">{detail.avgFouls}</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5">Faltas prom. liga</p>
-            <p className="text-[10px] text-zinc-600">por partido</p>
+            <p className="text-xl font-black tabular-nums text-foreground">{detail.avgFouls}</p>
+            <p className="text-[10px] text-subtle mt-0.5">Faltas prom. liga</p>
+            <p className="text-[10px] text-muted-foreground">por partido</p>
           </div>
         </div>
-        <div className="flex items-start gap-2.5 mt-3 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2.5">
-          <span className="text-amber-400 mt-0.5 shrink-0">💡</span>
-          <p className="text-xs text-zinc-400 leading-relaxed">
-            <span className="font-bold text-zinc-300">Consejo:</span> En este mercado, el árbitro puede mover las cuotas de tarjetas hasta un{' '}
-            <span className="font-bold text-amber-400">15–25%</span>. Espera la confirmación antes de apostar en mercados de disciplina.
+        <div className="flex items-start gap-2.5 mt-3 bg-warning/5 border border-warning/15 rounded-lg px-3 py-2.5">
+          <Lightbulb size={14} className="text-warning mt-0.5 shrink-0" />
+          <p className="text-xs text-subtle leading-relaxed">
+            <span className="font-bold text-foreground">Consejo:</span> En este mercado, el árbitro puede mover las cuotas de tarjetas hasta un{' '}
+            <span className="font-bold text-warning">15–25%</span>. Espera la confirmación antes de apostar en mercados de disciplina.
           </p>
         </div>
       </div>
@@ -1244,7 +1256,7 @@ function ArbitroTab({ match, detail }: { match: Match; detail: MatchDetailData }
 /* ------------------------------------------------------------------ */
 
 function MatchDetailContent({ match, enriched }: { match: Match; enriched?: EnrichedMatch | null }) {
-  const [activeTab, setActiveTab] = React.useState<DetailTab>('previa')
+  const [activeTab, setActiveTab] = React.useState<MatchTab>('preview')
   const model = React.useMemo(() => buildModel(match.lambdaHome, match.lambdaAway), [match])
   const rows  = React.useMemo(() => marketRows(match, model), [match, model])
   const best  = React.useMemo(() => {
@@ -1254,12 +1266,6 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
   const detail = React.useMemo(() => buildDetail(match, enriched ?? null, model), [match, enriched, model])
   const leagueMeta = resolveLeague(match.leagueExternalId, match.league)
 
-  const tabs: { id: DetailTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'previa', label: 'Previa & Pronóstico', icon: <TrendingUp size={12} /> },
-    { id: 'h2h', label: 'H2H & Táctico', icon: <Swords size={12} /> },
-    { id: 'arbitro', label: 'Árbitro', icon: <Target size={12} /> },
-  ]
-
   return (
     <div className="flex flex-col gap-4">
       <MatchHero match={match} leagueMeta={leagueMeta} model={model} />
@@ -1268,34 +1274,15 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
         <ConfidenceBar detail={detail} model={model} />
       )}
 
-      {/* Sticky tabs */}
-      <div className="sticky top-14 z-20 bg-[#09090b]/95 backdrop-blur-sm py-3 -mx-6 px-6 border-b border-zinc-800/50">
-        <div className="flex items-center justify-center gap-6">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                'flex items-center gap-2 text-xs font-semibold pb-2 border-b-2 transition-all',
-                activeTab === tab.id
-                  ? 'text-indigo-400 border-indigo-400'
-                  : 'text-zinc-500 border-transparent hover:text-zinc-300'
-              )}
-            >
-              {tab.icon}
-              {tab.label.toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </div>
+      <MatchTabBar active={activeTab} onChange={setActiveTab} />
 
-      {activeTab === 'previa' && (
+      {activeTab === 'preview' && (
         <PreviaTab match={match} enriched={enriched ?? null} model={model} rows={rows} best={best} detail={detail} />
       )}
       {activeTab === 'h2h' && (
         <H2HTab match={match} enriched={enriched ?? null} model={model} detail={detail} />
       )}
-      {activeTab === 'arbitro' && (
+      {activeTab === 'referee' && (
         <ArbitroTab match={match} detail={detail} />
       )}
     </div>
@@ -1353,20 +1340,20 @@ export default function PartidoDetailPage() {
   }, [params.id])
 
   return (
-    <div className="min-h-svh bg-[#09090b]">
-      <header className="sticky top-0 z-40 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-sm">
+    <div className="min-h-svh bg-background">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-subtle hover:text-foreground transition-colors"
           >
             <ArrowLeft size={14} />
             Volver a Partidos
           </Link>
           {match && (
-            <p className="ml-auto truncate text-sm font-bold text-zinc-300">
+            <h1 className="ml-auto truncate text-sm font-bold text-foreground">
               {match.home} vs {match.away}
-            </p>
+            </h1>
           )}
         </div>
       </header>
@@ -1376,13 +1363,13 @@ export default function PartidoDetailPage() {
           {loading && <PageSkeleton />}
           {error && !loading && (
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-10 text-center">
-              <p className="text-sm font-medium text-zinc-200">Partido no encontrado</p>
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="text-sm font-medium text-foreground">Partido no encontrado</p>
+              <p className="mt-1 text-xs text-subtle">
                 Es posible que el partido ya no esté disponible para hoy.
               </p>
               <Link
                 href="/"
-                className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-[#6366f1] hover:underline"
+                className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
               >
                 <ArrowLeft size={14} />
                 Volver al inicio

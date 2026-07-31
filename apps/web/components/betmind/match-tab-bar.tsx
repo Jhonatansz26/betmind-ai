@@ -40,7 +40,11 @@ export function MatchTabBar({ active, onChange, className }: MatchTabBarProps) {
       )}
       aria-label="Navegación del partido"
     >
-      <div className="no-scrollbar mx-auto flex w-full max-w-3xl items-end overflow-x-auto px-4">
+      <div
+        role="tablist"
+        aria-orientation="horizontal"
+        className="no-scrollbar mx-auto flex w-full max-w-3xl items-end overflow-x-auto px-4"
+      >
         {TABS.map(({ id, icon: Icon, label }) => {
           const isActive = active === id
           return (

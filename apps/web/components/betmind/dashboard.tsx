@@ -21,34 +21,31 @@ import { DateSelector, formatDateTitle, type DateFilter } from './date-selector'
 
 function TicketSkeleton() {
   return (
-    <div className="flex h-[380px] flex-col gap-0 overflow-hidden rounded-xl border border-border bg-card">
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card">
       <div className="h-[3px] w-full bg-muted" />
       <div className="flex flex-col gap-3 p-4">
         <div className="flex items-center justify-between gap-3">
-          <div className="h-6 w-24 animate-pulse rounded-md bg-muted" />
-          <div className="h-5 w-16 animate-pulse rounded bg-muted" />
+          <div className="h-6 w-24 skeleton rounded-md" />
+          <div className="h-5 w-16 skeleton rounded" />
         </div>
-        <div className="h-[3px] w-full animate-pulse rounded-full bg-muted" />
-        <div className="h-3 w-32 animate-pulse rounded bg-muted" />
+        <div className="h-[3px] w-full skeleton rounded-full" />
+        <div className="h-3 w-32 skeleton rounded" />
       </div>
       <div className="flex flex-1 flex-col px-4 pb-0">
         {[0, 1, 2].map((i) => (
           <div key={i} className="grid grid-cols-[20px_1fr_auto] items-center gap-3 border-b border-border-subtle py-3 last:border-b-0">
-            <div className="h-4 w-4 animate-pulse rounded bg-muted" />
+            <div className="h-4 w-4 skeleton rounded" />
             <div className="flex flex-col gap-1.5">
-              <div className="h-3 w-28 animate-pulse rounded bg-muted" />
-              <div className="h-2.5 w-20 animate-pulse rounded bg-muted" />
+              <div className="h-3 w-28 skeleton rounded" />
+              <div className="h-2.5 w-20 skeleton rounded" />
             </div>
-            <div className="h-6 w-10 animate-pulse rounded bg-muted" />
+            <div className="h-6 w-10 skeleton rounded" />
           </div>
         ))}
       </div>
       <div className="flex flex-col gap-2 border-t border-border bg-surface-raised/50 p-4">
-        <div className="flex items-center gap-2">
-          <div className="h-7 flex-1 animate-pulse rounded-md bg-muted" />
-          <div className="h-7 flex-1 animate-pulse rounded-md bg-muted" />
-        </div>
-        <div className="h-2 w-48 animate-pulse rounded bg-muted" />
+        <div className="h-7 w-full skeleton rounded-md" />
+        <div className="h-2 w-48 skeleton rounded" />
       </div>
     </div>
   )
@@ -56,40 +53,40 @@ function TicketSkeleton() {
 
 function MatchSkeleton() {
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 lg:flex-row lg:items-center lg:gap-6">
-      <div className="flex items-center justify-between gap-3 lg:w-[20%] lg:flex-col lg:items-start lg:justify-start lg:gap-1.5">
-        <div className="flex items-center gap-1.5">
-          <div className="h-3 w-3 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-20 animate-pulse rounded bg-muted" />
-        </div>
-        <div className="h-4 w-16 animate-pulse rounded bg-muted" />
-        <div className="h-5 w-16 animate-pulse rounded-sm bg-muted" />
+    <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-4 py-3">
+      {/* COLUMN 1 — Time / Status (100px) */}
+      <div className="flex w-[100px] shrink-0 flex-col items-start gap-1">
+        <div className="h-4 w-16 skeleton rounded" />
+        <div className="h-4 w-14 skeleton rounded-full" />
       </div>
-      <div className="flex flex-col gap-2 lg:w-[50%]">
-        <div className="flex items-center justify-between gap-3">
-          <div className="h-4 w-24 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-10 animate-pulse rounded bg-muted" />
+
+      {/* COLUMN 2 — Teams + Model (flex-1) */}
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-6 shrink-0 skeleton rounded" />
+          <div className="h-4 w-28 skeleton rounded" />
+          <div className="ml-auto h-4 w-10 skeleton rounded" />
         </div>
-        <div className="flex items-center gap-3">
-          <div className="h-12 w-[120px] animate-pulse rounded bg-muted" />
-          <div className="flex flex-col gap-1">
-            <div className="h-3 w-28 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-20 animate-pulse rounded bg-muted" />
-          </div>
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-6 shrink-0 skeleton rounded" />
+          <div className="h-4 w-24 skeleton rounded" />
+          <div className="ml-auto h-4 w-10 skeleton rounded" />
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <div className="h-4 w-24 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-10 animate-pulse rounded bg-muted" />
+        <div className="flex items-center gap-2">
+          <div className="h-3 w-16 skeleton rounded" />
+          <div className="h-3 w-36 skeleton rounded" />
         </div>
       </div>
-      <div className="flex flex-col gap-2 border-t border-border pt-3 lg:w-[30%] lg:border-t-0 lg:pt-0 lg:pl-6">
-        <div className="h-7 w-20 animate-pulse rounded-md bg-muted" />
-        <div className="flex flex-wrap gap-1.5">
-          <div className="h-5 w-14 animate-pulse rounded-sm bg-muted" />
-          <div className="h-5 w-14 animate-pulse rounded-sm bg-muted" />
-          <div className="h-5 w-14 animate-pulse rounded-sm bg-muted" />
+
+      {/* COLUMN 3 — Edge + 1X2 + Link (180px) */}
+      <div className="flex w-[180px] shrink-0 flex-col items-end gap-1.5">
+        <div className="h-6 w-20 skeleton rounded-full" />
+        <div className="flex gap-1.5">
+          <div className="h-5 w-14 skeleton rounded-sm" />
+          <div className="h-5 w-14 skeleton rounded-sm" />
+          <div className="h-5 w-14 skeleton rounded-sm" />
         </div>
-        <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+        <div className="h-3 w-20 skeleton rounded" />
       </div>
     </div>
   )
@@ -287,7 +284,10 @@ export function Dashboard() {
                     ))}
                   </div>
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <div className={cn(
+                    'grid items-stretch gap-4',
+                    tickets.length === 1 ? 'max-w-md' : tickets.length === 2 ? 'md:grid-cols-2 max-w-2xl' : 'md:grid-cols-2 xl:grid-cols-3',
+                  )}>
                     {tickets.map((ticket) => (
                       <TicketCard
                         key={ticket.mode}

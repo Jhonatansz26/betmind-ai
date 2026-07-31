@@ -4,7 +4,6 @@ import { toast } from 'sonner'
 import { StarIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { MODE_META, type Ticket } from '@/lib/betmind'
 import { cn } from '@/lib/utils'
 import { ConfidenceBar } from './confidence-bar'
@@ -23,12 +22,12 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
   }
 
   return (
-    <Card className="relative flex h-full flex-col gap-0 overflow-hidden border-border bg-card p-0">
+    <div className="flex h-full flex-col rounded-xl border border-border bg-card">
       {/* Mode accent strip — top 3px bar */}
-      <div className={cn('h-[3px] w-full shrink-0', meta.accent)} aria-hidden />
+      <div className={cn('h-[3px] w-full shrink-0 rounded-t-xl', meta.accent)} aria-hidden />
 
       {/* ── HEADER — mode badge + combined odds ── */}
-      <CardHeader className="gap-3 p-4 pb-0">
+      <div className="flex flex-col gap-3 p-4 pb-1">
         {/* Row 1: mode badge + combined odds */}
         <div className="flex items-center justify-between gap-3">
           <span
@@ -43,11 +42,8 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
             {meta.label}
           </span>
 
-          {/* Combined odds — @ X.XX format, prominent, modern tabular style */}
-          <span 
-            style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
-            className="num font-mono text-2xl font-bold tracking-tight text-slate-100"
-          >
+          {/* Combined odds — @ X.XX format */}
+          <span className="num font-mono text-2xl font-bold tracking-tight text-foreground">
             @ {ticket.combinedOdds.toFixed(2)}
           </span>
         </div>
@@ -55,33 +51,29 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
         {/* Row 2: confidence bar */}
         <ConfidenceBar score={ticket.confidence} />
 
-        {/* Row 3: EV average only — no correlation text */}
-        <div className="pb-1">
-          <span className="num text-xs font-semibold text-positive">
-            +EV {(ticket.evAverage * 100).toFixed(1)}% promedio
-          </span>
-        </div>
-      </CardHeader>
+        {/* Row 3: EV average */}
+        <span className="num text-xs font-semibold text-positive">
+          +EV {(ticket.evAverage * 100).toFixed(1)}% promedio
+        </span>
+      </div>
 
-      {/* ── LEGS — v0 style rounded boxes ── */}
-      <CardContent className="flex-1 px-4 pt-2 pb-0">
-        <ul className="flex flex-col gap-2">
-          {ticket.legs.map((leg, i) => (
-            <TicketLeg key={`${leg.match}-${leg.market}`} leg={leg} index={i} />
-          ))}
-        </ul>
-      </CardContent>
+      {/* ── LEGS — fills remaining vertical space ── */}
+      <div className="flex flex-1 flex-col gap-2 px-4 pb-4">
+        {ticket.legs.map((leg, i) => (
+          <TicketLeg key={`${leg.match}-${leg.market}`} leg={leg} index={i} />
+        ))}
+      </div>
 
-      {/* ── FOOTER — single action ── */}
-      <CardFooter className="mt-auto flex-col items-stretch gap-2 border-t border-border bg-surface-raised/50 p-4">
+      {/* ── FOOTER — pinned to bottom ── */}
+      <div className="mt-auto flex flex-col gap-2 border-t border-border/40 px-4 py-3">
         <Button variant="outline" size="sm" className="w-full" onClick={handleTrack}>
-          <StarIcon data-icon="inline-start" />
+          <StarIcon data-icon="inline-start" aria-hidden="true" />
           Añadir a Seguimiento
         </Button>
         <p className="text-[10px] leading-tight text-subtle">
           Confianza basada en datos de 90 min. No es asesoría financiera.
         </p>
-      </CardFooter>
-    </Card>
+      </div>
+    </div>
   )
 }

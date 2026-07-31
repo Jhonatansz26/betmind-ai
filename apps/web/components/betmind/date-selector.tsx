@@ -20,11 +20,17 @@ interface DateSelectorProps {
 
 export function DateSelector({ value, onChange, className }: DateSelectorProps) {
   return (
-    <div className={cn('inline-flex rounded-lg border border-border bg-muted/60 p-0.5', className)}>
+    <div
+      role="radiogroup"
+      aria-label="Filtrar por fecha"
+      className={cn('inline-flex rounded-lg border border-border bg-muted/60 p-0.5', className)}
+    >
       {OPTIONS.map((opt) => (
         <button
           key={opt.value}
           type="button"
+          role="radio"
+          aria-checked={value === opt.value}
           onClick={() => onChange(opt.value)}
           className={cn(
             'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',

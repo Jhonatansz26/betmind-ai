@@ -8,7 +8,7 @@ export function TicketLeg({ leg, index = 0 }: { leg: TicketLegData; index?: numb
 
   return (
     <li
-      className="flex items-center justify-between rounded-lg border border-border/60 bg-surface/60 px-3.5 py-3 transition-colors hover:border-border"
+      className="stagger-item flex items-center justify-between rounded-lg border border-border/60 bg-surface/60 px-3.5 py-3 transition-colors hover:border-border"
       style={{ animationDelay: `${index * 80}ms` }}
     >
       {/* Left: market name / teams / EV */}
@@ -16,7 +16,9 @@ export function TicketLeg({ leg, index = 0 }: { leg: TicketLegData; index?: numb
         <span className="truncate text-sm font-semibold text-foreground">{leg.market}</span>
         <div className="flex items-center gap-1.5 text-subtle">
           <GlobeIcon className="size-3 shrink-0" aria-hidden />
-          <span className="truncate text-xs text-muted-foreground">{leg.match}</span>
+          <span className="block text-xs text-muted-foreground leading-tight" title={leg.match}>
+            {leg.match}
+          </span>
         </div>
         <span className={cn('text-[10px] font-semibold', evPositive ? 'text-positive' : 'text-negative')}>
           {evText}

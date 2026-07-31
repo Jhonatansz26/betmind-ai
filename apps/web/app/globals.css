@@ -118,46 +118,122 @@
   font-family: var(--font-mono);
 }
 
+/* ── Live pulse dot ── */
 @keyframes live-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.35;
-    transform: scale(0.82);
-  }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.82); }
 }
 
 .live-dot {
   animation: live-pulse 1.4s ease-in-out infinite;
 }
 
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+/* ── EV+ glow pulse ── */
+@keyframes ev-glow {
+  0%, 100% { box-shadow: 0 0 12px -4px var(--positive); }
+  50% { box-shadow: 0 0 20px -2px var(--positive); }
 }
 
-@keyframes ping {
-  75%, 100% {
-    transform: scale(1.6);
+.ev-glow {
+  animation: ev-glow 3s ease-in-out infinite;
+}
+
+/* ── Stagger list entry ── */
+@keyframes stagger-in {
+  from {
     opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
-.animate-ping {
-  animation: ping 1.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+
+.stagger-item {
+  opacity: 0;
+  animation: stagger-in 300ms ease-out forwards;
 }
 
+/* ── Skeleton shimmer ── */
 @keyframes skeleton-shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+
 .skeleton {
-  background: linear-gradient(90deg, #18181b 25%, #27272a 50%, #18181b 75%);
+  background: linear-gradient(90deg, var(--muted) 25%, var(--surface-raised) 50%, var(--muted) 75%);
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+/* ── Accordion content expand ── */
+@keyframes accordion-down {
+  from { max-height: 0; opacity: 0; }
+  to { max-height: var(--accordion-height, 2000px); opacity: 1; }
+}
+
+.accordion-content {
+  overflow: hidden;
+  animation: accordion-down 250ms ease-out forwards;
+}
+
+/* ── Ping ── */
+@keyframes ping {
+  75%, 100% { transform: scale(1.6); opacity: 0; }
+}
+
+.animate-ping {
+  animation: ping 1.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ── Scroll ── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── Touch & scroll optimizations ── */
+button,
+a,
+[role='button'],
+[role='tab'],
+[role='radio'] {
+  touch-action: manipulation;
+}
+
+[role='dialog'],
+[role='dialog'] > [class*='overflow'] {
+  overscroll-behavior-y: contain;
+}
+
+/* ── Active press feedback ── */
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):active,
+  [role='button']:not(:disabled):active,
+  [role='tab']:active,
+  [role='radio']:active,
+  a[class*='rounded']:active {
+    transform: scale(0.97);
+    transition: transform 150ms ease-out;
+  }
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  .ev-glow,
+  .animate-ping,
+  .skeleton,
+  .stagger-item,
+  .accordion-content {
+    animation: none;
+  }
+  .live-dot { opacity: 1; }
+  .stagger-item { opacity: 1; transform: none; }
+  .accordion-content { max-height: none; opacity: 1; }
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

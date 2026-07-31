@@ -64,9 +64,11 @@ export function LeagueAccordion({
       </button>
 
       {isOpen && (
-        <div className="flex flex-col gap-2 border-t border-border bg-surface/40 p-2">
-          {matches.map((match) => (
-            <MatchCard key={match.id} match={match} />
+        <div className="accordion-content flex flex-col gap-2 border-t border-border bg-surface/40 p-2">
+          {matches.map((match, i) => (
+            <div key={match.id} className="stagger-item" style={{ animationDelay: `${i * 40}ms` }}>
+              <MatchCard match={match} />
+            </div>
           ))}
         </div>
       )}
