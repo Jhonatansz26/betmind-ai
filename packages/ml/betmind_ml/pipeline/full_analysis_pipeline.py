@@ -43,6 +43,16 @@ async def run_full_analysis(
     corners_data: dict | None = None,
     bookmaker_odds: dict | None = None,
     is_neutral_venue: bool = False,
+    home_corners_for_avg: float | None = None,
+    away_corners_for_avg: float | None = None,
+    home_corners_against_avg: float | None = None,
+    away_corners_against_avg: float | None = None,
+    cards_mti: float = 1.0,
+    referee_strictness: float = 1.0,
+    home_sot_for_avg: float | None = None,
+    away_sot_for_avg: float | None = None,
+    home_sot_against_avg: float | None = None,
+    away_sot_against_avg: float | None = None,
 ) -> tuple[MatchPredictionOutput, TacticalAnalysis]:
     """
     Retorna una tupla (output_cuantitativo, analisis_tactico).
@@ -63,6 +73,18 @@ async def run_full_analysis(
         h2h_matches=h2h_matches,
         bookmaker_odds=bookmaker_odds,
         is_neutral_venue=is_neutral_venue,
+        home_corners_for_avg=home_corners_for_avg,
+        away_corners_for_avg=away_corners_for_avg,
+        home_corners_against_avg=home_corners_against_avg,
+        away_corners_against_avg=away_corners_against_avg,
+        home_yellows_avg=home_yellows_avg,
+        away_yellows_avg=away_yellows_avg,
+        cards_mti=cards_mti,
+        referee_strictness=referee_strictness,
+        home_sot_for_avg=home_sot_for_avg,
+        away_sot_for_avg=away_sot_for_avg,
+        home_sot_against_avg=home_sot_against_avg,
+        away_sot_against_avg=away_sot_against_avg,
     )
 
     h2h_stats = _compute_h2h_stats(h2h_matches)

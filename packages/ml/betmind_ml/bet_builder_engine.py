@@ -17,17 +17,26 @@ _CONSERVATIVE_MARKETS = {
     "HOME_OVER_0_5", "AWAY_OVER_0_5",
     "OVER_0_5", "OVER_1_5", "UNDER_3_5",
     "1X2_HOME", "1X2_AWAY",
+    "CORNERS_OVER_7_5",
+    "CARDS_OVER_3_5",
+    "SHOTS_OT_OVER_6_5",
 }
 _MODERATE_MARKETS = {
     "DNB_HOME", "DNB_AWAY",
     "BTTS_YES", "BTTS_NO",
     "OVER_2_5", "HOME_OVER_1_5", "AWAY_OVER_1_5",
     "1X2_DRAW",
+    "CORNERS_OVER_8_5", "CORNERS_UNDER_10_5",
+    "CARDS_OVER_4_5",
+    "SHOTS_OT_OVER_7_5",
 }
 _HUNTER_MARKETS = {
     "OVER_3_5", "BTTS_YES",
     "HOME_OVER_1_5", "AWAY_OVER_1_5",
     "DOUBLE_12",
+    "CORNERS_OVER_9_5",
+    "CARDS_OVER_5_5", "CARDS_UNDER_5_5",
+    "SHOTS_OT_OVER_8_5", "SHOTS_OT_OVER_9_5",
 }
 
 
@@ -81,6 +90,28 @@ _MARKET_LABELS: dict[str, str] = {
     "HOME_OVER_1_5": "Local Más de 1.5 Goles",
     "AWAY_OVER_0_5": "Visitante Más de 0.5 Goles",
     "AWAY_OVER_1_5": "Visitante Más de 1.5 Goles",
+    "CORNERS_OVER_7_5": "Más de 7.5 Córneres",
+    "CORNERS_UNDER_7_5": "Menos de 7.5 Córneres",
+    "CORNERS_OVER_8_5": "Más de 8.5 Córneres",
+    "CORNERS_UNDER_8_5": "Menos de 8.5 Córneres",
+    "CORNERS_OVER_9_5": "Más de 9.5 Córneres",
+    "CORNERS_UNDER_9_5": "Menos de 9.5 Córneres",
+    "CORNERS_OVER_10_5": "Más de 10.5 Córneres",
+    "CORNERS_UNDER_10_5": "Menos de 10.5 Córneres",
+    "CARDS_OVER_3_5": "Más de 3.5 Tarjetas",
+    "CARDS_UNDER_3_5": "Menos de 3.5 Tarjetas",
+    "CARDS_OVER_4_5": "Más de 4.5 Tarjetas",
+    "CARDS_UNDER_4_5": "Menos de 4.5 Tarjetas",
+    "CARDS_OVER_5_5": "Más de 5.5 Tarjetas",
+    "CARDS_UNDER_5_5": "Menos de 5.5 Tarjetas",
+    "SHOTS_OT_OVER_6_5": "Más de 6.5 Remates a Puerta",
+    "SHOTS_OT_UNDER_6_5": "Menos de 6.5 Remates a Puerta",
+    "SHOTS_OT_OVER_7_5": "Más de 7.5 Remates a Puerta",
+    "SHOTS_OT_UNDER_7_5": "Menos de 7.5 Remates a Puerta",
+    "SHOTS_OT_OVER_8_5": "Más de 8.5 Remates a Puerta",
+    "SHOTS_OT_UNDER_8_5": "Menos de 8.5 Remates a Puerta",
+    "SHOTS_OT_OVER_9_5": "Más de 9.5 Remates a Puerta",
+    "SHOTS_OT_UNDER_9_5": "Menos de 9.5 Remates a Puerta",
 }
 
 _MUTUALLY_EXCLUSIVE: list[set[str]] = [
@@ -92,6 +123,17 @@ _MUTUALLY_EXCLUSIVE: list[set[str]] = [
     {"1X2_HOME", "1X2_DRAW", "1X2_AWAY"},
     {"DOUBLE_1X", "DOUBLE_X2"},
     {"DNB_HOME", "DNB_AWAY"},
+    {"CORNERS_OVER_7_5", "CORNERS_UNDER_7_5"},
+    {"CORNERS_OVER_8_5", "CORNERS_UNDER_8_5"},
+    {"CORNERS_OVER_9_5", "CORNERS_UNDER_9_5"},
+    {"CORNERS_OVER_10_5", "CORNERS_UNDER_10_5"},
+    {"CARDS_OVER_3_5", "CARDS_UNDER_3_5"},
+    {"CARDS_OVER_4_5", "CARDS_UNDER_4_5"},
+    {"CARDS_OVER_5_5", "CARDS_UNDER_5_5"},
+    {"SHOTS_OT_OVER_6_5", "SHOTS_OT_UNDER_6_5"},
+    {"SHOTS_OT_OVER_7_5", "SHOTS_OT_UNDER_7_5"},
+    {"SHOTS_OT_OVER_8_5", "SHOTS_OT_UNDER_8_5"},
+    {"SHOTS_OT_OVER_9_5", "SHOTS_OT_UNDER_9_5"},
 ]
 
 

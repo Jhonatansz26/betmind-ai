@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from apps.api.models.base import Base, TimestampMixin
@@ -23,6 +23,17 @@ class Match(TimestampMixin, Base):
     
     home_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     away_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    home_corners: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    away_corners: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    home_yellows: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    away_yellows: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    home_reds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    away_reds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    home_fouls: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    away_fouls: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    home_shots_on_target: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    away_shots_on_target: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     
     league: Mapped["League"] = relationship("League", lazy="noload")
     home_team: Mapped["Team"] = relationship("Team", foreign_keys=[home_team_id], lazy="noload")

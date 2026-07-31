@@ -35,6 +35,18 @@ def run_prediction(
     h2h_matches: list[dict],        # Enfrentamientos directos
     bookmaker_odds: dict[str, float] | None = None,  # Cuotas opcionales
     is_neutral_venue: bool = False,
+    home_corners_for_avg: float | None = None,
+    away_corners_for_avg: float | None = None,
+    home_corners_against_avg: float | None = None,
+    away_corners_against_avg: float | None = None,
+    home_yellows_avg: float = 0.0,
+    away_yellows_avg: float = 0.0,
+    cards_mti: float = 1.0,
+    referee_strictness: float = 1.0,
+    home_sot_for_avg: float | None = None,
+    away_sot_for_avg: float | None = None,
+    home_sot_against_avg: float | None = None,
+    away_sot_against_avg: float | None = None,
 ) -> MatchPredictionOutput:
     """
     Flujo completo de predicción para un partido.
@@ -106,7 +118,23 @@ def run_prediction(
     score_matrix = build_score_matrix(lambda_home, lambda_away)
 
     # ── 6. Probabilidades de mercados ─────────────────────────────────────────
-    markets = build_all_markets(score_matrix.matrix, lambda_home, lambda_away)
+    markets = build_all_markets(
+        score_matrix.matrix, lambda_home, lambda_away,
+        league_key=league_key,
+        home_corners_for_avg=home_corners_for_avg,
+        away_corners_for_avg=away_corners_for_avg,
+        home_corners_against_avg=home_corners_against_avg,
+        away_corners_against_avg=away_corners_against_avg,
+        home_adv_factor=HOME_ADVANTAGE_BY_LEAGUE.get(league_key, 1.0) if not is_neutral_venue else 1.0,
+        home_yellows_avg=home_yellows_avg,
+        away_yellows_avg=away_yellows_avg,
+        cards_mti=cards_mti,
+        referee_strictness=referee_strictness,
+        home_sot_for_avg=home_sot_for_avg,
+        away_sot_for_avg=away_sot_for_avg,
+        home_sot_against_avg=home_sot_against_avg,
+        away_sot_against_avg=away_sot_against_avg,
+    )
 
     # ── 7. Enriquecer con EV si hay cuotas ───────────────────────────────────
     if bookmaker_odds:
@@ -231,4 +259,4 @@ def _build_prior_markets(
     lambda_away = league_avg_goals
 
     prior_matrix = build_score_matrix(lambda_home, lambda_away)
-    return build_all_markets(prior_matrix.matrix, lambda_home, lambda_away)
+    return build_all_markets(prior_matrix.matrix, lambda_home, lambda_away, league_key=league_key)

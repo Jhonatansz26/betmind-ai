@@ -195,14 +195,18 @@ class PredictionOrchestrator:
             featured_player=None,
         )
 
+        cards_narrative = self._build_minimal_cards_narrative(markets_by_name, match)
+        corners_narrative = self._build_minimal_corners_narrative(markets_by_name, match)
+        bet_builder = self._build_bet_builder(quant_output)
+
         return TacticalAnalysis(
             match_id=match.id,
             model_version="poisson_v1.0",
             goals_narrative=goals_narrative,
-            cards_narrative=None,
-            corners_narrative=None,
+            cards_narrative=cards_narrative,
+            corners_narrative=corners_narrative,
             player_props_narratives=None,
-            bet_builder_suggestions=None,
+            bet_builder_suggestions=bet_builder,
             overall_confidence=quant_output.confidence_score,
             match_preview_headline=headline,
             llm_model_used="none",
@@ -212,7 +216,61 @@ class PredictionOrchestrator:
             ),
         )
 
-    def _build_match_context(self, match: Match) -> MatchContext:
+    def _build_minimal_cards_narrative(self, markets_by_name: dict, match: Match):
+        from betmind_ml.schemas.tactical_analysis import MarketNarrative, ProConPoint, SignalStrength
+
+        cards_over_35 = markets_by_name.get("CARDS_OVER_3_5")
+        cards_over_45 = markets_by_name.get("CARDS_OVER_4_5")
+        best_cards = cards_over_45 or cards_over_35
+
+        if best_cards and best_cards.our_probability > 0:
+            prob = best_cards.our_probability
+            rec = "Más de Tarjetas" if prob > 0.5 else "Menos de Tarjetas"
+            line_num = best_cards.market_name.split("_")[-1].replace("_", ".")
+            return MarketNarrative(
+                market_name="Tarjetas (Más/Menos)",
+                our_probability=round(prob, 4),
+                recommendation=f"Línea {line_num}: {rec}",
+                pros=[
+                    ProConPoint(factor="Modelo Poisson", description=f"Probabilidad: {prob:.1%}", weight="MEDIUM"),
+                ],
+                cons=[
+                    ProConPoint(factor="Datos Limitados", description="Estadísticas de tarjetas no disponibles para este partido", weight="MEDIUM"),
+                ],
+                signal_strength=SignalStrength.WEAK,
+                key_risk="Estimación desde promedios de liga",
+                tactical_summary=f"Tarjetas: probabilidad {rec.lower()} en línea {line_num} estimada desde promedio de liga ({prob:.1%}).",
+                featured_player=None,
+            )
+        return None
+
+    def _build_minimal_corners_narrative(self, markets_by_name: dict, match: Match):
+        from betmind_ml.schemas.tactical_analysis import MarketNarrative, ProConPoint, SignalStrength
+
+        corners_over_85 = markets_by_name.get("CORNERS_OVER_8_5")
+        corners_over_95 = markets_by_name.get("CORNERS_OVER_9_5")
+        best_corners = corners_over_85 or corners_over_95
+
+        if best_corners and best_corners.our_probability > 0:
+            prob = best_corners.our_probability
+            rec = "Más de Córneres" if prob > 0.5 else "Menos de Córneres"
+            line_num = best_corners.market_name.split("_")[-1].replace("_", ".")
+            return MarketNarrative(
+                market_name="Córneres (Más/Menos)",
+                our_probability=round(prob, 4),
+                recommendation=f"Línea {line_num}: {rec}",
+                pros=[
+                    ProConPoint(factor="Binomial Negativa", description=f"Probabilidad: {prob:.1%}", weight="MEDIUM"),
+                ],
+                cons=[
+                    ProConPoint(factor="Datos Limitados", description="Estadísticas de córneres no disponibles para este partido", weight="MEDIUM"),
+                ],
+                signal_strength=SignalStrength.WEAK,
+                key_risk="Estimación desde promedios de liga",
+                tactical_summary=f"Córneres: probabilidad {rec.lower()} en línea {line_num} desde promedios de liga ({prob:.1%}).",
+                featured_player=None,
+            )
+        return None
         """Construye el contexto del partido para el Cerebro Táctico."""
         return MatchContext(
             match_id=match.id,
@@ -620,14 +678,18 @@ class PredictionOrchestrator:
             featured_player=None,
         )
 
+        cards_narrative = self._build_minimal_cards_narrative(markets, match)
+        corners_narrative = self._build_minimal_corners_narrative(markets, match)
+        bet_builder = self._build_bet_builder(quant)
+
         return TA(
             match_id=match.id,
             model_version=f"cascade_{result.model_used}",
             goals_narrative=goals_narrative,
-            cards_narrative=None,
-            corners_narrative=None,
+            cards_narrative=cards_narrative,
+            corners_narrative=corners_narrative,
             player_props_narratives=None,
-            bet_builder_suggestions=None,
+            bet_builder_suggestions=bet_builder,
             overall_confidence=quant.confidence_score,
             match_preview_headline=f"{match.home_team.name} vs {match.away_team.name}: {summary[:60]}",
             llm_model_used=result.model_used,

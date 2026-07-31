@@ -20,6 +20,9 @@ MODE_CONFIG = {
             "1X2_HOME", "1X2_DRAW",
             "OVER_2_5", "OVER_1_5",
             "BTTS_YES",
+            "CORNERS_OVER_7_5",
+            "CARDS_OVER_3_5", "CARDS_OVER_4_5",
+            "SHOTS_OT_OVER_6_5",
         },
         "staking": "1-2% of bankroll — conservative, high-frequency play",
     },
@@ -34,6 +37,9 @@ MODE_CONFIG = {
             "1X2_HOME", "1X2_AWAY", "1X2_DRAW",
             "OVER_2_5", "OVER_1_5",
             "BTTS_YES",
+            "CORNERS_OVER_8_5", "CORNERS_OVER_9_5", "CORNERS_UNDER_10_5",
+            "CARDS_OVER_4_5", "CARDS_UNDER_5_5",
+            "SHOTS_OT_OVER_7_5", "SHOTS_OT_OVER_8_5",
         },
         "staking": "0.5-1% of bankroll — medium frequency, higher EV target",
     },
@@ -53,17 +59,22 @@ MODE_CONFIG = {
 FORBIDDEN_COMBINATIONS: list[frozenset] = [
     frozenset({"UNDER_2_5",  "BTTS_YES"}),
     frozenset({"UNDER_1_5",  "BTTS_YES"}),
-    frozenset({"OVER_3_5",   "CARDS_UNDER"}),
+    frozenset({"OVER_3_5",   "CARDS_UNDER_3_5"}),
+    frozenset({"OVER_3_5",   "CARDS_UNDER_4_5"}),
     frozenset({"1X2_DRAW",   "BTTS_NO"}),
-    frozenset({"OVER_2_5",   "CARDS_UNDER"}),
-    frozenset({"1X2_AWAY",   "CORNERS_OVER"}),
+    frozenset({"OVER_2_5",   "CARDS_UNDER_3_5"}),
+    frozenset({"OVER_2_5",   "CARDS_UNDER_4_5"}),
+    frozenset({"1X2_AWAY",   "CORNERS_OVER_8_5"}),
+    frozenset({"1X2_AWAY",   "CORNERS_OVER_9_5"}),
 ]
 
 POSITIVE_CORRELATIONS: list[tuple[frozenset, float]] = [
     (frozenset({"1X2_HOME",  "OVER_1_5"}),    0.72),
-    (frozenset({"1X2_HOME",  "CORNERS_OVER"}), 0.65),
+    (frozenset({"1X2_HOME",  "CORNERS_OVER_8_5"}), 0.65),
+    (frozenset({"1X2_HOME",  "CORNERS_OVER_9_5"}), 0.63),
     (frozenset({"BTTS_YES",  "OVER_2_5"}),    0.81),
-    (frozenset({"CARDS_OVER","1X2_DRAW"}),    0.58),
+    (frozenset({"CARDS_OVER_4_5","1X2_DRAW"}),    0.58),
+    (frozenset({"CARDS_OVER_3_5","1X2_DRAW"}),    0.55),
     (frozenset({"OVER_3_5",  "BTTS_YES"}),    0.76),
 ]
 

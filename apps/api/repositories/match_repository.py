@@ -177,13 +177,24 @@ class MatchRepository:
     def match_to_dict(match: Match) -> dict:
         """
         Convierte un objeto Match ORM a dict para el pipeline ML.
-        Formato esperado: {home_team_id, away_team_id, home_goals, away_goals}
+        Formato esperado: {home_team_id, away_team_id, home_goals, away_goals,
+                            home_corners, away_corners, home_yellows, away_yellows, ...}
         """
         return {
             "home_team_id": match.home_team_id,
             "away_team_id": match.away_team_id,
             "home_goals": match.home_score or 0,
             "away_goals": match.away_score or 0,
+            "home_corners": match.home_corners,
+            "away_corners": match.away_corners,
+            "home_yellows": match.home_yellows or 0,
+            "away_yellows": match.away_yellows or 0,
+            "home_reds": match.home_reds or 0,
+            "away_reds": match.away_reds or 0,
+            "home_fouls": match.home_fouls or 0,
+            "away_fouls": match.away_fouls or 0,
+            "home_shots_on_target": match.home_shots_on_target,
+            "away_shots_on_target": match.away_shots_on_target,
         }
 
     async def save_prediction(self, prediction: Prediction) -> Prediction:
@@ -210,6 +221,16 @@ class MatchRepository:
         home_score: int | None,
         away_score: int | None,
         regulation_time_only: bool = True,
+        home_corners: int | None = None,
+        away_corners: int | None = None,
+        home_yellows: float | None = None,
+        away_yellows: float | None = None,
+        home_reds: float | None = None,
+        away_reds: float | None = None,
+        home_fouls: float | None = None,
+        away_fouls: float | None = None,
+        home_shots_on_target: float | None = None,
+        away_shots_on_target: float | None = None,
     ) -> Match:
         """
         Inserta o actualiza un partido.
@@ -223,12 +244,31 @@ class MatchRepository:
             existing.away_team_id = away_team_id
             existing.match_date = match_date
             existing.status = status
-            # Solo actualiza scores cuando tienen valor real (no perder datos existentes)
             if home_score is not None:
                 existing.home_score = home_score
             if away_score is not None:
                 existing.away_score = away_score
             existing.regulation_time_only = regulation_time_only
+            if home_corners is not None:
+                existing.home_corners = home_corners
+            if away_corners is not None:
+                existing.away_corners = away_corners
+            if home_yellows is not None:
+                existing.home_yellows = home_yellows
+            if away_yellows is not None:
+                existing.away_yellows = away_yellows
+            if home_reds is not None:
+                existing.home_reds = home_reds
+            if away_reds is not None:
+                existing.away_reds = away_reds
+            if home_fouls is not None:
+                existing.home_fouls = home_fouls
+            if away_fouls is not None:
+                existing.away_fouls = away_fouls
+            if home_shots_on_target is not None:
+                existing.home_shots_on_target = home_shots_on_target
+            if away_shots_on_target is not None:
+                existing.away_shots_on_target = away_shots_on_target
             await self._session.flush()
             await self._session.refresh(existing)
             return existing
@@ -243,6 +283,16 @@ class MatchRepository:
                 home_score=home_score,
                 away_score=away_score,
                 regulation_time_only=regulation_time_only,
+                home_corners=home_corners,
+                away_corners=away_corners,
+                home_yellows=home_yellows,
+                away_yellows=away_yellows,
+                home_reds=home_reds,
+                away_reds=away_reds,
+                home_fouls=home_fouls,
+                away_fouls=away_fouls,
+                home_shots_on_target=home_shots_on_target,
+                away_shots_on_target=away_shots_on_target,
             )
             self._session.add(match)
             await self._session.flush()
