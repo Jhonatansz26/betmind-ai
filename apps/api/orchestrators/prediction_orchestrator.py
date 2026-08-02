@@ -197,7 +197,7 @@ class PredictionOrchestrator:
 
         cards_narrative = self._build_minimal_cards_narrative(markets_by_name, match)
         corners_narrative = self._build_minimal_corners_narrative(markets_by_name, match)
-        bet_builder = self._build_bet_builder(quant_output, match)
+        bet_builder = self._build_pattern_suggestions(quant_output)
 
         return TacticalAnalysis(
             match_id=match.id,
@@ -680,7 +680,7 @@ class PredictionOrchestrator:
 
         cards_narrative = self._build_minimal_cards_narrative(markets, match)
         corners_narrative = self._build_minimal_corners_narrative(markets, match)
-        bet_builder = self._build_bet_builder(quant, match)
+        bet_builder = self._build_pattern_suggestions(quant)
 
         return TA(
             match_id=match.id,
@@ -768,7 +768,7 @@ class PredictionOrchestrator:
         # Construir análisis táctico completo
         tactical_analysis = self._build_tactical_analysis_response(tactical)
 
-        bet_builder = self._build_bet_builder(quant, match)
+        bet_builder = self._build_bet_builder(quant)
 
         return PredictionResponse(
             match_id=match.id,
@@ -840,19 +840,13 @@ class PredictionOrchestrator:
             data_completeness_score=tactical.data_completeness_score,
         )
 
-    def _build_bet_builder(self, quant: MatchPredictionOutput, match: Match = None) -> list:
-        """Construye perfiles de Bet Builder automático + patrones estratégicos desde los mercados calculados."""
+    def _build_bet_builder(self, quant: MatchPredictionOutput) -> list:
+        """Construye perfiles de Bet Builder automático desde los mercados calculados."""
         try:
             from betmind_ml.bet_builder_engine import build_bet_profiles
-            from betmind_ml.bet_builder_patterns import (
-                evaluate_patterns, build_pattern_suggestions, MatchMetrics,
-            )
-
-            result: list[dict] = []
-
             profiles = build_bet_profiles(quant.markets)
-            for p in profiles:
-                result.append({
+            return [
+                {
                     "profile": p.profile,
                     "label": p.label,
                     "selections": [
@@ -866,37 +860,50 @@ class PredictionOrchestrator:
                     ],
                     "combined_odds": p.combined_odds,
                     "combined_probability": p.combined_probability,
-                })
-
-            if match is not None:
-                metrics = MatchMetrics(
-                    xg_home=quant.lambda_home,
-                    xg_away=quant.lambda_away,
-                    xg_total=quant.lambda_home + quant.lambda_away,
-                    possession_home=max(35.0, min(70.0, 50.0 + (quant.home_attack_index - 1.0) * 12)),
-                    proj_corners_home=5.0 + (quant.home_attack_index - 1.0) * 2.5,
-                    proj_corners_total=9.5,
-                    proj_fouls_total=26.0,
-                    proj_shots_ot_total=8.0,
-                    referee_cards_avg=4.0,
-                )
-
-                market_map = {m.market_name: m for m in quant.markets}
-                patterns = evaluate_patterns(metrics, quant.markets)
-                suggestions = build_pattern_suggestions(patterns, market_map)
-
-                for sug in suggestions:
-                    result.append({
-                        "profile": sug.pattern.pattern.value,
-                        "label": sug.pattern.label,
-                        "description": sug.pattern.description,
-                        "multiplier_adjust": sug.pattern.multiplier_adjust,
-                        "selections": sug.selections,
-                        "combined_fair_odds": sug.combined_fair_odds,
-                        "combined_probability": sug.combined_probability,
-                    })
-
-            return result
+                }
+                for p in profiles
+            ]
         except Exception as e:
             logger.warning("Error building bet profiles: %s", e)
+            return []
+
+    def _build_pattern_suggestions(self, quant: MatchPredictionOutput) -> list:
+        """Construye sugerencias de patrones estratégicos desde los mercados calculados."""
+        from betmind_ml.schemas.tactical_analysis import BetBuilderCombination
+
+        try:
+            from betmind_ml.bet_builder_patterns import (
+                evaluate_patterns, build_pattern_suggestions, MatchMetrics,
+            )
+
+            metrics = MatchMetrics(
+                xg_home=quant.lambda_home,
+                xg_away=quant.lambda_away,
+                xg_total=quant.lambda_home + quant.lambda_away,
+                possession_home=max(35.0, min(70.0, 50.0 + (quant.home_attack_index - 1.0) * 12)),
+                proj_corners_home=5.0 + (quant.home_attack_index - 1.0) * 2.5,
+                proj_corners_total=9.5,
+                proj_fouls_total=26.0,
+                proj_shots_ot_total=8.0,
+                referee_cards_avg=4.0,
+            )
+
+            market_map = {m.market_name: m for m in quant.markets}
+            patterns = evaluate_patterns(metrics, quant.markets)
+            suggestions = build_pattern_suggestions(patterns, market_map)
+
+            result: list[BetBuilderCombination] = []
+            for sug in suggestions:
+                legs = [s["market_name"] for s in sug.selections]
+                result.append(BetBuilderCombination(
+                    name=sug.pattern.label,
+                    legs=legs,
+                    combined_probability=sug.combined_probability,
+                    combined_odds_estimate=sug.combined_fair_odds,
+                    correlation_rationale=sug.pattern.description,
+                    risk_level="medium",
+                ))
+            return result
+        except Exception as e:
+            logger.warning("Error building pattern suggestions: %s", e)
             return []

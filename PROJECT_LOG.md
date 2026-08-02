@@ -6190,3 +6190,134 @@ Se realizó una inspección completa con Puppeteer MCP simulando navegación en 
 px tsc --noEmit\ pasó con 0 errores tras todas las modificaciones.
 - **Inspección Visual en Vivo:** Vía Puppeteer se capturaron y validaron *Previa*, *H2H*, *Árbitro* y *Boletos* en \http://localhost:3000\, confirmando la integración perfecta de los tokens semánticos en modo oscuro.
 
+---
+
+## 🟢 Fase 9: Mercados de Córneres, Tarjetas, Remates + Motor de Patrones (Completado)
+
+### 1. Diagnóstico Técnico Inicial
+
+Se identificó la causa raíz por la que la plataforma solo generaba predicciones 1X2, Goles y BTTS:
+
+1. `market_calculator.py` solo calculaba 22 mercados de goles vía Poisson.
+2. Los modelos `corners_model.py`, `match_tension.py` y `player_props_model.py` existían pero nunca se conectaban al pipeline.
+3. `ticket_builder.py` filtraba explícitamente solo mercados de goles en MODE_CONFIG.
+4. `bet_builder_engine.py` solo tenía pools de goles en los 3 perfiles.
+5. `prediction_orchestrator.py` hardcodeaba `cards_narrative=None` y `corners_narrative=None`.
+
+### 2. Conexión de Modelos (Fase 1 — 44 mercados)
+
+**Archivo modificado:** `packages/ml/betmind_ml/models/market_calculator.py`
+- Añadidas funciones `calculate_corners_markets()` (Binomial Negativa), `calculate_cards_markets()` (Poisson + MTI), `calculate_shots_on_target_markets()` (Poisson)
+- `build_all_markets()` extendida para retornar 44 mercados (22 goles + 8 corners + 6 cards + 8 shots)
+- Baseline de liga para cada mercado con promedios empíricos
+
+**Archivos modificados (threading de parámetros):**
+- `prediction_pipeline.py` — 10 nuevos parámetros opcionales para estadísticas
+- `full_analysis_pipeline.py` — 10 nuevos parámetros propagados
+
+**Archivo modificado:** `apps/api/engine/ticket_builder.py`
+- `MODE_CONFIG` EDGE: añadidos `CORNERS_OVER_7_5`, `CARDS_OVER_3_5`, `CARDS_OVER_4_5`, `SHOTS_OT_OVER_6_5`
+- `MODE_CONFIG` VALUE: añadidos `CORNERS_OVER_8_5`, `CORNERS_OVER_9_5`, `CORNERS_UNDER_10_5`, `CARDS_OVER_4_5`, `CARDS_UNDER_5_5`
+- Correlaciones actualizadas a nombres específicos con líneas
+
+**Archivo modificado:** `packages/ml/betmind_ml/bet_builder_engine.py`
+- 3 pools de perfiles ampliados con corners/cards/shots
+- 32 etiquetas nuevas en español ("Más de 8.5 Córneres", "Menos de 4.5 Tarjetas"...)
+- 12 grupos mutuamente excluyentes añadidos
+
+### 3. Pipeline de Datos — Modelo Match + DB
+
+**Archivo modificado:** `apps/api/models/match.py`
+- 10 nuevas columnas: `home/away_corners`, `home/away_yellows`, `home/away_reds`, `home/away_fouls`, `home/away_shots_on_target`
+
+**Archivo modificado:** `apps/api/repositories/match_repository.py`
+- `match_to_dict()` extendido con los 10 nuevos campos
+- `upsert_match()` actualizado con todos los nuevos parámetros
+
+**Migración SQL ejecutada en Supabase:** `007_add_match_statistics_columns.sql`
+- ALTER TABLE matches ADD COLUMN para las 10 columnas
+- Proyecto: `sruhpmucytkaksdtkrsi` (Betmind - Apuestas Deportivas)
+
+### 4. Narrativas Cuantitativas (Orquestador)
+
+**Archivo modificado:** `apps/api/orchestrators/prediction_orchestrator.py`
+- Eliminados hardcodeos `None` en `_build_minimal_tactical_analysis()` y `_gemini_result_to_tactical()`
+- Nuevos helpers: `_build_minimal_cards_narrative()` y `_build_minimal_corners_narrative()`
+- Generan `MarketNarrative` con probabilidades reales desde los datos cuantitativos
+- Filtro de cuota mínima 1.20 para picks individuales con bajo vigorish
+
+### 5. Ampliación de Líneas a 56 Mercados
+
+**Archivo modificado:** `packages/ml/betmind_ml/models/market_calculator.py`
+- Córneres: 6.5 a 12.5 (7 líneas → 14 mercados)
+- Tarjetas: 3.5 a 7.5 (5 líneas → 10 mercados)
+- Remates a Puerta: 6.5 a 10.5 (5 líneas → 10 mercados)
+
+**Total final:** 56 mercados por partido (22 goles + 14 corners + 10 cards + 10 shots)
+
+### 6. Motor de Patrones Estratégicos con Correlación de Pearson
+
+**Archivo creado:** `packages/ml/betmind_ml/bet_builder_patterns.py`
+
+**Fórmula de probabilidad conjunta correlacionada:**
+```
+P(A ∩ B) = P(A) · P(B) + ρ · √(P(A)(1-P(A)) · P(B)(1-P(B)))
+```
+Donde ρ = 0.25 (Pearson por defecto) y `multiplier_adjust` compensa la correlación.
+
+**3 Patrones Automáticos:**
+
+| Patrón | Condición | Mercados | Ajuste |
+|--------|-----------|----------|--------|
+| `HOME_SIEGE` | xg_home ≥ 1.75, possession ≥ 57%, corners_home ≥ 5.5 | HOME_OVER_1_5 + CORNERS_OVER_8_5 + SHOTS_OT_OVER_8_5 | 0.82 |
+| `TIGHT_MATCH` | cards_avg ≥ 5.2 o fouls ≥ 27 o derby + xg_total ≤ 2.3 | CARDS_OVER_5_5 + CORNERS_UNDER_9_5 + BTTS_NO | 0.88 |
+| `OPEN_GAME` | xg_total ≥ 2.8 y shots_ot ≥ 9.0 | OVER_2_5 + BTTS_YES + SHOTS_OT_OVER_8_5 | 0.78 |
+
+**Integración en el orquestador:**
+- `_build_pattern_suggestions()` ejecuta `evaluate_patterns()` con `MatchMetrics` derivadas del output cuantitativo
+- Los `BetBuilderCombination` se incluyen en `tactical_analysis.bet_builder_suggestions`
+
+### 7. Verificación de Traducción a Español
+
+- LLM prompts: `prediction_orchestrator.py` y `base_prompt.py` confirman "Responde SIEMPRE en español"
+- 56 etiquetas en `_MARKET_LABELS` completamente en español
+- `npx tsc --noEmit` en frontend: 0 errores (el contrato ya esperaba `cards_narrative`/`corners_narrative`)
+
+### 8. Auditoría de Errores Críticos (6 bugs corregidos)
+
+| Bug | Archivo | Corrección |
+|-----|---------|------------|
+| "Los Angeles FC" cross-mapping | `team_normalizer.py` | Stop-words excluidos + umbral fuzzy subido a 0.75 |
+| 0% métricas en partidos sin datos | `prediction_pipeline.py` | Safety floor `MIN_LAMBDA = 0.15` con fallback de liga |
+| Texto estático en Córners/Tarjetas | `match-modal.tsx`, `page.tsx` | Lectura directa de `evAnalysis` cuantitativo |
+| Partidos repetidos en boletos | `ticket_builder.py` | `selected_fixtures` con clave `home_team|away_team` |
+| Córners/tarjetas sin fair odds | `ticket_builder.py` | Fallback `1/probability` si `bm_odds <= 1.0` |
+| Cuotas 1.00 en Bet Builder | `bet_builder_engine.py` | Clamp de probabilidad a `max(0.95)` |
+| Ligas europeas faltantes | `config.py` | Añadidas Premier, LaLiga, Bundesliga, Serie A a `FEATURED_LEAGUES` |
+
+### 9. Ejecución de Pipeline Completo
+
+```
+sync_today_matches.py:
+  Ligas sincronizadas: 5
+  Partidos ingestados: 21 (13 ESPN + 8 API-Football)
+  Cuotas sincronizadas: 104
+
+batch_predict.py --mode quant --limit 20 --force:
+  Partidos procesados: 4 SCHEDULED
+  Éxito: 4/4 | Errores: 0
+  Mercados por partido: 56
+```
+
+### 10. Verificación Final
+
+- **Python compile:** 8/8 archivos OK
+- **TypeScript:** `tsc --noEmit` 0 errores
+- **Tests:** 54/54 passed (ticket_builder + kelly + filters)
+- **Smoke test:** 56 mercados generados con probabilidades reales
+- **Pearson:** `P(0.6 ∩ 0.55) = 0.3909` (vs independiente 0.3300, delta=+0.0609)
+- **3 patrones:** HOME_SIEGE, TIGHT_MATCH, OPEN_GAME activándose correctamente
+- **Supabase:** 56 mercados persistidos en `predictions.markets_json` por partido
+
+
+

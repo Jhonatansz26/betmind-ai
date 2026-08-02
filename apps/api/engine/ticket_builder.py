@@ -214,13 +214,20 @@ def build_ticket_for_mode(
 
             if prob < min_prob:
                 continue
+
             if bm_odds <= 1.0:
-                continue
+                if prob > 0:
+                    bm_odds = round(1.0 / prob, 2)
+                    implied = prob
+                    ev = 0.0
+                else:
+                    continue
+
             if mkt_name == "1X2_DRAW" and bm_odds < 2.10:
                 continue
             if bm_odds > max_individual_odds:
                 continue
-            if ev < min_ev or ev > 0.35:  # Techo de sanidad máximo de +35% EV
+            if ev < min_ev or ev > 0.35:
                 continue
 
             edge_pct = round((prob - implied) * 100, 2) if implied else 0
@@ -254,12 +261,14 @@ def build_ticket_for_mode(
 
     selected: list[TicketLegSchema] = []
     selected_match_ids: set[int] = set()
+    selected_fixtures: set[str] = set()
     selected_market_names: list[str] = []
 
     for candidate in candidates:
         if len(selected) >= max_legs:
             break
-        if candidate.match_id in selected_match_ids:
+        fixture_key = f"{candidate.home_team}|{candidate.away_team}"
+        if candidate.match_id in selected_match_ids or fixture_key in selected_fixtures:
             continue
         if not _can_add_candidate(selected, candidate):
             continue
@@ -271,6 +280,7 @@ def build_ticket_for_mode(
 
         selected.append(candidate)
         selected_match_ids.add(candidate.match_id)
+        selected_fixtures.add(fixture_key)
         selected_market_names.append(candidate.market_name)
 
     if len(selected) < 2:
@@ -279,7 +289,8 @@ def build_ticket_for_mode(
     combined = calculate_combined_odds(selected)
 
     if combined < target_min and len(selected) < max_legs:
-        remaining = [c for c in candidates if c.match_id not in selected_match_ids]
+        remaining = [c for c in candidates if c.match_id not in selected_match_ids
+                     and f"{c.home_team}|{c.away_team}" not in selected_fixtures]
         for c in remaining:
             if len(selected) >= max_legs:
                 break
@@ -290,6 +301,7 @@ def build_ticket_for_mode(
             if is_valid:
                 selected.append(c)
                 selected_match_ids.add(c.match_id)
+                selected_fixtures.add(f"{c.home_team}|{c.away_team}")
                 selected_market_names.append(c.market_name)
         combined = calculate_combined_odds(selected)
 

@@ -207,12 +207,13 @@ def _pick_best(markets: list[MarketProbability], allowed: set[str], count: int,
 
 
 def _to_selection(m: MarketProbability) -> BetBuilderSelection:
-    odds = round(1.0 / m.our_probability, 2) if m.our_probability > 0 else 99.0
+    prob = min(m.our_probability, 0.95)
+    odds = round(1.0 / prob, 2) if prob > 0 else 99.0
     label = _MARKET_LABELS.get(m.market_name, m.market_name)
     return BetBuilderSelection(
         market_name=m.market_name,
         label=label,
-        probability=round(m.our_probability, 4),
+        probability=round(prob, 4),
         odds_estimate=odds,
     )
 

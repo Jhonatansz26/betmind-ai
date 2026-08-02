@@ -114,6 +114,16 @@ def run_prediction(
         lambda_away = lambda_away * weight + league_prior * (1 - weight)
         logger.info("Bayesian blend away: λ_away=%.3f (weight=%.2f, prior=%.2f, N=%d)", lambda_away, weight, league_prior, away_matches_count)
 
+    # Safety floor: never allow zero lambdas — use league defaults as absolute minimum
+    MIN_LAMBDA = 0.15
+    league_base = league_averages.get("avg_goals_per_team_per_match", 1.35) or 1.35
+    if lambda_home < MIN_LAMBDA:
+        lambda_home = league_base * (HOME_ADVANTAGE_BY_LEAGUE.get(league_key, 1.0) if not is_neutral_venue else 1.0)
+        lambda_home = max(lambda_home, MIN_LAMBDA)
+    if lambda_away < MIN_LAMBDA:
+        lambda_away = league_base
+        lambda_away = max(lambda_away, MIN_LAMBDA)
+
     # ── 5. Matriz de Poisson ──────────────────────────────────────────────────
     score_matrix = build_score_matrix(lambda_home, lambda_away)
 

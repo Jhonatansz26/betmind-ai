@@ -22,6 +22,11 @@ _SUFFIX_PATTERN = re.compile(
 _PUNCT_PATTERN = re.compile(r'[^a-z0-9\s]')
 _SPACES_PATTERN = re.compile(r'\s+')
 
+_STOP_WORDS: set[str] = {
+    "los", "las", "el", "la", "de", "del", "y", "e", "o", "a",
+    "the", "of", "and", "in", "fc", "sc", "cf", "ac", "cd",
+}
+
 TEAM_NAME_ALIASES: dict[str, str] = {
     "junior": "atletico junior",
     "atletico junior": "junior",
@@ -116,17 +121,16 @@ def fuzzy_match_team(search_name: str, candidates: list[str]) -> Optional[str]:
         return None
 
     # Token set matching: check if all tokens of one name are in the other
-    search_tokens = set(norm_search.split())
+    search_tokens = set(norm_search.split()) - _STOP_WORDS
     if not search_tokens:
         return None
 
     for candidate in candidates:
         norm_cand = canonical_team_name(candidate)
-        cand_tokens = set(norm_cand.split())
+        cand_tokens = set(norm_cand.split()) - _STOP_WORDS
         if not cand_tokens:
             continue
 
-        # If tokens overlap significantly (>= 60%), consider it a match
         intersection = search_tokens & cand_tokens
         if len(intersection) == 0:
             continue
@@ -135,17 +139,16 @@ def fuzzy_match_team(search_name: str, candidates: list[str]) -> Optional[str]:
         if overlap_ratio >= 0.6:
             return candidate
 
-    # Second pass: token prefix matching (e.g. "Junior" matches "Junior FC")
     for candidate in candidates:
         norm_cand = canonical_team_name(candidate)
-        cand_tokens = set(norm_cand.split())
+        cand_tokens = set(norm_cand.split()) - _STOP_WORDS
         if not cand_tokens:
             continue
 
         intersection = search_tokens & cand_tokens
         if len(intersection) > 0:
             overlap_smaller = len(intersection) / min(len(search_tokens), len(cand_tokens))
-            if overlap_smaller >= 0.5:
+            if overlap_smaller >= 0.75:
                 return candidate
 
     return None

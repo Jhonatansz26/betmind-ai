@@ -128,6 +128,26 @@ settings = Settings()
 
 
 FEATURED_LEAGUES: dict[str, dict] = {
+    "premier_league": {
+        "api_football_id": 39,
+        "name": "Premier League",
+        "country": "England",
+    },
+    "laliga": {
+        "api_football_id": 140,
+        "name": "LaLiga",
+        "country": "Spain",
+    },
+    "bundesliga": {
+        "api_football_id": 78,
+        "name": "Bundesliga",
+        "country": "Germany",
+    },
+    "serie_a": {
+        "api_football_id": 135,
+        "name": "Serie A",
+        "country": "Italy",
+    },
     "liga_betplay": {
         "api_football_id": 239,
         "name": "Liga BetPlay Dimayor",

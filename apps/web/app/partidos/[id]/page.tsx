@@ -132,11 +132,11 @@ function buildDetail(match: Match, enriched: EnrichedMatch | null, model: MatchM
   const cardsNarr = enriched?.tacticalAnalysis?.cards_narrative as Record<string, unknown> | null
   const cornersNarr = enriched?.tacticalAnalysis?.corners_narrative as Record<string, unknown> | null
 
-  const cornersProbStr = cornersNarr?.over_probability
-  const cornersProb = typeof cornersProbStr === 'number'
-    ? cornersProbStr * 100
-    : typeof cornersProbStr === 'string'
-      ? parseFloat(cornersProbStr) * 100
+  const cornersEv = evAnalysis.find((e: { market: string }) => e.market === 'CORNERS_OVER_8_5')
+  const cornersProb = cornersEv?.probability
+    ? parseFloat((cornersEv.probability * 100).toFixed(0))
+    : typeof cornersNarr?.our_probability === 'number'
+      ? Math.round((cornersNarr.our_probability as number) * 100)
       : 50
 
   const cardsFrictionStr = cardsNarr?.friction_level ?? cardsNarr?.tactical_summary
@@ -159,7 +159,7 @@ function buildDetail(match: Match, enriched: EnrichedMatch | null, model: MatchM
     awayExpectedGoals: match.lambdaAway,
     totalExpectedGoals: match.lambdaHome + match.lambdaAway,
     cornersLine: typeof cornersNarr?.line === 'number' ? String(cornersNarr.line) : '8.5',
-    cornersProb: parseFloat(cornersProb.toFixed(0)),
+    cornersProb,
     cardsLine: typeof cardsNarr?.line === 'number' ? String(cardsNarr.line) : '3.5',
     cardsFriction,
     avgCards: match.referee.yellows > 0 ? match.referee.yellows.toFixed(1) : '3.5',
