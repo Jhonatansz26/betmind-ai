@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { AlertCircle, RefreshCw, Sparkles } from 'lucide-react'
 
 import { type Match, type Ticket } from '@/lib/betmind'
 import { fetchTickets, fetchMatches } from '@/lib/api'
@@ -92,6 +93,86 @@ function MatchSkeleton() {
   )
 }
 
+function LoadingState({ type }: { type: 'tickets' | 'matches' }) {
+  return (
+    <div aria-busy="true" aria-live="polite" className="flex flex-col gap-3">
+      <span className="sr-only">Cargando {type === 'tickets' ? 'boletos' : 'partidos'}…</span>
+      {type === 'tickets' ? (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((i) => <TicketSkeleton key={i} />)}
+        </div>
+      ) : (
+        [0, 1, 2, 3].map((i) => <MatchSkeleton key={i} />)
+      )}
+    </div>
+  )
+}
+
+function formatUpdatedAt(value?: string | null) {
+  if (!value) return 'Aún no hay una actualización registrada'
+  return `Actualizado ${new Intl.DateTimeFormat('es-CO', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Bogota',
+  }).format(new Date(value))}`
+}
+
+function EmptyState({
+  type,
+  timestamp,
+  onRefresh,
+}: {
+  type: 'tickets' | 'matches'
+  timestamp?: string | null
+  onRefresh: () => void
+}) {
+  const tickets = type === 'tickets'
+  return (
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/60 px-6 py-12 text-center">
+      <div className="mb-4 flex size-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+        <Sparkles size={18} aria-hidden="true" />
+      </div>
+      <h2 className="text-base font-semibold text-foreground">
+        {tickets ? 'Todavía no hay una señal con valor' : 'No hay partidos en esta ventana'}
+      </h2>
+      <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+        {tickets
+          ? 'El modelo revisa las cuotas y solo muestra boletos cuando encuentra una ventaja medible. Vuelve a consultar después de la próxima actualización.'
+          : 'La cartelera se actualiza continuamente. Prueba otra fecha o vuelve a consultar cuando comiencen a publicarse nuevos fixtures.'}
+      </p>
+      <p className="mt-3 text-xs font-mono text-subtle">{formatUpdatedAt(timestamp)}</p>
+      <button
+        type="button"
+        onClick={onRefresh}
+        className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:border-primary/50 hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        <RefreshCw size={15} aria-hidden="true" />
+        Actualizar ahora
+      </button>
+    </div>
+  )
+}
+
+function ErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div role="alert" className="flex flex-col items-center justify-center rounded-2xl border border-negative/25 bg-negative/5 px-6 py-10 text-center">
+      <AlertCircle size={20} className="text-negative" aria-hidden="true" />
+      <h2 className="mt-3 text-base font-semibold text-foreground">No pudimos actualizar los datos</h2>
+      <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+        La conexión con el modelo o la cartelera falló. Tus datos guardados no se han modificado.
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        <RefreshCw size={15} aria-hidden="true" />
+        Reintentar
+      </button>
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------------ */
 /* Dashboard                                                           */
 /* ------------------------------------------------------------------ */
@@ -106,6 +187,10 @@ export function Dashboard() {
   const [ticketsLoading, setTicketsLoading] = React.useState(true)
   const [matches, setMatches] = React.useState<Match[]>([])
   const [matchesLoading, setMatchesLoading] = React.useState(true)
+  const [ticketsError, setTicketsError] = React.useState(false)
+  const [matchesError, setMatchesError] = React.useState(false)
+  const [matchesUpdatedAt, setMatchesUpdatedAt] = React.useState<string | null>(null)
+  const [retryKey, setRetryKey] = React.useState(0)
   const [ticketMeta, setTicketMeta] = React.useState<{
     matchesAnalyzed: number
     totalEv: number
@@ -130,6 +215,8 @@ export function Dashboard() {
   React.useEffect(() => {
     let cancelled = false
     async function load() {
+      setTicketsLoading(true)
+      setTicketsError(false)
       try {
         const filterParam = dateFilter === 'all' ? undefined : dateFilter
         const result = await fetchTickets(['EDGE', 'VALUE', 'BOLD'], undefined, filterParam)
@@ -142,33 +229,42 @@ export function Dashboard() {
           })
         }
       } catch {
-        if (!cancelled) setTickets([])
+        if (!cancelled) {
+          setTickets([])
+          setTicketsError(true)
+        }
       } finally {
         if (!cancelled) setTicketsLoading(false)
       }
     }
     load()
     return () => { cancelled = true }
-  }, [dateFilter])
+  }, [dateFilter, retryKey])
 
   React.useEffect(() => {
     let cancelled = false
     async function loadMatches() {
+      setMatchesLoading(true)
+      setMatchesError(false)
       try {
         const filterParam = dateFilter === 'all' ? undefined : dateFilter
         const fetchedMatches = await fetchMatches(filterParam)
         if (!cancelled) {
           setMatches(fetchedMatches.length > 0 ? fetchedMatches : [])
+          setMatchesUpdatedAt(new Date().toISOString())
         }
       } catch {
-        if (!cancelled) setMatches([])
+        if (!cancelled) {
+          setMatches([])
+          setMatchesError(true)
+        }
       } finally {
         if (!cancelled) setMatchesLoading(false)
       }
     }
     loadMatches()
     return () => { cancelled = true }
-  }, [dateFilter])
+  }, [dateFilter, retryKey])
 
   const [openLeagues, setOpenLeagues] = React.useState<Record<string, boolean>>({})
 
@@ -232,7 +328,7 @@ export function Dashboard() {
   const dateInfo = React.useMemo(() => formatDateTitle(dateFilter, new Date()), [dateFilter])
 
   return (
-    <div className="min-h-svh bg-background pb-16 md:pb-0">
+    <div className="min-h-svh bg-background pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
       <TopNav active={tab} onChange={setTab} onToggleSidebar={() => setSidebarOpen((v) => !v)} />
 
       <div className="mx-auto flex w-full max-w-[1600px] gap-6 px-4 py-6">
@@ -277,13 +373,7 @@ export function Dashboard() {
                   </p>
                 </div>
 
-                {ticketsLoading ? (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {[0, 1, 2].map((i) => (
-                      <TicketSkeleton key={i} />
-                    ))}
-                  </div>
-                ) : (
+                {ticketsLoading ? <LoadingState type="tickets" /> : ticketsError ? <ErrorState onRetry={() => setRetryKey((key) => key + 1)} /> : tickets.length > 0 ? (
                   <div className={cn(
                     'grid items-stretch gap-4',
                     tickets.length === 1 ? 'max-w-md' : tickets.length === 2 ? 'md:grid-cols-2 max-w-2xl' : 'md:grid-cols-2 xl:grid-cols-3',
@@ -296,6 +386,8 @@ export function Dashboard() {
                       />
                     ))}
                   </div>
+                ) : (
+                  <EmptyState type="tickets" timestamp={ticketMeta?.generatedAt} onRefresh={() => setRetryKey((key) => key + 1)} />
                 )}
               </section>
 
@@ -341,13 +433,7 @@ export function Dashboard() {
               </div>
 
               <div className="flex flex-col gap-3">
-                {matchesLoading ? (
-                  <div className="flex flex-col gap-3">
-                    {[0, 1, 2, 3].map((i) => (
-                      <MatchSkeleton key={i} />
-                    ))}
-                  </div>
-                ) : groupedMatches.length > 0 ? (
+                {matchesLoading ? <LoadingState type="matches" /> : matchesError ? <ErrorState onRetry={() => setRetryKey((key) => key + 1)} /> : groupedMatches.length > 0 ? (
                   groupedMatches.map((group) => (
                     <LeagueAccordion
                       key={group.key}
@@ -360,11 +446,7 @@ export function Dashboard() {
                       }
                     />
                   ))
-                ) : (
-                  <p className="rounded-lg border border-border bg-card p-6 text-center text-sm text-muted-foreground">
-                    No hay partidos programados para esta liga hoy.
-                  </p>
-                )}
+                ) : <EmptyState type="matches" timestamp={matchesUpdatedAt} onRefresh={() => setRetryKey((key) => key + 1)} />}
               </div>
             </section>
           ) : null}

@@ -7,7 +7,7 @@
 @theme inline {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-serif: var(--font-playfair), ui-serif, Georgia, serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-mono: var(--font-ibm-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -54,42 +54,42 @@
 :root {
   color-scheme: dark;
 
-  --background: #09090b;
+  --background: #080a0d;
   --foreground: #f8fafc;
 
-  --surface: #18181b;
-  --surface-raised: #27272a;
-  --surface-inset: #0d0d0f;
-  --subtle: #71717a;
-  --border-subtle: #18181b;
+  --surface: #11151b;
+  --surface-raised: #182029;
+  --surface-inset: #0b0f13;
+  --subtle: #84909e;
+  --border-subtle: #1a2129;
 
-  --card: #111113;
+  --card: #11151b;
   --card-foreground: #f8fafc;
   --popover: #111113;
   --popover-foreground: #f8fafc;
 
-  --primary: #6366f1;
+  --primary: #8577ff;
   --primary-foreground: #f8fafc;
 
-  --secondary: #27272a;
+  --secondary: #182029;
   --secondary-foreground: #f8fafc;
 
-  --muted: #18181b;
-  --muted-foreground: #a1a1aa;
+  --muted: #151b22;
+  --muted-foreground: #a5afbb;
 
-  --accent: #27272a;
+  --accent: #1b2330;
   --accent-foreground: #f8fafc;
 
-  --positive: #10b981;
+  --positive: #3de3a5;
   --warning: #f59e0b;
   --negative: #ef4444;
   --destructive: #ef4444;
 
-  --border: #27272a;
-  --input: #27272a;
-  --ring: #6366f1;
+  --border: #252c35;
+  --input: #252c35;
+  --ring: #8577ff;
 
-  --chart-1: #6366f1;
+  --chart-1: #8577ff;
   --chart-2: #f59e0b;
   --chart-3: #10b981;
   --chart-4: #ef4444;
@@ -108,6 +108,9 @@
   }
   .tabular {
     font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+  .tabular-nums {
     font-family: var(--font-mono);
   }
 }
@@ -192,12 +195,19 @@
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* ── Touch & scroll optimizations ── */
-button,
+  button,
 a,
 [role='button'],
 [role='tab'],
 [role='radio'] {
   touch-action: manipulation;
+}
+
+@media (pointer: coarse) {
+  button,
+  [role='button'] {
+    min-height: 44px;
+  }
 }
 
 [role='dialog'],

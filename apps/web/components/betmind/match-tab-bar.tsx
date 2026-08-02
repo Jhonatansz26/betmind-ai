@@ -57,7 +57,7 @@ export function MatchTabBar({ active, onChange, className }: MatchTabBarProps) {
               aria-controls={`match-panel-${id}`}
               onClick={() => onChange(id)}
               className={cn(
-                'flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-[11px] font-semibold uppercase tracking-wide transition-colors',
+                 'flex min-h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-[11px] font-semibold tracking-[0.08em] transition-colors',
                 isActive
                   ? 'border-primary text-primary'
                   : 'border-transparent text-subtle hover:text-foreground',

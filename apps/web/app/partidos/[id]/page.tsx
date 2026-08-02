@@ -174,7 +174,7 @@ function buildDetail(match: Match, enriched: EnrichedMatch | null, model: MatchM
 
 function sectionLabel({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <p className={cn('text-[10px] font-bold text-subtle uppercase tracking-widest', className)}>
+    <p className={cn('text-[10px] font-bold text-subtle tracking-[0.14em]', className)}>
       {children}
     </p>
   )
@@ -980,7 +980,7 @@ function PreviaTab({
 }) {
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-[3fr_2fr] gap-5">
+       <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-5">
         {/* Left */}
         <div className="flex flex-col gap-5 min-w-0">
           <EVTable rows={rows} match={match} best={best} />
@@ -1340,7 +1340,7 @@ export default function PartidoDetailPage() {
   }, [params.id])
 
   return (
-    <div className="min-h-svh bg-background">
+    <div className="min-h-svh bg-background pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
       <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4">
           <Link
