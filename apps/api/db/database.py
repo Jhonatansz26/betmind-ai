@@ -40,7 +40,10 @@ async_session_factory = async_sessionmaker(
 
 
 async def init_db() -> None:
-    from apps.api.models import Team, League, Match, Prediction, User, BookmakerOdd
+    from apps.api.models import (
+        Team, League, Match, Prediction, User, BookmakerOdd,
+        MatchEvent, MatchAdvancedStats, RefereeProfile,
+    )
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

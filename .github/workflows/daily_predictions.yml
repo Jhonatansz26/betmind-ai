@@ -2,8 +2,16 @@ name: Ejecutar Predicciones Diarias BetMind AI
 
 on:
   schedule:
-    - cron: '0 6,14 * * *'
+    # GitHub cron is UTC. Run every two hours to keep the rolling -2h/+36h window warm.
+    - cron: '0 */2 * * *'
   workflow_dispatch:
+
+concurrency:
+  group: betmind-data-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   run-batch-predictions:
@@ -24,14 +32,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -e packages/ml
-          pip install -e apps/api || true
+          pip install -r apps/api/requirements.txt
+
+      - name: Sincronizar partidos en ventana móvil
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+        run: python scripts/sync_today_matches.py
 
       - name: Ejecutar Predicciones Batch
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python scripts/batch_predict.py --mode full --limit 150

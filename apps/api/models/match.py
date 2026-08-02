@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from apps.api.models.base import Base, TimestampMixin
@@ -34,6 +34,11 @@ class Match(TimestampMixin, Base):
     away_fouls: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     home_shots_on_target: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     away_shots_on_target: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    sofascore_event_id: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True, nullable=True)
+    referee_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("referee_profiles.referee_id"), nullable=True, index=True
+    )
     
     league: Mapped["League"] = relationship("League", lazy="noload")
     home_team: Mapped["Team"] = relationship("Team", foreign_keys=[home_team_id], lazy="noload")
@@ -41,4 +46,13 @@ class Match(TimestampMixin, Base):
     predictions: Mapped[list["Prediction"]] = relationship(
         "Prediction", back_populates="match", lazy="noload",
         order_by="Prediction.created_at.desc()",
+    )
+    events: Mapped[list["MatchEvent"]] = relationship(
+        "MatchEvent", back_populates="match", cascade="all, delete-orphan", lazy="selectin"
+    )
+    advanced_stats: Mapped[Optional["MatchAdvancedStats"]] = relationship(
+        "MatchAdvancedStats", back_populates="match", uselist=False, cascade="all, delete-orphan", lazy="selectin"
+    )
+    referee: Mapped[Optional["RefereeProfile"]] = relationship(
+        "RefereeProfile", back_populates="matches", lazy="selectin"
     )

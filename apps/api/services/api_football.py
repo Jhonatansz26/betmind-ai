@@ -6,6 +6,7 @@ import httpx
 
 from apps.api.config import settings
 from apps.api.core.exceptions import ExternalAPIException
+from apps.api.core.enums import normalize_match_status
 
 logger = logging.getLogger(__name__)
 
@@ -389,28 +390,6 @@ class APIFootballService:
             match_date = datetime.utcnow()
         
         status_short = fixture_data.get("status", {}).get("short", "NS")
-        status_map = {
-            "NS": "SCHEDULED",
-            "TBD": "SCHEDULED",
-            "1H": "LIVE",
-            "2H": "LIVE",
-            "HT": "LIVE",
-            "ET": "LIVE",
-            "BT": "LIVE",
-            "P": "LIVE",
-            "SUSP": "LIVE",
-            "INT": "LIVE",
-            "LIVE": "LIVE",
-            "FT": "FINISHED",
-            "AET": "FINISHED",
-            "PEN": "FINISHED",
-            "PST": "FINISHED",
-            "CANC": "FINISHED",
-            "ABD": "FINISHED",
-            "AWD": "FINISHED",
-            "WO": "FINISHED",
-            "POST": "SCHEDULED",
-        }
         
         return {
             "external_id": fixture_data.get("id"),
@@ -424,7 +403,7 @@ class APIFootballService:
             "away_team_name": teams_data.get("away", {}).get("name"),
             "away_team_logo": teams_data.get("away", {}).get("logo"),
             "match_date": match_date,
-            "status": status_map.get(status_short, "SCHEDULED"),
+            "status": normalize_match_status(status_short),
             "home_score": goals_data.get("home"),
             "away_score": goals_data.get("away"),
             "regulation_time_only": True,

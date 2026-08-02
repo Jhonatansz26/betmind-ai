@@ -1,4 +1,5 @@
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timedelta, time, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
@@ -7,8 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.dependencies import get_async_session
 from apps.api.models.league import League
 from apps.api.models.match import Match
+from apps.api.core.enums import UPCOMING_MATCH_STATUSES
 
 router = APIRouter(prefix="/leagues", tags=["Leagues"])
+COT = ZoneInfo("America/Bogota")
 
 
 @router.get("/")
@@ -17,15 +20,18 @@ async def list_leagues(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Retorna solo las ligas que tienen al menos 1 partido activo (SCHEDULED + LIVE + INPLAY) en la fecha indicada."""
-    target_date = date or date.today()
-    day_start = datetime.combine(target_date, time.min, tzinfo=timezone.utc)
-    day_end = datetime.combine(target_date, time.max, tzinfo=timezone.utc)
-    active_statuses = ["SCHEDULED", "LIVE", "INPLAY"]
+    if date:
+        day_start = datetime.combine(date, time.min, tzinfo=COT).astimezone(timezone.utc)
+        day_end = datetime.combine(date, time.max, tzinfo=COT).astimezone(timezone.utc)
+    else:
+        now_utc = datetime.now(timezone.utc)
+        day_start = now_utc - timedelta(hours=2)
+        day_end = now_utc + timedelta(hours=36)
 
     match_count_subquery = (
         select(Match.league_id, func.count(Match.id).label("match_count"))
         .where(
-            Match.status.in_(active_statuses),
+            Match.status.in_(UPCOMING_MATCH_STATUSES),
             Match.match_date >= day_start,
             Match.match_date <= day_end,
         )

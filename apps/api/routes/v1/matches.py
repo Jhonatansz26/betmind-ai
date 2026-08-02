@@ -14,6 +14,7 @@ from apps.api.models.league import League
 from apps.api.models.team import Team
 from apps.api.models.bookmaker_odd import BookmakerOdd
 from apps.api.models.prediction import Prediction
+from apps.api.core.enums import FINISHED_MATCH_STATUSES, UPCOMING_MATCH_STATUSES
 from apps.api.services.api_football import APIFootballService
 from apps.api.services.data_ingestion import DataIngestionService
 
@@ -53,7 +54,13 @@ async def list_matches(
         else:
             resolved_date = date_filter  # Asumir YYYY-MM-DD
 
-    if resolved_date:
+    use_rolling_window = not date_str and (not date_filter or date_filter.lower() == "today")
+
+    if use_rolling_window:
+        window_start = (datetime.now(timezone.utc) - timedelta(hours=2))
+        window_end = (datetime.now(timezone.utc) + timedelta(hours=36))
+        conditions.append(and_(Match.match_date >= window_start, Match.match_date <= window_end))
+    elif resolved_date:
         try:
             target_date = datetime.strptime(resolved_date, "%Y-%m-%d").date()
         except ValueError:
@@ -73,16 +80,11 @@ async def list_matches(
     # Guarda de fecha minima: en modo "upcoming" sin filtro de fecha,
     # solo mostrar partidos desde hoy a las 00:00 COT hacia adelante
     # (excluye partidos pasados con status SCHEDULED stale)
-    if include_upcoming and not include_finished and not resolved_date:
-        today_start_cot = datetime.combine(now_cot.date(), datetime.min.time(), tzinfo=COT)
-        today_start_utc = today_start_cot.astimezone(timezone.utc)
-        conditions.append(Match.match_date >= today_start_utc)
-
     status_filter = []
     if include_upcoming:
-        status_filter.extend(["SCHEDULED", "IN_PLAY", "LIVE", "INPLAY"])
+        status_filter.extend(UPCOMING_MATCH_STATUSES)
     if include_finished:
-        status_filter.extend(["FINISHED", "FT"])
+        status_filter.extend(FINISHED_MATCH_STATUSES)
     
     if status_filter:
         conditions.append(Match.status.in_(status_filter))
@@ -123,7 +125,11 @@ async def get_upcoming_matches(
     """Obtiene partidos próximos a disputarse."""
     stmt = (
         select(Match)
-        .where(Match.status == "SCHEDULED")
+        .where(
+            Match.status.in_(UPCOMING_MATCH_STATUSES),
+            Match.match_date >= datetime.now(timezone.utc) - timedelta(hours=2),
+            Match.match_date <= datetime.now(timezone.utc) + timedelta(hours=36),
+        )
         .options(
             selectinload(Match.home_team),
             selectinload(Match.away_team),
@@ -153,6 +159,9 @@ async def get_match(
             selectinload(Match.away_team),
             selectinload(Match.league),
             selectinload(Match.predictions),
+            selectinload(Match.events),
+            selectinload(Match.advanced_stats),
+            selectinload(Match.referee),
         )
     )
     result = await db.execute(stmt)
@@ -160,7 +169,49 @@ async def get_match(
     if match is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     odds_map = await _fetch_odds_for_matches(db, [match_id])
-    return _match_to_dict_full(match, odds_map.get(match_id, {}))
+    response = _match_to_dict_full(match, odds_map.get(match_id, {}))
+    response["sofascore_event_id"] = match.sofascore_event_id
+    response["match_events"] = [
+        {
+            "id": event.id,
+            "event_type": event.event_type,
+            "minute": event.minute,
+            "added_time": event.added_time,
+            "is_home": event.is_home,
+            "player_name": event.player_name,
+        }
+        for event in match.events
+    ]
+    response["match_advanced_stats"] = (
+        {
+            "home_xg": match.advanced_stats.home_xg,
+            "away_xg": match.advanced_stats.away_xg,
+            "home_shots": match.advanced_stats.home_shots,
+            "away_shots": match.advanced_stats.away_shots,
+            "home_shots_on_target": match.advanced_stats.home_shots_on_target,
+            "away_shots_on_target": match.advanced_stats.away_shots_on_target,
+            "home_corners": match.advanced_stats.home_corners,
+            "away_corners": match.advanced_stats.away_corners,
+            "home_fouls": match.advanced_stats.home_fouls,
+            "away_fouls": match.advanced_stats.away_fouls,
+        }
+        if match.advanced_stats
+        else None
+    )
+    response["referee_profile"] = (
+        {
+            "referee_id": match.referee.referee_id,
+            "name": match.referee.name,
+            "matches_count": match.referee.matches_count,
+            "yellow_cards": match.referee.yellow_cards,
+            "red_cards": match.referee.red_cards,
+            "yellow_cards_avg": match.referee.yellow_cards_avg,
+            "red_cards_avg": match.referee.red_cards_avg,
+        }
+        if match.referee
+        else None
+    )
+    return response
 
 
 @router.post("/sync/{league_id}")

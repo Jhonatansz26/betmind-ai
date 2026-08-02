@@ -15,7 +15,7 @@ import logging
 import os
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -84,6 +84,7 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
     from apps.api.repositories.tactical_analysis_repository import TacticalAnalysisRepository
     from apps.api.services.cache_service import CacheService
     from apps.api.schemas.prediction import OddsInput
+    from apps.api.core.enums import UPCOMING_MATCH_STATUSES
 
     include_tactical = mode == "full"
 
@@ -109,8 +110,9 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
             stmt = (
                 select(Match)
                 .where(
-                    Match.status.in_(["SCHEDULED", "LIVE", "INPLAY"]),
-                    Match.match_date >= datetime.now(timezone.utc),
+                    Match.status.in_(UPCOMING_MATCH_STATUSES),
+                    Match.match_date >= datetime.now(timezone.utc) - timedelta(hours=2),
+                    Match.match_date <= datetime.now(timezone.utc) + timedelta(hours=36),
                 )
                 .order_by(Match.match_date.asc())
                 .options(
@@ -127,7 +129,7 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
             result = await session.execute(stmt)
             all_matches = list(result.scalars().all())
             stats["total"] = len(all_matches)
-            logger.info("Found %d SCHEDULED matches to process", stats["total"])
+            logger.info("Found %d matches in rolling -2h/+36h window to process", stats["total"])
 
             match_ids = [m.id for m in all_matches]
 

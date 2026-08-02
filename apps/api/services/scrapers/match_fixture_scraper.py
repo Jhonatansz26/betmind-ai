@@ -224,36 +224,33 @@ class MatchFixtureScraper:
         """
         all_fixtures: dict[str, list[dict[str, Any]]] = {}
         
-        # Fecha actual en zona horaria de Colombia
-        now_local = datetime.now(COLOMBIA_TZ)
-        today_local = now_local.date()
-        
-        # Rango local deseado: hoy + days_ahead
-        date_from_local = today_local
-        date_to_local = today_local + timedelta(days=days_ahead)
+        # Use a rolling window so UTC/local-midnight conversions cannot drop fixtures.
+        now_utc = datetime.now(timezone.utc)
+        window_start = now_utc - timedelta(hours=2)
+        window_end = now_utc + timedelta(hours=36)
+        date_from_local = window_start.astimezone(COLOMBIA_TZ).date()
+        date_to_local = window_end.astimezone(COLOMBIA_TZ).date()
         
         logger.info(f"Rango local de búsqueda: {date_from_local} a {date_to_local} (America/Bogota)")
 
         for league_key in ESPN_LEAGUE_SLUGS.keys():
             league_fixtures = []
             
-            # Consultar 3 fechas en ESPN: ayer, hoy, mañana (en UTC)
-            # Esto asegura capturar partidos nocturnos que en UTC caen en día diferente
-            for day_offset in range(-1, 2):  # -1, 0, 1
+            # ESPN is queried by calendar date; the final filter is continuous.
+            for day_offset in range((date_to_local - date_from_local).days + 1):
                 target_date = datetime.combine(
-                    today_local + timedelta(days=day_offset), datetime.min.time()
+                    date_from_local + timedelta(days=day_offset), datetime.min.time()
                 )
                 fixtures = await self.fetch_league_fixtures(league_key, target_date)
                 
                 # Filtrar partidos que caen en el rango local deseado
                 for fixture in fixtures:
-                    match_date_local = fixture["match_date"]
-                    if hasattr(match_date_local, 'date'):
-                        match_date_only = match_date_local.date()
-                        if date_from_local <= match_date_only <= date_to_local:
-                            league_fixtures.append(fixture)
-                    else:
-                        # Si no tiene información de fecha, incluirlo
+                    match_date_value = fixture.get("match_date")
+                    if not match_date_value:
+                        continue
+                    if match_date_value.tzinfo is None:
+                        match_date_value = match_date_value.replace(tzinfo=timezone.utc)
+                    if window_start <= match_date_value.astimezone(timezone.utc) <= window_end:
                         league_fixtures.append(fixture)
 
             # Eliminar duplicados por external_id
@@ -270,4 +267,3 @@ class MatchFixtureScraper:
             all_fixtures[league_key] = unique_fixtures
 
         return all_fixtures
-

@@ -1,5 +1,5 @@
 """
-Script CLI para sincronizar partidos programados de HOY y MAÑANA
+Script CLI para sincronizar partidos de una ventana móvil de -2h/+36h
 junto con sus cuotas de casas de apuestas (API-Football).
 
 Zona horaria: America/Bogota (UTC-5) para Colombia
@@ -30,6 +30,7 @@ from apps.api.repositories.match_repository import MatchRepository
 from apps.api.models.base import Base
 from apps.api.models.team import Team
 from apps.api.models.match import Match
+from apps.api.core.enums import normalize_match_status
 
 COLOMBIA_TZ = ZoneInfo("America/Bogota")
 
@@ -72,7 +73,7 @@ def print_header():
     print(f"Fuentes: ESPN Scoreboard (partidos) + API-Football (cuotas)")
     print(f"Zona horaria: America/Bogota (UTC-5)")
     print(f"Ligas configuradas: {len(FEATURED_LEAGUES)}")
-    print(f"Rango: HOY y MAÑANA")
+    print(f"Rango: ahora - 2h hasta ahora + 36h")
     print("=" * 80 + "\n")
 
 
@@ -136,7 +137,7 @@ def print_final_summary(
 
 
 async def sync_upcoming_matches():
-    """Sincroniza partidos de HOY y MAÑANA (COT) + cuotas de API-Football."""
+    """Sincroniza partidos de la ventana móvil -2h/+36h + cuotas."""
 
     print_header()
 
@@ -239,7 +240,7 @@ async def sync_upcoming_matches():
                             home_team_id=home_team.id,
                             away_team_id=away_team.id,
                             match_date=fixture["match_date"],
-                            status=fixture["status"],
+                            status=normalize_match_status(fixture.get("status")),
                             home_score=fixture.get("home_score"),
                             away_score=fixture.get("away_score"),
                             regulation_time_only=True,
@@ -256,7 +257,7 @@ async def sync_upcoming_matches():
                             "match_date": fixture["match_date"],
                             "home_team_name": fixture["home_team"],
                             "away_team_name": fixture["away_team"],
-                            "status": fixture["status"],
+                            "status": normalize_match_status(fixture.get("status")),
                             "odds_count": 0,
                         })
 
@@ -381,7 +382,7 @@ async def sync_upcoming_matches():
                             logger.warning(f"AF fallback: teams not found for {home_name} vs {away_name}")
                             continue
 
-                        mapped_status = api_status  # Already parsed: SCHEDULED/LIVE/FINISHED
+                        mapped_status = normalize_match_status(api_status)
 
                         # Find or create match
                         match = await match_repo.get_by_external_id(int(api_fixture_id))
@@ -389,7 +390,10 @@ async def sync_upcoming_matches():
                         if match:
                             # Update existing match
                             needs_update = False
-                            if match.status == "SCHEDULED" and mapped_status != "SCHEDULED":
+                            current_status = normalize_match_status(match.status)
+                            if current_status != mapped_status and not (
+                                current_status == "FINISHED" and mapped_status == "SCHEDULED"
+                            ):
                                 match.status = mapped_status
                                 needs_update = True
                             if api_home_score is not None and match.home_score is None:

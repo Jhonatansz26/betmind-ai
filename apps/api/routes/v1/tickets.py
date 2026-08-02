@@ -1,20 +1,23 @@
 import logging
+import json
 
 from fastapi import APIRouter, Depends, Query
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 
 from apps.api.schemas.ticket import (
     TicketGenerateRequest,
     TicketGenerateResponse,
     TicketMode,
 )
-from apps.api.schemas.prediction import OddsInput
+from apps.api.core.enums import UPCOMING_MATCH_STATUSES
+from apps.api.models.bookmaker_odd import BookmakerOdd
+from apps.api.models.match import Match
+from apps.api.models.league import League
+from apps.api.repositories.match_repository import LEAGUE_KEY_TO_EXTERNAL_ID
 from apps.api.engine.ticket_builder import build_ticket_for_mode
-from apps.api.orchestrators.prediction_orchestrator import PredictionOrchestrator
-from apps.api.repositories.match_repository import MatchRepository
-from apps.api.repositories.tactical_analysis_repository import TacticalAnalysisRepository
-from apps.api.services.odds_service import OddsService
 from apps.api.dependencies import get_async_session, get_cache_service
 
 logger = logging.getLogger(__name__)
@@ -22,6 +25,95 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
 COT = ZoneInfo("America/Bogota")
+
+
+def _ticket_window(date_filter: str | None) -> tuple[datetime, datetime]:
+    """Return a UTC window without making the request depend on a UTC date."""
+    if not date_filter or date_filter.lower() == "today":
+        now = datetime.now(timezone.utc)
+        return now - timedelta(hours=2), now + timedelta(hours=36)
+    if date_filter.lower() == "tomorrow":
+        target = datetime.now(COT).date() + timedelta(days=1)
+    else:
+        try:
+            target = datetime.strptime(date_filter, "%Y-%m-%d").date()
+        except ValueError:
+            target = datetime.now(COT).date()
+    start = datetime.combine(target, datetime.min.time(), tzinfo=COT)
+    end = datetime.combine(target, datetime.max.time(), tzinfo=COT)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+async def _read_stored_predictions(session, date_filter: str | None, league_filter: list[str] | None):
+    start_utc, end_utc = _ticket_window(date_filter)
+    conditions = [
+        Match.status.in_(UPCOMING_MATCH_STATUSES),
+        Match.match_date >= start_utc,
+        Match.match_date <= end_utc,
+    ]
+    if league_filter:
+        league_ids = [
+            int(value) if str(value).isdigit() else LEAGUE_KEY_TO_EXTERNAL_ID.get(str(value))
+            for value in league_filter
+        ]
+        league_ids = [value for value in league_ids if value is not None]
+        if league_ids:
+            conditions.append(Match.league.has(League.external_id.in_(league_ids)))
+
+    stmt = (
+        select(Match)
+        .where(and_(*conditions))
+        .options(
+            selectinload(Match.home_team),
+            selectinload(Match.away_team),
+            selectinload(Match.league),
+            selectinload(Match.predictions),
+        )
+        .order_by(Match.match_date.asc())
+    )
+    result = await session.execute(stmt)
+    matches = list(result.scalars().all())
+    match_ids = [match.id for match in matches]
+    if not match_ids:
+        return matches, {}
+
+    odds_result = await session.execute(
+        select(BookmakerOdd).where(BookmakerOdd.match_id.in_(match_ids))
+    )
+    odds_by_match: dict[int, dict[str, float]] = {}
+    for odd in odds_result.scalars().all():
+        odds_by_match.setdefault(odd.match_id, {})[odd.market_name] = odd.odds_value
+    return matches, odds_by_match
+
+
+def _stored_market_rows(match: Match, odds_by_match: dict[int, dict[str, float]]) -> list[dict]:
+    prediction = match.predictions[0] if match.predictions else None
+    if prediction is None or not prediction.markets_json:
+        return []
+    try:
+        stored_markets = json.loads(prediction.markets_json)
+    except (TypeError, ValueError):
+        return []
+
+    odds = odds_by_match.get(match.id, {})
+    rows = []
+    for market in stored_markets:
+        name = market.get("market_name")
+        probability = market.get("our_probability")
+        if not isinstance(name, str) or not isinstance(probability, (int, float)):
+            continue
+        bookmaker_odds = odds.get(name)
+        implied = 1 / bookmaker_odds if bookmaker_odds and bookmaker_odds > 1 else 0
+        expected_value = probability * bookmaker_odds - 1 if bookmaker_odds and bookmaker_odds > 1 else 0
+        rows.append({
+            "market_name": name,
+            "market_label": _market_label(name),
+            "our_probability": probability,
+            "bookmaker_odds": bookmaker_odds or 0,
+            "implied_probability": implied,
+            "expected_value": expected_value,
+        })
+    return rows
 
 
 @router.post(
@@ -40,26 +132,10 @@ async def generate_tickets(
     cache=Depends(get_cache_service),
 ):
     now_cot = datetime.now(COT)
-    today_cot = now_cot.date()
-    tomorrow_cot_obj = today_cot + timedelta(days=1)
-
-    if date_filter:
-        df = date_filter.lower()
-        if df == "today":
-            target_dates = [today_cot]
-        elif df == "tomorrow":
-            target_dates = [tomorrow_cot_obj]
-        else:
-            try:
-                target_dates = [datetime.strptime(date_filter, "%Y-%m-%d").date()]
-            except ValueError:
-                target_dates = [today_cot, tomorrow_cot_obj]
-    else:
-        target_dates = [today_cot, tomorrow_cot_obj]
-
-    # Cache key distinguishes dates
-    date_slug = "_".join(sorted(set(d.isoformat() for d in target_dates)))
-    cache_key = f"tickets:daily:{date_slug}"
+    start_utc, end_utc = _ticket_window(date_filter)
+    window_slug = f"{start_utc.strftime('%Y%m%d%H')}_{end_utc.strftime('%Y%m%d%H')}"
+    leagues_slug = ",".join(sorted(request.league_filter or [])) or "all"
+    cache_key = f"tickets:stored:{date_filter or 'rolling'}:{window_slug}:{leagues_slug}"
 
     if not request.force_refresh:
         if cached := await cache.get(cache_key, TicketGenerateResponse):
@@ -67,69 +143,26 @@ async def generate_tickets(
                 cached.tickets = [t for t in cached.tickets if t.mode in request.modes]
             return cached
 
-    repo = MatchRepository(session)
-    tactical_repo = TacticalAnalysisRepository(session)
-    odds_service = OddsService(session)
-
-    all_matches = []
-    for target_date in target_dates:
-        day_matches = await repo.get_matches_by_date(
-            target_date=target_date,
-            league_keys=request.league_filter,
-        )
-        all_matches.extend(day_matches)
+    all_matches, odds_map = await _read_stored_predictions(
+        session, date_filter, request.league_filter
+    )
 
     if not all_matches:
-        return TicketGenerateResponse(
+        empty_response = TicketGenerateResponse(
             generated_at=datetime.now(COT).isoformat(),
             tickets=[],
             total_ev_opportunities=0,
             matches_analyzed=0,
         )
+        # Avoid reconnecting to the database on every empty dashboard refresh.
+        await cache.set(cache_key, empty_response, ttl=30)
+        return empty_response
 
-    match_ids = [m.id for m in all_matches]
-    odds_map = await odds_service.get_odds_for_matches(match_ids)
-
-    orchestrator = PredictionOrchestrator(
-        match_repo=repo,
-        tactical_repo=tactical_repo,
-        cache=cache,
-    )
     all_predictions = []
 
     for match in all_matches:
         try:
-            match_odds = odds_map.get(match.id, {})
-            odds_input = None
-            if match_odds:
-                odds_input = OddsInput(
-                    home_win=match_odds.get("1X2_HOME"),
-                    draw=match_odds.get("1X2_DRAW"),
-                    away_win=match_odds.get("1X2_AWAY"),
-                    over_2_5=match_odds.get("OVER_2_5"),
-                )
-
-            # Modo cuantitativo sin LLM para generación masiva
-            pred = await orchestrator.get_prediction(
-                match_id=match.id,
-                odds=odds_input,
-                include_tactical_analysis=False,
-            )
-
-            markets = []
-            if odds_input and pred.ev_analysis:
-                for m in pred.ev_analysis:
-                    if m.expected_value is not None and m.bookmaker_odds:
-                        markets.append({
-                            "market_name":       m.market,
-                            "market_label":      _market_label(m.market),
-                            "our_probability":   m.our_probability,
-                            "bookmaker_odds":    m.bookmaker_odds,
-                            "implied_probability": m.bookmaker_implied_probability or 0,
-                            "expected_value":    m.expected_value,
-                        })
-            else:
-                _derive_markets_from_probabilities(markets, pred)
+            markets = _stored_market_rows(match, odds_map)
 
             if markets:
                 all_predictions.append({
