@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from apps.api.models.base import Base, TimestampMixin
 
@@ -27,3 +27,5 @@ class BookmakerOdd(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("match_id", "market_name", "bookmaker_name", name="uq_match_market_bookmaker"),
     )
+
+    match: Mapped["Match"] = relationship("Match", back_populates="bookmaker_odds")

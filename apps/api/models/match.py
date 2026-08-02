@@ -47,6 +47,9 @@ class Match(TimestampMixin, Base):
         "Prediction", back_populates="match", lazy="noload",
         order_by="Prediction.created_at.desc()",
     )
+    bookmaker_odds: Mapped[list["BookmakerOdd"]] = relationship(
+        "BookmakerOdd", back_populates="match", lazy="selectin"
+    )
     events: Mapped[list["MatchEvent"]] = relationship(
         "MatchEvent", back_populates="match", cascade="all, delete-orphan", lazy="selectin"
     )

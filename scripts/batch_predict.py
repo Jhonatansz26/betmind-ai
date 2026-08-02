@@ -119,6 +119,7 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
                     selectinload(Match.home_team),
                     selectinload(Match.away_team),
                     selectinload(Match.league),
+                    selectinload(Match.bookmaker_odds),
                 )
             )
             if limit > 0:

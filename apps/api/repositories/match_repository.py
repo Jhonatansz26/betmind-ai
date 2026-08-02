@@ -52,6 +52,7 @@ class MatchRepository:
                 selectinload(Match.home_team),
                 selectinload(Match.away_team),
                 selectinload(Match.league),
+                selectinload(Match.bookmaker_odds),
             )
         )
         result = await self._session.execute(stmt)

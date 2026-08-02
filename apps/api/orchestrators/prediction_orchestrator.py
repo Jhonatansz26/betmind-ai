@@ -271,6 +271,8 @@ class PredictionOrchestrator:
                 featured_player=None,
             )
         return None
+
+    def _build_match_context(self, match: Match) -> MatchContext:
         """Construye el contexto del partido para el Cerebro Táctico."""
         return MatchContext(
             match_id=match.id,
