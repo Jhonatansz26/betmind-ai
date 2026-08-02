@@ -28,20 +28,31 @@ COT = ZoneInfo("America/Bogota")
 
 
 def _ticket_window(date_filter: str | None) -> tuple[datetime, datetime]:
-    """Return a UTC window without making the request depend on a UTC date."""
-    if not date_filter or date_filter.lower() == "today":
-        now = datetime.now(timezone.utc)
-        return now - timedelta(hours=2), now + timedelta(hours=36)
-    if date_filter.lower() == "tomorrow":
-        target = datetime.now(COT).date() + timedelta(days=1)
-    else:
+    """Return UTC bounds for the requested local COT calendar day.
+
+    Comparing UTC bounds is equivalent to ``date(match_date AT TIME ZONE
+    'America/Bogota') = target_date`` while keeping the indexed column usable.
+    The rolling window is reserved for ``all``/omitted filters.
+    """
+    filter_value = date_filter.lower() if date_filter else "all"
+    now_cot = datetime.now(COT)
+
+    if filter_value == "today":
+        target = now_cot.date()
+    elif filter_value == "tomorrow":
+        target = now_cot.date() + timedelta(days=1)
+    elif filter_value not in {"all", ""}:
         try:
-            target = datetime.strptime(date_filter, "%Y-%m-%d").date()
+            target = datetime.strptime(filter_value, "%Y-%m-%d").date()
         except ValueError:
-            target = datetime.now(COT).date()
-    start = datetime.combine(target, datetime.min.time(), tzinfo=COT)
-    end = datetime.combine(target, datetime.max.time(), tzinfo=COT)
-    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+            target = now_cot.date()
+    else:
+        now_utc = now_cot.astimezone(timezone.utc)
+        return now_utc - timedelta(hours=2), now_utc + timedelta(hours=36)
+
+    start_cot = datetime.combine(target, datetime.min.time(), tzinfo=COT)
+    end_cot = datetime.combine(target, datetime.max.time(), tzinfo=COT)
+    return start_cot.astimezone(timezone.utc), end_cot.astimezone(timezone.utc)
 
 
 async def _read_stored_predictions(session, date_filter: str | None, league_filter: list[str] | None):
@@ -126,7 +137,7 @@ async def generate_tickets(
     date_filter: str | None = Query(
         None,
         alias="date_filter",
-        description="Filtro de fecha: 'today', 'tomorrow', YYYY-MM-DD, o omitir para hoy+mañana",
+        description="Filtro de fecha: 'today', 'tomorrow', 'all' o YYYY-MM-DD",
     ),
     session=Depends(get_async_session),
     cache=Depends(get_cache_service),
