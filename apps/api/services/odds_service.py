@@ -34,6 +34,46 @@ OVER_UNDER_VALUE_MAP: dict[str, str] = {
     "Under 3.5": "UNDER_3_5",
 }
 
+# Mapas para mercados especiales: Córneres y Tarjetas
+CORNERS_VALUE_MAP: dict[str, str] = {
+    "Over 6.5": "CORNERS_OVER_6_5",
+    "Under 6.5": "CORNERS_UNDER_6_5",
+    "Over 7.5": "CORNERS_OVER_7_5",
+    "Under 7.5": "CORNERS_UNDER_7_5",
+    "Over 8.5": "CORNERS_OVER_8_5",
+    "Under 8.5": "CORNERS_UNDER_8_5",
+    "Over 9.5": "CORNERS_OVER_9_5",
+    "Under 9.5": "CORNERS_UNDER_9_5",
+    "Over 10.5": "CORNERS_OVER_10_5",
+    "Under 10.5": "CORNERS_UNDER_10_5",
+    "Over 11.5": "CORNERS_OVER_11_5",
+    "Under 11.5": "CORNERS_UNDER_11_5",
+}
+
+CARDS_VALUE_MAP: dict[str, str] = {
+    "Over 2.5": "CARDS_OVER_2_5",
+    "Under 2.5": "CARDS_UNDER_2_5",
+    "Over 3.5": "CARDS_OVER_3_5",
+    "Under 3.5": "CARDS_UNDER_3_5",
+    "Over 4.5": "CARDS_OVER_4_5",
+    "Under 4.5": "CARDS_UNDER_4_5",
+    "Over 5.5": "CARDS_OVER_5_5",
+    "Under 5.5": "CARDS_UNDER_5_5",
+}
+
+SHOTS_OT_VALUE_MAP: dict[str, str] = {
+    "Over 4.5": "SHOTS_OT_OVER_4_5",
+    "Under 4.5": "SHOTS_OT_UNDER_4_5",
+    "Over 5.5": "SHOTS_OT_OVER_5_5",
+    "Under 5.5": "SHOTS_OT_UNDER_5_5",
+    "Over 6.5": "SHOTS_OT_OVER_6_5",
+    "Under 6.5": "SHOTS_OT_UNDER_6_5",
+    "Over 7.5": "SHOTS_OT_OVER_7_5",
+    "Under 7.5": "SHOTS_OT_UNDER_7_5",
+    "Over 8.5": "SHOTS_OT_OVER_8_5",
+    "Under 8.5": "SHOTS_OT_UNDER_8_5",
+}
+
 
 class OddsService:
     def __init__(self, session: AsyncSession):
@@ -244,6 +284,44 @@ class OddsService:
                         if odds_val and val_name in OVER_UNDER_VALUE_MAP:
                             parsed.append({
                                 "market_name": OVER_UNDER_VALUE_MAP[val_name],
+                                "odds_value": odds_val,
+                                "external_fixture_id": fixture_id,
+                            })
+
+                # ── Córneres ──
+                elif bet_name in ("Corner Kicks Over/Under", "Corners Over/Under",
+                                   "Total Corners", "Total Corner Kicks"):
+                    for val in values:
+                        val_name = val.get("value", "")
+                        odds_val = self._safe_float(val.get("odd"))
+                        if odds_val and val_name in CORNERS_VALUE_MAP:
+                            parsed.append({
+                                "market_name": CORNERS_VALUE_MAP[val_name],
+                                "odds_value": odds_val,
+                                "external_fixture_id": fixture_id,
+                            })
+
+                # ── Tarjetas ──
+                elif bet_name in ("Cards Over/Under", "Total Cards",
+                                   "Total Bookings", "Asian Cards"):
+                    for val in values:
+                        val_name = val.get("value", "")
+                        odds_val = self._safe_float(val.get("odd"))
+                        if odds_val and val_name in CARDS_VALUE_MAP:
+                            parsed.append({
+                                "market_name": CARDS_VALUE_MAP[val_name],
+                                "odds_value": odds_val,
+                                "external_fixture_id": fixture_id,
+                            })
+
+                # ── Remates a puerta ──
+                elif bet_name in ("Shots on Target Over/Under", "Total Shots on Target"):
+                    for val in values:
+                        val_name = val.get("value", "")
+                        odds_val = self._safe_float(val.get("odd"))
+                        if odds_val and val_name in SHOTS_OT_VALUE_MAP:
+                            parsed.append({
+                                "market_name": SHOTS_OT_VALUE_MAP[val_name],
                                 "odds_value": odds_val,
                                 "external_fixture_id": fixture_id,
                             })

@@ -217,9 +217,10 @@ def build_ticket_for_mode(
 
             if bm_odds <= 1.0:
                 if prob > 0:
-                    bm_odds = round(1.0 / prob, 2)
-                    implied = prob
-                    ev = 0.0
+                    # Sintetizar cuota justa con overround del 5%
+                    bm_odds = round(1.0 / (prob / 1.05), 2)
+                    implied = prob / 1.05
+                    ev = round(prob * bm_odds - 1, 4)
                 else:
                     continue
 
@@ -345,8 +346,8 @@ def build_ticket_for_mode(
         confidence_score=base_confidence,
         correlation_validated=True,
         tactical_summary=(
-            f"{len(selected)} selections with avg {avg_ev*100:.1f}% EV. "
-            f"Correlation: {correlation_status}."
+            f"{len(selected)} selecciones con +EV promedio {avg_ev*100:.1f}%. "
+            f"Correlación: {correlation_status}."
         ),
         pros=_build_pros(mode, selected, avg_ev, combined),
         cons=_build_cons(selected, avg_ev, combined),
