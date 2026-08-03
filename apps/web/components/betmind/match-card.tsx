@@ -1,5 +1,4 @@
 'use client'
-
 import Link from 'next/link'
 import { ArrowRightIcon } from 'lucide-react'
 
@@ -62,6 +61,7 @@ export function MatchCard({ match }: { match: Match }) {
   const showScore = (isLive || isFinished) && hasRealScore
 
   return (
+    <Link href={`/partidos/${match.id}`} className="group block" aria-label={`Ver análisis de ${match.home} contra ${match.away}`}>
     <Card
       className={cn(
         'group gap-0 border-border bg-card p-0 transition-colors',
@@ -191,15 +191,13 @@ export function MatchCard({ match }: { match: Match }) {
             </div>
           )}
 
-          <Link
-            href={`/partidos/${match.id}`}
-            className="inline-flex items-center gap-1 text-xs font-medium text-primary transition-opacity hover:opacity-80"
-          >
+          <div className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-primary transition-opacity group-hover:opacity-80">
             {isFinished ? 'Ver Detalle' : 'Ver Análisis'}
             <ArrowRightIcon className="size-3" aria-hidden />
-          </Link>
+          </div>
         </div>
       </div>
     </Card>
+    </Link>
   )
 }

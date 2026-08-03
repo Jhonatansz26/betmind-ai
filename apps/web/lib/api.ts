@@ -243,6 +243,8 @@ interface BackendMatch {
     lambda_home: number | null
     lambda_away: number | null
   } | null
+  match_advanced_stats?: Match['advancedStats']
+  referee_profile?: Match['refereeProfile']
 }
 
 interface BackendMatchesResponse {
@@ -358,6 +360,8 @@ function mapBackendMatch(raw: BackendMatch): Match {
     keyRisk: '',
     summary: `${raw.home_team_name} vs ${raw.away_team_name} — ${leagueName}`,
     referee: defaultReferee,
+    advancedStats: raw.match_advanced_stats ?? null,
+    refereeProfile: raw.referee_profile ?? null,
   }
 }
 

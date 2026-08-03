@@ -1,10 +1,10 @@
 'use client'
 
 import * as React from 'react'
-import { ShieldIcon, SwordsIcon, TrendingUpIcon } from 'lucide-react'
+import { BarChart3Icon, SwordsIcon, TargetIcon, TrendingUpIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-export type MatchTab = 'preview' | 'h2h' | 'referee'
+export type MatchTab = 'preview' | 'markets' | 'builder' | 'h2h'
 
 interface TabDef {
   id: MatchTab
@@ -13,9 +13,10 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { id: 'preview', icon: TrendingUpIcon, label: 'Previa & Pronóstico' },
-  { id: 'h2h',     icon: SwordsIcon,    label: 'H2H & Táctico' },
-  { id: 'referee', icon: ShieldIcon,    label: 'Árbitro' },
+  { id: 'preview', icon: TrendingUpIcon, label: 'Resumen & Insights' },
+  { id: 'markets', icon: BarChart3Icon,  label: 'Pronósticos (56M)' },
+  { id: 'builder', icon: TargetIcon,    label: 'Bet Builder' },
+  { id: 'h2h',     icon: SwordsIcon,    label: 'Cara a Cara' },
 ]
 
 interface MatchTabBarProps {

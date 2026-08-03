@@ -19,6 +19,9 @@ import {
   ShieldAlert,
   Zap,
   BarChart2,
+  BarChart3,
+  ChevronDown,
+  Clock3,
   User,
   Footprints,
   Goal,
@@ -446,6 +449,58 @@ function ConfidenceBar({ detail, model }: { detail: MatchDetailData; model: Matc
       </div>
     </div>
   )
+}
+
+function SignalRail({ match, detail, enriched }: { match: Match; detail: MatchDetailData; enriched: EnrichedMatch | null }) {
+  const oddsCount = Object.values(match.odds).filter((value) => value > 1).length
+  const completeness = Math.round((enriched?.tacticalAnalysis?.data_completeness_score ?? 0) * 100)
+  return (
+    <div className="grid grid-cols-1 overflow-hidden rounded-2xl border border-primary/20 bg-primary/[0.06] sm:grid-cols-3">
+      <div className="flex items-center gap-3 border-b border-primary/10 px-4 py-3 sm:border-b-0 sm:border-r"><Activity size={16} className="text-primary" aria-hidden="true" /><div><p className="text-[10px] tracking-[0.12em] text-subtle">Señal BetMind</p><p className="font-mono text-sm font-bold text-foreground">{detail.confidenceScore}/100</p></div></div>
+      <div className="flex items-center gap-3 border-b border-primary/10 px-4 py-3 sm:border-b-0 sm:border-r"><Clock3 size={16} className="text-positive" aria-hidden="true" /><div><p className="text-[10px] tracking-[0.12em] text-subtle">Cuotas</p><p className="font-mono text-sm font-bold text-positive">{oddsCount ? `${oddsCount} mercados activos` : 'Sin cuotas'}</p></div></div>
+      <div className="flex items-center gap-3 px-4 py-3"><Target size={16} className="text-warning" aria-hidden="true" /><div><p className="text-[10px] tracking-[0.12em] text-subtle">Completitud</p><p className="font-mono text-sm font-bold text-foreground">{completeness}% datos</p></div></div>
+    </div>
+  )
+}
+
+type QuantMarket = EnrichedMatch['evAnalysis'][number]
+
+const MARKET_GROUPS = [
+  { id: 'goals', label: '⚽ Goles & Resultado', match: (market: string) => !market.startsWith('CORNERS_') && !market.startsWith('CARDS_') && !market.startsWith('SHOTS_OT_') },
+  { id: 'corners', label: '🚩 Córneres Totales', match: (market: string) => market.startsWith('CORNERS_') },
+  { id: 'cards', label: '🟨 Tarjetas & Disciplina', match: (market: string) => market.startsWith('CARDS_') },
+  { id: 'shots', label: '🎯 Remates a Puerta', match: (market: string) => market.startsWith('SHOTS_OT_') },
+] as const
+
+function pageMarketLabel(market: string) {
+  const labels: Record<string, string> = { '1X2_HOME': 'Gana Local', '1X2_DRAW': 'Empate', '1X2_AWAY': 'Gana Visitante', BTTS_YES: 'Ambos Anotan: Sí', BTTS_NO: 'Ambos Anotan: No' }
+  if (labels[market]) return labels[market]
+  return market.replace(/_(\d+)_(\d+)/, ' $1.$2').replaceAll('_', ' ').replace(/\bOVER\b/g, 'Más de').replace(/\bUNDER\b/g, 'Menos de').toLowerCase()
+}
+
+function MarketAccordion({ label, markets, defaultOpen = false }: { label: string; markets: QuantMarket[]; defaultOpen?: boolean }) {
+  const [open, setOpen] = React.useState(defaultOpen)
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-surface">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex min-h-11 w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+        <span className="text-sm font-semibold text-foreground">{label}</span><span className="flex items-center gap-2 font-mono text-xs text-subtle">{markets.length}<ChevronDown size={15} className={cn('transition-transform', open && 'rotate-180')} aria-hidden="true" /></span>
+      </button>
+      {open && <div className="border-t border-border/70 p-2">{markets.length === 0 ? <p className="px-3 py-4 text-sm text-subtle">Sin mercados disponibles.</p> : markets.map((market) => { const reliable = market.probability >= 0.70 && market.ev > 0; const risky = market.probability < 0.35; return <div key={market.market} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg px-3 py-3 even:bg-surface-raised/40"><span className="min-w-0 truncate text-sm text-foreground/85">{pageMarketLabel(market.market)}</span><span className="font-mono text-sm font-semibold text-foreground">{(market.probability * 100).toFixed(1)}%</span><span className={cn('min-w-[92px] rounded-md border px-2 py-1 text-center text-[10px] font-semibold', reliable && 'border-positive/25 bg-positive/10 text-positive', risky && 'border-negative/25 bg-negative/10 text-negative', !reliable && !risky && 'border-border text-subtle')}>{reliable ? '● Confiable / +EV' : risky ? '▲ Riesgo alto' : market.ev > 0 ? `+${(market.ev * 100).toFixed(1)}% EV` : 'Sin ventaja'}</span></div> })}</div>}
+    </div>
+  )
+}
+
+function QuantMarkets({ enriched }: { enriched: EnrichedMatch | null }) {
+  const markets = enriched?.evAnalysis ?? []
+  return <div className="flex flex-col gap-3"><div className="flex items-end justify-between"><div><p className="text-[10px] tracking-[0.14em] text-subtle">Motor cuantitativo</p><h2 className="mt-1 text-lg font-semibold text-foreground">56 mercados, una lectura clara</h2></div><span className="font-mono text-xs text-primary">{markets.length}/56 cargados</span></div>{MARKET_GROUPS.map((group, index) => <MarketAccordion key={group.id} label={group.label} markets={markets.filter((market) => group.match(market.market))} defaultOpen={index === 0} />)}{markets.length === 0 && <div className="rounded-xl border border-dashed border-border bg-card px-5 py-8 text-center text-sm text-subtle">Los mercados se cargarán cuando el análisis esté disponible.</div>}<p className="text-xs leading-5 text-subtle">Las etiquetas combinan probabilidad modelada y valor esperado. No sustituyen una gestión responsable del riesgo.</p></div>
+}
+
+function ScouterStats({ match }: { match: Match }) {
+  const stats = match.advancedStats
+  const hasStats = Boolean(stats && Object.values(stats).some((value) => typeof value === 'number'))
+  if (!hasStats) return <div className="rounded-xl border border-dashed border-border bg-card px-5 py-8 text-center"><BarChart3 size={20} className="mx-auto text-primary" aria-hidden="true" /><p className="mt-3 text-sm font-semibold text-foreground">Datos en vivo al finalizar el partido</p><p className="mt-1 text-xs leading-5 text-subtle">Corners, remates, faltas y eventos aparecerán cuando termine el encuentro.</p></div>
+  const items = [['Corners', stats?.home_corners, stats?.away_corners], ['Remates', stats?.home_shots, stats?.away_shots], ['A puerta', stats?.home_shots_on_target, stats?.away_shots_on_target], ['Faltas', stats?.home_fouls, stats?.away_fouls]] as const
+  return <div className="rounded-xl border border-border bg-card p-4"><div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold text-foreground">Datos Scouter</h2><span className="text-xs text-positive">Datos verificados</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{items.map(([label, home, away]) => <div key={label} className="rounded-lg border border-border bg-surface-raised/50 p-3"><p className="text-[10px] text-subtle">{label}</p><p className="mt-1 font-mono text-sm font-semibold text-foreground">{home ?? '—'} <span className="text-subtle">·</span> {away ?? '—'}</p></div>)}</div>{match.refereeProfile && <p className="mt-3 text-xs text-subtle">Árbitro: <span className="text-foreground">{match.refereeProfile.name}</span> · {match.refereeProfile.yellow_cards_avg.toFixed(1)} amarillas por partido</p>}</div>
 }
 
 /* ------------------------------------------------------------------ */
@@ -980,7 +1035,7 @@ function PreviaTab({
 }) {
   return (
     <div className="flex flex-col gap-5">
-       <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-5">
+       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         {/* Left */}
         <div className="flex flex-col gap-5 min-w-0">
           <EVTable rows={rows} match={match} best={best} />
@@ -995,12 +1050,7 @@ function PreviaTab({
         </div>
       </div>
 
-      {/* Bet Builder full width */}
-      {detail.betBuilder.length > 0 && (
-        <div className="bg-card border border-border rounded-xl p-4">
-          <BetBuilder detail={detail} />
-        </div>
-      )}
+      <ScouterStats match={match} />
     </div>
   )
 }
@@ -1270,6 +1320,8 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
     <div className="flex flex-col gap-4">
       <MatchHero match={match} leagueMeta={leagueMeta} model={model} />
 
+      <SignalRail match={match} detail={detail} enriched={enriched ?? null} />
+
       {detail.confidenceScore > 0 && (
         <ConfidenceBar detail={detail} model={model} />
       )}
@@ -1279,11 +1331,14 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
       {activeTab === 'preview' && (
         <PreviaTab match={match} enriched={enriched ?? null} model={model} rows={rows} best={best} detail={detail} />
       )}
+      {activeTab === 'markets' && <QuantMarkets enriched={enriched ?? null} />}
+      {activeTab === 'builder' && (
+        <div className="rounded-xl border border-border bg-card p-4">
+          <BetBuilder detail={detail} />
+        </div>
+      )}
       {activeTab === 'h2h' && (
         <H2HTab match={match} enriched={enriched ?? null} model={model} detail={detail} />
-      )}
-      {activeTab === 'referee' && (
-        <ArbitroTab match={match} detail={detail} />
       )}
     </div>
   )

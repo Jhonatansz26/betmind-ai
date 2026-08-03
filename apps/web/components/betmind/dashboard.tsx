@@ -117,6 +117,12 @@ function formatUpdatedAt(value?: string | null) {
   }).format(new Date(value))}`
 }
 
+function formatAge(value?: string | null) {
+  if (!value) return 'Actualizando datos…'
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000))
+  return minutes < 1 ? 'Actualizado ahora' : `Actualizado hace ${minutes} min`
+}
+
 function EmptyState({
   type,
   timestamp,
@@ -361,14 +367,14 @@ export function Dashboard() {
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div>
                     <h1 className="text-xl font-bold tracking-tight text-foreground">
-                      Boletos de {dateInfo.title}
+                      Oportunidades de {dateInfo.title.toLowerCase()}
                     </h1>
-                    <p className="mt-0.5 text-xs text-subtle capitalize">{dateInfo.subtitle}</p>
+                    <p className="mt-0.5 text-xs text-subtle">{dateInfo.subtitle}</p>
                   </div>
                   <DateSelector value={dateFilter} onChange={setDateFilter} />
                   <p className="num text-xs text-muted-foreground">
                     {ticketMeta
-                      ? `${ticketMeta.matchesAnalyzed} partidos · ${ticketMeta.totalEv} oportunidades +EV`
+                      ? `${ticketMeta.totalEv} señales +EV · ${formatAge(ticketMeta.generatedAt)}`
                       : 'Consultando modelo…'}
                   </p>
                 </div>

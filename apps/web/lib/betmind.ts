@@ -63,6 +63,27 @@ export interface Match {
   keyRisk: string
   summary: string
   referee: Referee
+  advancedStats?: {
+    home_xg: number | null
+    away_xg: number | null
+    home_shots: number | null
+    away_shots: number | null
+    home_shots_on_target: number | null
+    away_shots_on_target: number | null
+    home_corners: number | null
+    away_corners: number | null
+    home_fouls: number | null
+    away_fouls: number | null
+  } | null
+  refereeProfile?: {
+    referee_id: number
+    name: string
+    matches_count: number
+    yellow_cards: number
+    red_cards: number
+    yellow_cards_avg: number
+    red_cards_avg: number
+  } | null
 }
 
 export interface TicketLegData {
