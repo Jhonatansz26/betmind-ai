@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from apps.api.models.base import Base, TimestampMixin
@@ -39,6 +39,11 @@ class Match(TimestampMixin, Base):
     referee_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("referee_profiles.referee_id"), nullable=True, index=True
     )
+
+    # IDs alternativos reportados por otros proveedores (ESPN / football-data.org)
+    # para el MISMO partido real. JSON array de enteros. Alimentado por la
+    # deduplicación multi-proveedor (ventana de 2h por pareja de equipos).
+    alternate_external_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     league: Mapped["League"] = relationship("League", lazy="noload")
     home_team: Mapped["Team"] = relationship("Team", foreign_keys=[home_team_id], lazy="noload")

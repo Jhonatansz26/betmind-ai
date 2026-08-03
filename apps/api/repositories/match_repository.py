@@ -3,7 +3,9 @@
 SRP: Este archivo tiene UNA responsabilidad — consultar y persistir datos
 de partidos en la base de datos. Zero lógica de negocio aquí.
 """
+import json
 import logging
+from datetime import timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
@@ -14,6 +16,11 @@ from apps.api.models.prediction import Prediction
 from apps.api.core.exceptions import MatchNotFoundException
 
 logger = logging.getLogger(__name__)
+
+# Ventana de deduplicación multi-proveedor: dos registros se consideran el
+# mismo partido real si comparten pareja de equipos y su hora de inicio
+# dista menos de DEDUP_WINDOW_HOURS (aunque reporten external_id distinto).
+DEDUP_WINDOW_HOURS = 2
 
 LEAGUE_KEY_TO_EXTERNAL_ID: dict[str, int] = {
     "liga_betplay": 239,
@@ -211,6 +218,67 @@ class MatchRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_team_pair_window(
+        self,
+        home_team_id: int,
+        away_team_id: int,
+        match_date,
+        window_hours: int = DEDUP_WINDOW_HOURS,
+    ) -> Match | None:
+        """
+        Busca un partido existente con la MISMA pareja de equipos cuya hora
+        de inicio cae dentro de una ventana de `window_hours` alrededor de
+        `match_date`. Devuelve el registro más antiguo (canónico) si existe.
+
+        Esto detecta duplicados cross-provider (ESPN / football-data.org /
+        API-Football) que reportan external_id distintos para el mismo partido.
+        """
+        window_start = match_date - timedelta(hours=window_hours)
+        window_end = match_date + timedelta(hours=window_hours)
+        stmt = (
+            select(Match)
+            .where(
+                and_(
+                    Match.home_team_id == home_team_id,
+                    Match.away_team_id == away_team_id,
+                    Match.match_date >= window_start,
+                    Match.match_date <= window_end,
+                )
+            )
+            .order_by(Match.id.asc())
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _record_alternate_external_id(
+        self,
+        match: Match,
+        external_id: int,
+    ) -> None:
+        """Guarda un external_id alternativo (otro proveedor) en el registro canónico."""
+        if match.external_id == external_id:
+            return
+        ids: list[int] = []
+        if match.alternate_external_ids:
+            try:
+                ids = json.loads(match.alternate_external_ids)
+            except (TypeError, ValueError):
+                ids = []
+        if external_id not in ids:
+            ids.append(external_id)
+            match.alternate_external_ids = json.dumps(ids)
+            await self._session.flush()
+
+    @staticmethod
+    def _status_priority(status: str) -> int:
+        """Prioridad de riqueza de datos por estado: FINISHED > LIVE > resto."""
+        if status == "FINISHED":
+            return 3
+        if status in ("LIVE", "IN_PLAY"):
+            return 2
+        return 1
+
     async def upsert_match(
         self,
         external_id: int,
@@ -235,16 +303,38 @@ class MatchRepository:
     ) -> Match:
         """
         Inserta o actualiza un partido.
-        Si existe por external_id, actualiza. Si no, inserta.
+
+        Deduplicación estricta multi-proveedor:
+        1. Si existe por `external_id` (mismo proveedor), actualiza ese registro.
+        2. Si NO existe por external_id pero sí existe un partido con la misma
+           pareja de equipos dentro de una ventana de 2h (otro proveedor),
+           CONSOLIDA en el registro existente: guarda el external_id entrante
+           como alternativo y actualiza status/marcador si la fuente entrante
+           es más rica (FINISHED > LIVE > SCHEDULED).
+        3. Solo si no hay ningún candidato, inserta un partido nuevo.
         """
         existing = await self.get_by_external_id(external_id)
-        
+
+        if existing is None:
+            duplicate = await self.get_by_team_pair_window(
+                home_team_id, away_team_id, match_date
+            )
+            if duplicate is not None:
+                logger.info(
+                    f"[dedup] Consolidando external_id={external_id} dentro del partido "
+                    f"id={duplicate.id} (misma pareja {home_team_id}-{away_team_id} "
+                    f"en ventana de {DEDUP_WINDOW_HOURS}h) — fuente cross-provider."
+                )
+                await self._record_alternate_external_id(duplicate, external_id)
+                existing = duplicate
+
         if existing:
             existing.league_id = league_id
             existing.home_team_id = home_team_id
             existing.away_team_id = away_team_id
             existing.match_date = match_date
-            existing.status = status
+            if self._status_priority(status) >= self._status_priority(existing.status):
+                existing.status = status
             if home_score is not None:
                 existing.home_score = home_score
             if away_score is not None:

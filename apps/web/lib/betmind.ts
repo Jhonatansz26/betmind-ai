@@ -48,6 +48,7 @@ export interface Match {
   homeTeamId: number | null
   awayTeamId: number | null
   time: string
+  matchDate: string
   status: MatchStatus
   minute?: number
   elapsed?: number | null

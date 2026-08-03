@@ -35,7 +35,13 @@ OVER_UNDER_VALUE_MAP: dict[str, str] = {
 }
 
 # Mapas para mercados especiales: Córneres y Tarjetas
+# Nota: la API devuelve "Corners Over Under" (con espacio) en la mayoría de
+# bookmakers; algunos usan "Corner Kicks Over/Under" o "Total Corners".
 CORNERS_VALUE_MAP: dict[str, str] = {
+    "Over 4.5": "CORNERS_OVER_4_5",
+    "Under 4.5": "CORNERS_UNDER_4_5",
+    "Over 5.5": "CORNERS_OVER_5_5",
+    "Under 5.5": "CORNERS_UNDER_5_5",
     "Over 6.5": "CORNERS_OVER_6_5",
     "Under 6.5": "CORNERS_UNDER_6_5",
     "Over 7.5": "CORNERS_OVER_7_5",
@@ -48,6 +54,31 @@ CORNERS_VALUE_MAP: dict[str, str] = {
     "Under 10.5": "CORNERS_UNDER_10_5",
     "Over 11.5": "CORNERS_OVER_11_5",
     "Under 11.5": "CORNERS_UNDER_11_5",
+    "Over 12.5": "CORNERS_OVER_12_5",
+    "Under 12.5": "CORNERS_UNDER_12_5",
+    "Over 13.5": "CORNERS_OVER_13_5",
+    "Under 13.5": "CORNERS_UNDER_13_5",
+    # Líneas enteras (Pinnacle / 1xBet): "Over 8", "Under 8", "Over 9"...
+    "Over 4": "CORNERS_OVER_4",
+    "Under 4": "CORNERS_UNDER_4",
+    "Over 5": "CORNERS_OVER_5",
+    "Under 5": "CORNERS_UNDER_5",
+    "Over 6": "CORNERS_OVER_6",
+    "Under 6": "CORNERS_UNDER_6",
+    "Over 7": "CORNERS_OVER_7",
+    "Under 7": "CORNERS_UNDER_7",
+    "Over 8": "CORNERS_OVER_8",
+    "Under 8": "CORNERS_UNDER_8",
+    "Over 9": "CORNERS_OVER_9",
+    "Under 9": "CORNERS_UNDER_9",
+    "Over 10": "CORNERS_OVER_10",
+    "Under 10": "CORNERS_UNDER_10",
+    "Over 11": "CORNERS_OVER_11",
+    "Under 11": "CORNERS_UNDER_11",
+    "Over 12": "CORNERS_OVER_12",
+    "Under 12": "CORNERS_UNDER_12",
+    "Over 13": "CORNERS_OVER_13",
+    "Under 13": "CORNERS_UNDER_13",
 }
 
 CARDS_VALUE_MAP: dict[str, str] = {
@@ -59,6 +90,10 @@ CARDS_VALUE_MAP: dict[str, str] = {
     "Under 4.5": "CARDS_UNDER_4_5",
     "Over 5.5": "CARDS_OVER_5_5",
     "Under 5.5": "CARDS_UNDER_5_5",
+    "Over 6.5": "CARDS_OVER_6_5",
+    "Under 6.5": "CARDS_UNDER_6_5",
+    "Over 7.5": "CARDS_OVER_7_5",
+    "Under 7.5": "CARDS_UNDER_7_5",
 }
 
 SHOTS_OT_VALUE_MAP: dict[str, str] = {
@@ -72,7 +107,29 @@ SHOTS_OT_VALUE_MAP: dict[str, str] = {
     "Under 7.5": "SHOTS_OT_UNDER_7_5",
     "Over 8.5": "SHOTS_OT_OVER_8_5",
     "Under 8.5": "SHOTS_OT_UNDER_8_5",
+    "Over 9.5": "SHOTS_OT_OVER_9_5",
+    "Under 9.5": "SHOTS_OT_UNDER_9_5",
+    "Over 10.5": "SHOTS_OT_OVER_10_5",
+    "Under 10.5": "SHOTS_OT_UNDER_10_5",
 }
+
+# Nombres de mercado reales observados en la API (verificado con payloads vivos):
+#   corners: "Corners Over Under", "Corner Kicks Over/Under", "Corners Over/Under",
+#            "Total Corners", "Total Corner Kicks"
+#   cards:   "Cards Over/Under", "Total Cards", "Total Bookings", "Asian Cards"
+#   shots:   "Total ShotOnGoal", "Shots on Target Over/Under", "Total Shots on Target",
+#            "Total Shots on Goal"
+CORNERS_BET_NAMES = (
+    "Corners Over Under", "Corners Over/Under", "Corner Kicks Over/Under",
+    "Total Corners", "Total Corner Kicks",
+)
+CARDS_BET_NAMES = (
+    "Cards Over/Under", "Total Cards", "Total Bookings", "Asian Cards",
+)
+SHOTS_OT_BET_NAMES = (
+    "Total ShotOnGoal", "Shots on Target Over/Under", "Total Shots on Target",
+    "Total Shots on Goal",
+)
 
 
 class OddsService:
@@ -230,10 +287,23 @@ class OddsService:
         if not raw_response:
             return []
 
-        fixture_odds = raw_response[0]
-        bookmakers = fixture_odds.get("bookmakers", [])
+        return await self._parse_raw_odds_payload(raw_response[0], fixture_id)
 
-        parsed: list[dict[str, Any]] = []
+    async def _parse_raw_odds_payload(
+        self,
+        fixture_odds: dict[str, Any],
+        fixture_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Parsea un payload crudo de API-Football /odds a formato interno.
+
+        Agrega cuotas de TODOS los bookmakers (antes se detenía en el primero
+        con datos, perdiendo córneres/tarjetas/remates si ese bookmaker no los
+        ofrecía). Por mercado nos quedamos con el mejor precio disponible
+        (máxima cuota = mejor línea ejecutable para el usuario).
+        """
+        bookmakers = fixture_odds.get("bookmakers", [])
+        collected: dict[str, list[float]] = {}
 
         for bookmaker in bookmakers:
             bets = bookmaker.get("bets", [])
@@ -271,63 +341,47 @@ class OddsService:
                                 continue
 
                         if mapped_market:
-                            parsed.append({
-                                "market_name": mapped_market,
-                                "odds_value": odds_val,
-                                "external_fixture_id": fixture_id,
-                            })
+                            collected.setdefault(mapped_market, []).append(odds_val)
 
                 elif bet_name == "Goals Over/Under":
                     for val in values:
                         val_name = val.get("value", "")
                         odds_val = self._safe_float(val.get("odd"))
                         if odds_val and val_name in OVER_UNDER_VALUE_MAP:
-                            parsed.append({
-                                "market_name": OVER_UNDER_VALUE_MAP[val_name],
-                                "odds_value": odds_val,
-                                "external_fixture_id": fixture_id,
-                            })
+                            collected.setdefault(OVER_UNDER_VALUE_MAP[val_name], []).append(odds_val)
 
                 # ── Córneres ──
-                elif bet_name in ("Corner Kicks Over/Under", "Corners Over/Under",
-                                   "Total Corners", "Total Corner Kicks"):
+                elif bet_name in CORNERS_BET_NAMES:
                     for val in values:
                         val_name = val.get("value", "")
                         odds_val = self._safe_float(val.get("odd"))
                         if odds_val and val_name in CORNERS_VALUE_MAP:
-                            parsed.append({
-                                "market_name": CORNERS_VALUE_MAP[val_name],
-                                "odds_value": odds_val,
-                                "external_fixture_id": fixture_id,
-                            })
+                            collected.setdefault(CORNERS_VALUE_MAP[val_name], []).append(odds_val)
 
                 # ── Tarjetas ──
-                elif bet_name in ("Cards Over/Under", "Total Cards",
-                                   "Total Bookings", "Asian Cards"):
+                elif bet_name in CARDS_BET_NAMES:
                     for val in values:
                         val_name = val.get("value", "")
                         odds_val = self._safe_float(val.get("odd"))
                         if odds_val and val_name in CARDS_VALUE_MAP:
-                            parsed.append({
-                                "market_name": CARDS_VALUE_MAP[val_name],
-                                "odds_value": odds_val,
-                                "external_fixture_id": fixture_id,
-                            })
+                            collected.setdefault(CARDS_VALUE_MAP[val_name], []).append(odds_val)
 
                 # ── Remates a puerta ──
-                elif bet_name in ("Shots on Target Over/Under", "Total Shots on Target"):
+                elif bet_name in SHOTS_OT_BET_NAMES:
                     for val in values:
                         val_name = val.get("value", "")
                         odds_val = self._safe_float(val.get("odd"))
                         if odds_val and val_name in SHOTS_OT_VALUE_MAP:
-                            parsed.append({
-                                "market_name": SHOTS_OT_VALUE_MAP[val_name],
-                                "odds_value": odds_val,
-                                "external_fixture_id": fixture_id,
-                            })
+                            collected.setdefault(SHOTS_OT_VALUE_MAP[val_name], []).append(odds_val)
 
-            if parsed:
-                break
+        parsed: list[dict[str, Any]] = []
+        for market_name, odds_values in collected.items():
+            best_odds = max(odds_values)
+            parsed.append({
+                "market_name": market_name,
+                "odds_value": best_odds,
+                "external_fixture_id": fixture_id,
+            })
 
         return parsed
 

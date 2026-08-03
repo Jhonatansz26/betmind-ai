@@ -339,6 +339,7 @@ function mapBackendMatch(raw: BackendMatch): Match {
     homeTeamId: raw.home_team_id,
     awayTeamId: raw.away_team_id,
     time: timeStr,
+    matchDate: raw.match_date,
     status: matchStatus,
     minute: matchStatus === 'IN_PLAY' || matchStatus === 'PAUSED' ? (raw.minute ?? undefined) : undefined,
     elapsed: raw.minute ?? null,
@@ -382,7 +383,50 @@ export async function fetchMatches(dateFilter?: string): Promise<Match[]> {
   }
 
   const data: BackendMatchesResponse = await res.json()
-  return data.matches.map(mapBackendMatch)
+  return dedupeMatches(data.matches.map(mapBackendMatch))
+}
+
+const DEDUP_WINDOW_MS = 2 * 60 * 60 * 1000
+
+function matchKey(match: Match): string {
+  return `${match.leagueExternalId ?? match.leagueId}|${match.homeTeamId}|${match.awayTeamId}`
+}
+
+function matchRichness(match: Match): number {
+  let score = 0
+  if (match.lambdaHome > 0 || match.lambdaAway > 0) score += 4
+  if (match.odds && (match.odds.home > 0 || match.odds.draw > 0 || match.odds.away > 0)) score += 2
+  if (match.score) score += 1
+  return score
+}
+
+function sameTwoHourWindow(a: Match, b: Match): boolean {
+  const timeA = new Date(a.matchDate).getTime()
+  const timeB = new Date(b.matchDate).getTime()
+  if (isNaN(timeA) || isNaN(timeB)) return false
+  return Math.abs(timeA - timeB) < DEDUP_WINDOW_MS
+}
+
+function dedupeMatches(matches: Match[]): Match[] {
+  const byKey = new Map<string, Match[]>()
+  for (const match of matches) {
+    const key = matchKey(match)
+    const bucket = byKey.get(key) ?? []
+    const twin = bucket.find((existing) => sameTwoHourWindow(existing, match))
+    if (twin) {
+      // Misma pareja en ventana de 2h: conservar el registro más rico
+      if (matchRichness(match) > matchRichness(twin)) {
+        byKey.set(key, bucket.map((m) => (m === twin ? match : m)))
+      }
+    } else {
+      // Misma pareja pero distinto horario: son partidos legítimamente distintos
+      bucket.push(match)
+      byKey.set(key, bucket)
+    }
+  }
+  return Array.from(byKey.values())
+    .flat()
+    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
 }
 
 export interface LeagueData {
