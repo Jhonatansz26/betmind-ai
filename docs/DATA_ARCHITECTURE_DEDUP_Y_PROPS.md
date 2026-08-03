@@ -164,3 +164,54 @@ Fuentes consultadas: `r/algobetting`, `r/sportsbook`, `r/arbitragebetting`, `r/S
 | Fixtures con cuotas de remates | 0 | **2/10** |
 | Mercados por fixture | 5–13 | **43–71** |
 | Tests | — | **113 passed** (9 nuevos) |
+
+---
+
+## 7. CAPA 2 — DEDUP FUZZY DE EQUIPOS Y PARTIDOS (fix crítico post-revisión)
+
+### 7.1 Causa raíz detectada en logs de `batch_predict.py`
+
+Aunque la Capa 1 eliminó los duplicados por `external_id` distinto, persistían duplicados **dentro del mismo proveedor/equipo**: la tabla `teams` tenía 2 filas para el mismo club con nombres ligeramente distintos (ESPN vs API-Football):
+
+| Club real | Fila ESPN | Fila API-Football |
+|---|---|---|
+| Independiente Rivadavia | `Independ. Rivadavia` (id=106) | `Independiente Rivadavia` (id=337) |
+| Central Córdoba (SdE) | `Central Córdoba (Santiago del Estero)` | `Central Cordoba de Santiago` |
+
+Como `get_by_team_pair_window(home_team_id, away_team_id)` comparaba **IDs exactos**, no detectaba que era el mismo partido → el dashboard mostraba 2 tarjetas para `Sarmiento vs Independ. Rivadavia` y `Sarmiento vs Independiente Rivadavia`.
+
+### 7.2 Fix aplicado
+
+**A) Normalización mejorada (`team_normalizer.py`)**
+- `_TOKEN_ABBREVIATIONS`: expansión token a token (`independ`→`independiente`, `jrs`→`juniors`, `sde`→`santiago del estero`, `cba`→`cordoba`, `lp`→`la plata`).
+- `team_name_similarity(a,b)`: similitud Jaccard sobre tokens canonicalizados con boost de cobertura para subconjuntos (solo si un nombre es subconjunto del otro).
+- `team_identity_key(name)`: clave CONSERVADORA para la tabla `teams` — elimina tildes/puntuación/abreviaciones y sufijos organizativos inequívocos (FC/CF/IF/FF/BK/AIF/SA/FK/EC/CR/SE/FR/FBC/FBPA/AFC), pero **conserva** "real"/"atletico"/"club"/"deportivo"/"sc"/"cd" para NO fusionar clubes distintos (verificado: `Real Madrid` ≠ `Atletico Madrid`, `Barcelona` ≠ `Barcelona SC`, `Botafogo` ≠ `Botafogo-SP`, `Fortaleza EC` ≠ `Fortaleza CEIF`).
+
+**B) Dedup fuzzy de partidos en `match_repository.py`**
+- Nuevo `get_similar_match_in_window(home, away, date)`: busca partidos en la ventana ±2h y consolida si `similitud(home vs home) >= 0.85` Y `similitud(away vs away) >= 0.85`. Incluye `populate_existing=True` para sobreescribir relaciones `noload`.
+- `upsert_match()` ahora cae al dedup fuzzy cuando el match por team_id exacto no encuentra candidato.
+- Tests: `Sarmiento vs Independ. Rivadavia` + `Sarmiento vs Independiente Rivadavia` → **1 solo registro** ✓ (`tests/test_fuzzy_dedup.py`, 5 tests).
+
+**C) Limpieza de la tabla `teams` (producción, 42 fusiones)**
+- `scripts/dedupe_teams.py` (dry-run + `--apply`): agrupa por `team_identity_key`, aplica **guardia de liga** (solo fusiona si comparten liga en `matches` o uno es huérfano), elige canónico (más partidos > nombre más completo > id menor), re-apunta FKs de `matches`, consolida partidos colisionantes y elimina duplicados.
+- Resultado: **443 → 401 equipos**, 0 huérfanos.
+
+**D) Limpieza de partidos fuzzy existentes (producción, 21 consolidaciones)**
+- `scripts/dedupe_matches_fuzzy.py` (dry-run + `--apply`): detecta pares en ventana ±2h con pareja de equipos ≥ 0.85 de similitud insertados ANTES de existir el write-time dedup. Consolida re-apuntando `bookmaker_odds`/`predictions`/`tactical_analyses`/`match_events`/`match_advanced_stats`.
+- Resultado: `Central Córdoba (Santiago del Estero) vs San Lorenzo` + `Central Cordoba de Santiago vs San Lorenzo` → **1 registro** (id=1658, alternate_external_ids=[1493034]). Dashboard ventana actual: **10 partidos, 0 duplicados**.
+
+**E) Filtro defensivo en `batch_predict.py` y frontend**
+- `batch_predict.py`: nueva Capa 6 `_deduped_matches()` — agrupa por fecha ±2h + nombres normalizados ≥ 0.85 y procesa solo el registro más rico (cuotas > id menor); contador `stats["duplicates"]`.
+- `apps/web/lib/api.ts`: `matchKey` ahora usa **nombres normalizados** (no team IDs), con `teamNameSimilarity()` client-side y backstop fuzzy ≥ 0.85.
+
+### 7.3 Verificación final (producción Supabase)
+
+```
+teams:              443 → 401  (42 fusiones, guardia de liga)
+matches:            659 → 618  (21 consolidaciones fuzzy)
+pares duplicados:   0
+huérfanos (FK):     0
+Dashboard (-2h/+36h): 10 partidos, 0 duplicados
+Tests:              118 passed (6 nuevos: fuzzy dedup + identidad conservadora)
+```
+

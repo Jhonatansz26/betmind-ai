@@ -1,9 +1,9 @@
 'use client'
 
 import * as React from 'react'
-import { AlertCircle, RefreshCw, Sparkles, SlidersHorizontal, BrainCircuit } from 'lucide-react'
+import { AlertCircle, RefreshCw, Sparkles, SlidersHorizontal, BrainCircuit, Filter } from 'lucide-react'
 
-import { type Match, type Ticket } from '@/lib/betmind'
+import { type Match, type Ticket, buildModel, marketRows, bestOpportunity } from '@/lib/betmind'
 import { fetchTickets, fetchMatches } from '@/lib/api'
 import { resolveLeague } from '@/lib/league-metadata'
 import { cn } from '@/lib/utils'
@@ -185,11 +185,13 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 /* ------------------------------------------------------------------ */
 
 type TicketViewMode = 'ia' | 'generator'
+type CardFilter = 'all' | 'high_confidence' | 'best_value'
 
 export function Dashboard() {
   const [tab, setTab] = React.useState<NavTab>('Boletos')
   const [ticketViewMode, setTicketViewMode] = React.useState<TicketViewMode>('ia')
   const [league, setLeague] = React.useState('all')
+  const [cardFilter, setCardFilter] = React.useState<CardFilter>('all')
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const [dateFilter, setDateFilter] = React.useState<DateFilter>('today')
   const [today, setToday] = React.useState('')
@@ -312,9 +314,25 @@ export function Dashboard() {
     [league, matches],
   )
 
+  // Quick card filter applied after league filter
+  const quickFilteredMatches = React.useMemo(() => {
+    if (cardFilter === 'all') return filteredMatches
+    return filteredMatches.filter((m) => {
+      const model = buildModel(m.lambdaHome, m.lambdaAway)
+      if (cardFilter === 'high_confidence') {
+        return model.home > 0.75 || model.away > 0.75
+      }
+      if (cardFilter === 'best_value') {
+        const rows = marketRows(m, model)
+        return bestOpportunity(rows) !== null
+      }
+      return true
+    })
+  }, [filteredMatches, cardFilter])
+
   const groupedMatches = React.useMemo(() => {
     const map = new Map<string, { key: string; externalId?: number | null; name: string; matches: Match[] }>()
-    for (const m of filteredMatches) {
+    for (const m of quickFilteredMatches) {
       const key = String(m.leagueExternalId ?? m.league ?? 'other')
       if (!map.has(key)) {
         map.set(key, { key, externalId: m.leagueExternalId, name: m.league ?? 'Otras Ligas', matches: [] })
@@ -322,7 +340,7 @@ export function Dashboard() {
       map.get(key)!.matches.push(m)
     }
     return Array.from(map.values())
-  }, [filteredMatches])
+  }, [quickFilteredMatches])
 
   function selectLeague(id: string) {
     setLeague(id)
@@ -501,6 +519,43 @@ export function Dashboard() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* ── Filtros rápidos de predicción ── */}
+              <div className="flex items-center gap-2">
+                <Filter size={12} className="shrink-0 text-subtle" aria-hidden />
+                <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto">
+                  {([
+                    { id: 'all', label: 'Todos' },
+                    { id: 'high_confidence', label: '⚡ Alta Confianza (>75%)' },
+                    { id: 'best_value', label: '🔥 Mejor Valor (EV+)' },
+                  ] as const).map((f) => (
+                    <button
+                      key={f.id}
+                      id={`card-filter-${f.id}`}
+                      type="button"
+                      onClick={() => setCardFilter(f.id)}
+                      aria-pressed={cardFilter === f.id}
+                      className={cn(
+                        'whitespace-nowrap rounded-full border px-3 py-1 text-[11px] font-semibold transition-all duration-150',
+                        cardFilter === f.id
+                          ? f.id === 'best_value'
+                            ? 'border-positive/40 bg-positive/15 text-positive shadow-[0_0_10px_-4px_var(--positive)]'
+                            : f.id === 'high_confidence'
+                              ? 'border-primary/40 bg-primary/15 text-primary'
+                              : 'border-border bg-surface text-foreground'
+                          : 'border-border/60 bg-transparent text-muted-foreground hover:border-border hover:text-foreground',
+                      )}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+                {cardFilter !== 'all' && (
+                  <span className="num text-[10px] text-subtle">
+                    {quickFilteredMatches.length} partido{quickFilteredMatches.length !== 1 ? 's' : ''}
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-col gap-3">

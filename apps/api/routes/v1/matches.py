@@ -54,13 +54,11 @@ async def list_matches(
         else:
             resolved_date = date_filter  # Asumir YYYY-MM-DD
 
-    use_rolling_window = not date_str and (not date_filter or date_filter.lower() == "today")
+    # Si no hay filtro de fecha, defaultear a "today" COT (nunca usar rolling window UTC)
+    if not resolved_date:
+        resolved_date = now_cot.strftime("%Y-%m-%d")
 
-    if use_rolling_window:
-        window_start = (datetime.now(timezone.utc) - timedelta(hours=2))
-        window_end = (datetime.now(timezone.utc) + timedelta(hours=36))
-        conditions.append(and_(Match.match_date >= window_start, Match.match_date <= window_end))
-    elif resolved_date:
+    if resolved_date:
         try:
             target_date = datetime.strptime(resolved_date, "%Y-%m-%d").date()
         except ValueError:
@@ -443,6 +441,7 @@ def _match_to_dict(m: Match) -> dict:
         "away_team_id": m.away_team_id,
         "match_date": m.match_date.isoformat(),
         "status": m.status,
+        "match_type": getattr(m, "match_type", "LEAGUE"),
         "home_score": m.home_score,
         "away_score": m.away_score,
         "regulation_time_only": m.regulation_time_only,

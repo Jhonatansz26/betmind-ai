@@ -11,8 +11,10 @@ from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 
 from apps.api.models.match import Match
+from apps.api.models.team import Team
 from apps.api.models.league import League
 from apps.api.models.prediction import Prediction
+from apps.api.services.team_normalizer import canonical_team_name, team_name_similarity
 from apps.api.core.exceptions import MatchNotFoundException
 
 logger = logging.getLogger(__name__)
@@ -22,22 +24,39 @@ logger = logging.getLogger(__name__)
 # dista menos de DEDUP_WINDOW_HOURS (aunque reporten external_id distinto).
 DEDUP_WINDOW_HOURS = 2
 
+# Umbral de similitud de nombres de equipos (Jaccard sobre tokens
+# canonicalizados) para considerar que dos parejas son el MISMO partido.
+TEAM_PAIR_SIMILARITY_THRESHOLD = 0.85
+
 LEAGUE_KEY_TO_EXTERNAL_ID: dict[str, int] = {
+    # LATAM
     "liga_betplay": 239,
-    "premier_league": 39,
-    "laliga": 140,
-    "bundesliga": 78,
-    "serie_a": 135,
-    "serie_a_bra": 71,
+    "copa_colombia": 241,
     "liga_profesional_arg": 128,
+    "copa_arg": 130,
+    "serie_a_bra": 71,
+    "serie_b_bra": 72,
+    "copa_do_brasil": 73,
     "liga_mx": 262,
     "mls": 253,
-    "primera_chile": 274,
+    "mls_open_cup": 254,
+    "libertadores": 13,
+    "sudamericana": 11,
     "liga_pro_ecu": 275,
-    "liga_1_peru": 294,
-    "allsvenskan": 113,
-    "superliga_den": 119,
-    "super_league_sui": 207,
+    "primera_chile": 274,
+    "liga_1_peru": 281,
+    # Europa Top
+    "premier_league": 39,
+    "efl_championship": 40,
+    "laliga": 140,
+    "laliga_hypermotion": 141,
+    "bundesliga": 78,
+    "serie_a": 135,
+    "ligue_1": 61,
+    "eredivisie": 88,
+    "ucl": 2,
+    "uel": 3,
+    "uecl": 848,
 }
 
 
@@ -251,6 +270,71 @@ class MatchRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_similar_match_in_window(
+        self,
+        home_team_name: str,
+        away_team_name: str,
+        match_date,
+        window_hours: int = DEDUP_WINDOW_HOURS,
+        threshold: float = TEAM_PAIR_SIMILARITY_THRESHOLD,
+    ) -> Match | None:
+        """
+        Deduplicación FUZZY de partidos: busca un partido existente en la
+        ventana ±`window_hours` cuyos equipos sean el MISMO encuentro real
+        aunque tengan team_id distinto (equipos duplicados en `teams` con
+        nombres ligeramente distintos entre proveedores).
+
+        Criterio: similitud(home vs home) >= threshold Y similitud(away vs away)
+        >= threshold, donde la similitud es Jaccard sobre tokens
+        canonicalizados (tildes, paréntesis, abreviaciones tipo
+        "Independ." → "Independiente").
+
+        Devuelve el registro más antiguo (canónico) o None.
+        """
+        window_start = match_date - timedelta(hours=window_hours)
+        window_end = match_date + timedelta(hours=window_hours)
+
+        stmt = (
+            select(Match)
+            .where(
+                and_(
+                    Match.match_date >= window_start,
+                    Match.match_date <= window_end,
+                )
+            )
+            .options(
+                selectinload(Match.home_team),
+                selectinload(Match.away_team),
+            )
+            .execution_options(populate_existing=True)
+            .order_by(Match.id.asc())
+        )
+        result = await self._session.execute(stmt)
+        candidates = list(result.scalars().all())
+
+        norm_home = canonical_team_name(home_team_name)
+        norm_away = canonical_team_name(away_team_name)
+        if not norm_home or not norm_away:
+            return None
+
+        for candidate in candidates:
+            cand_home = candidate.home_team.name if candidate.home_team else ""
+            cand_away = candidate.away_team.name if candidate.away_team else ""
+            if not cand_home or not cand_away:
+                continue
+
+            sim_home = team_name_similarity(norm_home, cand_home)
+            sim_away = team_name_similarity(norm_away, cand_away)
+            if sim_home >= threshold and sim_away >= threshold:
+                logger.info(
+                    f"[dedup-fuzzy] Match id={candidate.id}: "
+                    f"'{cand_home}' vs '{home_team_name}' (sim={sim_home:.2f}) | "
+                    f"'{cand_away}' vs '{away_team_name}' (sim={sim_away:.2f})"
+                )
+                return candidate
+
+        return None
+
     async def _record_alternate_external_id(
         self,
         match: Match,
@@ -290,6 +374,7 @@ class MatchRepository:
         home_score: int | None,
         away_score: int | None,
         regulation_time_only: bool = True,
+        match_type: str = "LEAGUE",
         home_corners: int | None = None,
         away_corners: int | None = None,
         home_yellows: float | None = None,
@@ -311,7 +396,11 @@ class MatchRepository:
            CONSOLIDA en el registro existente: guarda el external_id entrante
            como alternativo y actualiza status/marcador si la fuente entrante
            es más rica (FINISHED > LIVE > SCHEDULED).
-        3. Solo si no hay ningún candidato, inserta un partido nuevo.
+        3. Si tampoco coincide la pareja por team_id exacto, intenta dedup
+           FUZZY por nombres de equipos canonicalizados (>= 85% de similitud)
+           para cubrir duplicados en la tabla `teams` (ej. "Independ. Rivadavia"
+           de ESPN vs "Independiente Rivadavia" de API-Football).
+        4. Solo si no hay ningún candidato, inserta un partido nuevo.
         """
         existing = await self.get_by_external_id(external_id)
 
@@ -327,12 +416,33 @@ class MatchRepository:
                 )
                 await self._record_alternate_external_id(duplicate, external_id)
                 existing = duplicate
+            else:
+                # Fallback fuzzy: equipos duplicados en `teams` con nombres
+                # ligeramente distintos entre proveedores.
+                home_team = await self._session.get(Team, home_team_id)
+                away_team = await self._session.get(Team, away_team_id)
+                if home_team is not None and away_team is not None:
+                    similar = await self.get_similar_match_in_window(
+                        home_team.name,
+                        away_team.name,
+                        match_date,
+                    )
+                    if similar is not None:
+                        logger.info(
+                            f"[dedup-fuzzy] Consolidando external_id={external_id} dentro del "
+                            f"partido id={similar.id} ({home_team.name} vs {away_team.name} "
+                            f"≈ {similar.home_team.name} vs {similar.away_team.name}, "
+                            f"ventana {DEDUP_WINDOW_HOURS}h)."
+                        )
+                        await self._record_alternate_external_id(similar, external_id)
+                        existing = similar
 
         if existing:
             existing.league_id = league_id
             existing.home_team_id = home_team_id
             existing.away_team_id = away_team_id
             existing.match_date = match_date
+            existing.match_type = match_type
             if self._status_priority(status) >= self._status_priority(existing.status):
                 existing.status = status
             if home_score is not None:
@@ -371,6 +481,7 @@ class MatchRepository:
                 away_team_id=away_team_id,
                 match_date=match_date,
                 status=status,
+                match_type=match_type,
                 home_score=home_score,
                 away_score=away_score,
                 regulation_time_only=regulation_time_only,

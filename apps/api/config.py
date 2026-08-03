@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 def _find_env_files() -> list[Path]:
     """
-    Busca archivos .env en múltiples ubicaciones.
-    Prioridad: apps/api/.env > betmind-ai/.env (raíz del monorepo)
+    Busca archivos .env en multiples ubicaciones.
+    Prioridad: apps/api/.env > betmind-ai/.env (raiz del monorepo)
     """
     env_files = []
     
@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_database_url(cls, v: Any) -> str:
         """
-        Normaliza DATABASE_URL para usar driver asíncrono.
+        Normaliza DATABASE_URL para usar driver asincrono.
         Convierte postgresql:// o postgres:// a postgresql+asyncpg://
         """
         if not isinstance(v, str):
@@ -84,10 +84,10 @@ class Settings(BaseSettings):
         
         if v.startswith("postgres://"):
             v = v.replace("postgres://", "postgresql+asyncpg://", 1)
-            logger.info("Normalized DATABASE_URL: postgres:// → postgresql+asyncpg://")
+            logger.info("Normalized DATABASE_URL: postgres:// -> postgresql+asyncpg://")
         elif v.startswith("postgresql://"):
             v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
-            logger.info("Normalized DATABASE_URL: postgresql:// → postgresql+asyncpg://")
+            logger.info("Normalized DATABASE_URL: postgresql:// -> postgresql+asyncpg://")
         elif v.startswith("postgresql+asyncpg://"):
             pass
         elif v.startswith("sqlite"):
@@ -127,94 +127,179 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CATALOGO MASTER DE LIGAS ACTIVAS
+# match_type: "LEAGUE" | "KNOCKOUT_CUP"
+# ─────────────────────────────────────────────────────────────────────────────
+
 FEATURED_LEAGUES: dict[str, dict] = {
-    "premier_league": {
-        "api_football_id": 39,
-        "name": "Premier League",
-        "country": "England",
-    },
-    "laliga": {
-        "api_football_id": 140,
-        "name": "LaLiga",
-        "country": "Spain",
-    },
-    "bundesliga": {
-        "api_football_id": 78,
-        "name": "Bundesliga",
-        "country": "Germany",
-    },
-    "serie_a": {
-        "api_football_id": 135,
-        "name": "Serie A",
-        "country": "Italy",
-    },
+    # ========================= LATAM ======================================
     "liga_betplay": {
         "api_football_id": 239,
         "name": "Liga BetPlay Dimayor",
         "country": "Colombia",
+        "match_type": "LEAGUE",
     },
     "copa_colombia": {
         "api_football_id": 241,
         "name": "Copa Colombia",
         "country": "Colombia",
-    },
-    "sudamericana": {
-        "api_football_id": 11,
-        "name": "CONMEBOL Sudamericana",
-        "country": "Sudamérica",
-    },
-    "serie_a_bra": {
-        "api_football_id": 71,
-        "name": "Serie A",
-        "country": "Brasil",
+        "match_type": "KNOCKOUT_CUP",
     },
     "liga_profesional_arg": {
         "api_football_id": 128,
         "name": "Liga Profesional",
         "country": "Argentina",
+        "match_type": "LEAGUE",
+    },
+    "copa_arg": {
+        "api_football_id": 130,
+        "name": "Copa de la Liga Profesional",
+        "country": "Argentina",
+        "match_type": "KNOCKOUT_CUP",
+    },
+    "serie_a_bra": {
+        "api_football_id": 71,
+        "name": "Serie A",
+        "country": "Brasil",
+        "match_type": "LEAGUE",
+    },
+    "serie_b_bra": {
+        "api_football_id": 72,
+        "name": "Serie B",
+        "country": "Brasil",
+        "match_type": "LEAGUE",
+    },
+    "copa_do_brasil": {
+        "api_football_id": 73,
+        "name": "Copa do Brasil",
+        "country": "Brasil",
+        "match_type": "KNOCKOUT_CUP",
     },
     "liga_mx": {
         "api_football_id": 262,
         "name": "Liga MX",
-        "country": "México",
+        "country": "Mexico",
+        "match_type": "LEAGUE",
     },
     "mls": {
         "api_football_id": 253,
         "name": "Major League Soccer",
         "country": "USA",
+        "match_type": "LEAGUE",
     },
-    "primera_chile": {
-        "api_football_id": 274,
-        "name": "Primera División",
-        "country": "Chile",
+    "mls_open_cup": {
+        "api_football_id": 254,
+        "name": "US Open Cup",
+        "country": "USA",
+        "match_type": "KNOCKOUT_CUP",
+    },
+    "libertadores": {
+        "api_football_id": 13,
+        "name": "CONMEBOL Libertadores",
+        "country": "Sudamerica",
+        "match_type": "KNOCKOUT_CUP",
+    },
+    "sudamericana": {
+        "api_football_id": 11,
+        "name": "CONMEBOL Sudamericana",
+        "country": "Sudamerica",
+        "match_type": "KNOCKOUT_CUP",
     },
     "liga_pro_ecu": {
         "api_football_id": 275,
         "name": "Liga Pro",
         "country": "Ecuador",
+        "match_type": "LEAGUE",
+    },
+    "primera_chile": {
+        "api_football_id": 274,
+        "name": "Primera Division",
+        "country": "Chile",
+        "match_type": "LEAGUE",
     },
     "liga_1_peru": {
         "api_football_id": 281,
-        "name": "Liga 1 Perú",
-        "country": "Perú",
+        "name": "Liga 1 Peru",
+        "country": "Peru",
+        "match_type": "LEAGUE",
     },
-    "allsvenskan": {
-        "api_football_id": 113,
-        "name": "Allsvenskan",
-        "country": "Suecia",
+    # ========================= EUROPA TOP =================================
+    "premier_league": {
+        "api_football_id": 39,
+        "name": "Premier League",
+        "country": "England",
+        "match_type": "LEAGUE",
     },
-    "superliga_den": {
-        "api_football_id": 119,
-        "name": "Superliga",
-        "country": "Dinamarca",
+    "efl_championship": {
+        "api_football_id": 40,
+        "name": "EFL Championship",
+        "country": "England",
+        "match_type": "LEAGUE",
     },
-    "super_league_sui": {
-        "api_football_id": 207,
-        "name": "Super League",
-        "country": "Suiza",
+    "laliga": {
+        "api_football_id": 140,
+        "name": "LaLiga",
+        "country": "Spain",
+        "match_type": "LEAGUE",
+    },
+    "laliga_hypermotion": {
+        "api_football_id": 141,
+        "name": "LaLiga Hypermotion",
+        "country": "Spain",
+        "match_type": "LEAGUE",
+    },
+    "bundesliga": {
+        "api_football_id": 78,
+        "name": "Bundesliga",
+        "country": "Germany",
+        "match_type": "LEAGUE",
+    },
+    "serie_a": {
+        "api_football_id": 135,
+        "name": "Serie A",
+        "country": "Italy",
+        "match_type": "LEAGUE",
+    },
+    "ligue_1": {
+        "api_football_id": 61,
+        "name": "Ligue 1",
+        "country": "France",
+        "match_type": "LEAGUE",
+    },
+    "eredivisie": {
+        "api_football_id": 88,
+        "name": "Eredivisie",
+        "country": "Netherlands",
+        "match_type": "LEAGUE",
+    },
+    "ucl": {
+        "api_football_id": 2,
+        "name": "UEFA Champions League",
+        "country": "Europa",
+        "match_type": "KNOCKOUT_CUP",
+    },
+    "uel": {
+        "api_football_id": 3,
+        "name": "UEFA Europa League",
+        "country": "Europa",
+        "match_type": "KNOCKOUT_CUP",
+    },
+    "uecl": {
+        "api_football_id": 848,
+        "name": "UEFA Conference League",
+        "country": "Europa",
+        "match_type": "KNOCKOUT_CUP",
     },
 }
 
 FEATURED_LEAGUE_IDS: list[int] = [
     league["api_football_id"] for league in FEATURED_LEAGUES.values()
 ]
+
+# IDs de ligas que son eliminatorias/copas (para asignacion automatica de match_type)
+KNOCKOUT_CUP_LEAGUE_IDS: set[int] = {
+    info["api_football_id"]
+    for info in FEATURED_LEAGUES.values()
+    if info.get("match_type") == "KNOCKOUT_CUP"
+}

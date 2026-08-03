@@ -224,6 +224,7 @@ interface BackendMatch {
   away_team_logo_url: string | null
   match_date: string
   status: string
+  match_type: string
   home_score: number | null
   away_score: number | null
   regulation_time_only: boolean
@@ -332,6 +333,7 @@ function mapBackendMatch(raw: BackendMatch): Match {
     leagueExternalId: raw.league_external_id,
     league: formatCompositeLeagueName(leagueName, raw.league_country),
     leagueCountry: raw.league_country,
+    matchType: raw.match_type ?? 'LEAGUE',
     flag,
     leagueLogoUrl,
     homeLogoUrl: raw.home_team_logo_url,
@@ -387,9 +389,52 @@ export async function fetchMatches(dateFilter?: string): Promise<Match[]> {
 }
 
 const DEDUP_WINDOW_MS = 2 * 60 * 60 * 1000
+const DEDUP_SIMILARITY_THRESHOLD = 0.85
 
+/** Normalización de nombre de equipo para comparar variantes cross-provider:
+ *  tildes, mayúsculas, puntuación y abreviaciones comunes (Independ. → Independiente). */
+function normalizeTeamName(name: string): string {
+  const expanded: Record<string, string> = {
+    independ: 'independiente',
+    jrs: 'juniors',
+    'st.': 'saint',
+    fc: '',
+    cf: '',
+    if: '',
+    ff: '',
+    bk: '',
+    aif: '',
+  }
+  const cleaned = name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[()]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => (token in expanded ? expanded[token] : token))
+    .filter(Boolean)
+    .join(' ')
+  return cleaned.trim()
+}
+
+function teamNameSimilarity(a: string, b: string): number {
+  const na = normalizeTeamName(a)
+  const nb = normalizeTeamName(b)
+  if (!na || !nb) return 0
+  if (na === nb) return 1
+  const tokensA = new Set(na.split(' '))
+  const tokensB = new Set(nb.split(' '))
+  let intersection = 0
+  for (const t of tokensA) if (tokensB.has(t)) intersection++
+  const union = tokensA.size + tokensB.size - intersection
+  return union === 0 ? 0 : intersection / union
+}
+
+/** Clave por liga + nombres normalizados (no por IDs, que difieren entre proveedores). */
 function matchKey(match: Match): string {
-  return `${match.leagueExternalId ?? match.leagueId}|${match.homeTeamId}|${match.awayTeamId}`
+  return `${match.leagueExternalId ?? match.leagueId}|${normalizeTeamName(match.home)}|${normalizeTeamName(match.away)}`
 }
 
 function matchRichness(match: Match): number {
@@ -407,6 +452,14 @@ function sameTwoHourWindow(a: Match, b: Match): boolean {
   return Math.abs(timeA - timeB) < DEDUP_WINDOW_MS
 }
 
+/** Similitud de pareja de equipos (home vs home AND away vs away >= 0.85). */
+function sameTeamPair(a: Match, b: Match): boolean {
+  return (
+    teamNameSimilarity(a.home, b.home) >= DEDUP_SIMILARITY_THRESHOLD &&
+    teamNameSimilarity(a.away, b.away) >= DEDUP_SIMILARITY_THRESHOLD
+  )
+}
+
 function dedupeMatches(matches: Match[]): Match[] {
   const byKey = new Map<string, Match[]>()
   for (const match of matches) {
@@ -414,14 +467,23 @@ function dedupeMatches(matches: Match[]): Match[] {
     const bucket = byKey.get(key) ?? []
     const twin = bucket.find((existing) => sameTwoHourWindow(existing, match))
     if (twin) {
-      // Misma pareja en ventana de 2h: conservar el registro más rico
+      // Misma pareja (nombres normalizados) en ventana de 2h: conservar el más rico
       if (matchRichness(match) > matchRichness(twin)) {
         byKey.set(key, bucket.map((m) => (m === twin ? match : m)))
       }
     } else {
-      // Misma pareja pero distinto horario: son partidos legítimamente distintos
-      bucket.push(match)
-      byKey.set(key, bucket)
+      // Backstop: pareja con nombres distintos pero similitud >= 0.85 (ej.
+      // "Independ. Rivadavia" vs "Independiente Rivadavia" del mismo encuentro)
+      const fuzzyTwin = bucket.find((existing) => sameTeamPair(existing, match))
+      if (fuzzyTwin && sameTwoHourWindow(fuzzyTwin, match)) {
+        if (matchRichness(match) > matchRichness(fuzzyTwin)) {
+          byKey.set(key, bucket.map((m) => (m === fuzzyTwin ? match : m)))
+        }
+      } else {
+        // Misma pareja pero distinto horario: partidos legítimamente distintos
+        bucket.push(match)
+        byKey.set(key, bucket)
+      }
     }
   }
   return Array.from(byKey.values())

@@ -41,6 +41,7 @@ export interface Match {
   leagueExternalId: number | null
   league: string
   leagueCountry: string | null
+  matchType: string
   flag: string
   leagueLogoUrl: string | null
   homeLogoUrl: string | null

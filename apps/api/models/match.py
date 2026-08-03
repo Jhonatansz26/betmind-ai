@@ -19,6 +19,7 @@ class Match(TimestampMixin, Base):
     
     match_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), default="SCHEDULED", nullable=False, index=True)
+    match_type: Mapped[str] = mapped_column(String(20), default="LEAGUE", nullable=False, index=True)
     regulation_time_only: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     
     home_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

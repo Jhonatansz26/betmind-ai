@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { ArrowRightIcon } from 'lucide-react'
+import { ArrowRightIcon, TrendingUp, Trophy } from 'lucide-react'
 
 import { Card } from '@/components/ui/card'
 import {
@@ -45,6 +45,17 @@ function StatusBadge({ match }: { match: Match }) {
   return null
 }
 
+/** Badge de match_type: muestra "COPA" para knockouts */
+function MatchTypeBadge({ matchType }: { matchType: string }) {
+  if (matchType !== 'KNOCKOUT_CUP') return null
+  return (
+    <span className="inline-flex items-center gap-1 rounded-sm border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-warning">
+      <Trophy className="size-2.5" aria-hidden />
+      Copa
+    </span>
+  )
+}
+
 export function MatchCard({ match }: { match: Match }) {
   const model = buildModel(match.lambdaHome, match.lambdaAway)
   const rows = marketRows(match, model)
@@ -60,23 +71,56 @@ export function MatchCard({ match }: { match: Match }) {
     && typeof match.score[1] === 'number'
   const showScore = (isLive || isFinished) && hasRealScore
 
+  // Determinar si mostrar el banner de apuesta recomendada
+  const showBestBet = isScheduled && best != null && hasLambda
+
   return (
     <Link href={`/partidos/${match.id}`} className="group block" aria-label={`Ver análisis de ${match.home} contra ${match.away}`}>
     <Card
       className={cn(
-        'group gap-0 border-border bg-card p-0 transition-colors',
+        'group gap-0 border-border bg-card p-0 transition-all duration-200',
         isLive && 'border-positive/30',
         isFinished && 'opacity-80',
         isScheduled && best && 'border-positive/40 shadow-[0_0_24px_-10px_var(--positive)]',
         isScheduled && !best && 'hover:border-primary/30',
       )}
     >
+      {/* ── BANNER: Apuesta Recomendada Principal ── */}
+      {showBestBet && (
+        <div
+          className="flex items-center gap-2.5 rounded-t-xl border-b border-positive/20 bg-positive/[0.07] px-4 py-2"
+          aria-label="Apuesta recomendada"
+        >
+          <TrendingUp className="size-3.5 shrink-0 text-positive" aria-hidden />
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="truncate text-[11px] font-bold text-positive">
+              👉 {best.label}
+            </span>
+          </div>
+          {/* Prob % chip */}
+          <span className="num shrink-0 rounded-md border border-positive/30 bg-positive/15 px-2 py-0.5 text-[11px] font-bold tabular-nums text-positive">
+            {(best.probability * 100).toFixed(1)}%
+          </span>
+          {/* Cuota chip */}
+          {best.odds > 0 && (
+            <span className="num shrink-0 rounded-md border border-border bg-surface-inset px-2 py-0.5 text-[11px] font-semibold tabular-nums text-foreground">
+              @{best.odds.toFixed(2)}
+            </span>
+          )}
+          {/* EV+ chip */}
+          <span className="num ev-glow shrink-0 rounded-full border border-positive/30 bg-positive/10 px-2 py-0.5 text-[10px] font-bold text-positive shadow-[0_0_8px_-3px_var(--positive)]">
+            🔥 EV+{(best.edge * 100).toFixed(1)}%
+          </span>
+        </div>
+      )}
+
       <div className="flex items-center gap-4 px-4 py-3">
         {/* COLUMN 1 — Time / Status (100px) */}
         <div className="flex w-[100px] shrink-0 flex-col items-start gap-1">
           <p className="num text-sm font-semibold text-foreground">{match.time}</p>
           <StatusBadge match={match} />
-          {isScheduled && (
+          <MatchTypeBadge matchType={match.matchType ?? 'LEAGUE'} />
+          {isScheduled && !best && (
             <span className="inline-flex items-center rounded-full border border-border/50 bg-surface/50 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
               PROGRAMADO
             </span>
@@ -163,10 +207,13 @@ export function MatchCard({ match }: { match: Match }) {
               Finalizado
             </span>
           ) : best ? (
-            <span className="ev-glow num inline-flex items-center gap-1.5 rounded-full border border-positive/30 bg-positive/10 px-2.5 py-1 text-xs font-bold text-positive shadow-[0_0_12px_-4px_var(--positive)]">
-              EV+
-              <span className="font-semibold">{`${(best.edge * 100).toFixed(1)}%`}</span>
-            </span>
+            <div className="flex flex-col items-end gap-1">
+              {/* Probabilidad destacada */}
+              <span className="num text-lg font-black leading-none tabular-nums text-positive">
+                {(best.probability * 100).toFixed(0)}%
+              </span>
+              <span className="num text-[10px] font-medium text-subtle">probabilidad</span>
+            </div>
           ) : (
             <span className="text-[11px] font-medium tracking-wide text-subtle">SIN EDGE</span>
           )}

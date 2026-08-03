@@ -1,4 +1,4 @@
-﻿# ðŸ§  BetMind AI â€” BitÃ¡cora de Desarrollo y Arquitectura
+# ðŸ§  BetMind AI â€” BitÃ¡cora de Desarrollo y Arquitectura
 
 ## ðŸ“Œ 1. VisiÃ³n General del Producto
 **BetMind AI** es una plataforma web y aplicaciÃ³n mÃ³vil SaaS para analÃ­tica avanzada de apuestas deportivas basada en ciencia de datos y aprendizaje automÃ¡tico.
@@ -6445,4 +6445,125 @@ batch_predict.py --mode quant --limit 20 --force:
 - Los ultimos refinamientos de Scouter, H2H, radar y filtro de señales estan implementados localmente y pendientes de su siguiente commit/push.
 
 
+## Fase 18: Deduplicacion Estricta de Partidos y Equipos + Cuotas Reales de Props (2026-08-03)
+
+### 1. Causa raiz de los partidos duplicados (diagnosticado en produccion)
+
+El pipeline de ingesta usa tres fuentes (ESPN Scoreboard, API-Football, football-data.org) que escriben el MISMO partido real con `external_id` de namespaces distintos:
+- ESPN: IDs de 9 digitos (ej. `401841443`)
+- API-Football: IDs de 7 digitos (ej. `1493009`)
+
+`MatchRepository.upsert_match()` solo deduplicaba por `external_id`, por lo que cada proveedor insertaba un segundo registro. Verificacion en Supabase (`sruhpmucytkaksdtkrsi`): 716 partidos -> 57 grupos duplicados (misma pareja de equipos en ventana < 2h).
+
+### 2. Fix en 3 capas (Capa 1 - dedup por external_id)
+
+- **Backend** (`apps/api/repositories/match_repository.py`): nuevo `get_by_team_pair_window()` (ventana +-2h por pareja de equipos) + consolidacion en `upsert_match()`. Nueva columna `matches.alternate_external_ids` (JSON array) para registrar IDs alternativos de otros proveedores. Regla de riqueza: `FINISHED` > `LIVE` > `SCHEDULED`; nunca degrada un partido finalizado.
+- **Migracion de produccion** (`011_cross_provider_match_dedup`): re-parento dependientes (13 bookmaker_odds, 39 predicciones, 36 tacticos), elimino los 57 duplicados, creo indice unico `uq_matches_league_teams_hour` sobre `(league_id, home_team_id, away_team_id, date_trunc('hour', match_date AT TIME ZONE 'UTC'))`.
+- **Frontend** (`apps/web/lib/api.ts`): `dedupeMatches()` defensivo + campo `matchDate` ISO parseable en el tipo `Match`.
+- Resultado: 716 -> 659 partidos, 0 pares duplicados, 0 huerfanos, dashboard limpio.
+
+### 3. Fix de cuotas de props (corners / tarjetas / remates) - verificado en vivo
+
+Dos bugs en `apps/api/services/odds_service.py`:
+1. `if parsed: break` detenia el parseo en el PRIMER bookmaker, perdiendo corners/cards/shots de los otros 13 bookmakers.
+2. Nombres de mercado reales no coincidian: la API devuelve `Corners Over Under` (con espacio, sin slash) y `Total ShotOnGoal`; el parser buscaba `Corners Over/Under` y `Shots on Target Over/Under` -> 0 mercados de props guardados en produccion pese a estar disponibles.
+
+Fix: `_parse_raw_odds_payload()` agrega TODOS los bookmakers y conserva la mejor cuota por mercado (maxima); mapas expandidos con nombres reales y lineas 4.5-13.5 (corners), 2.5-7.5 (cards), 4.5-10.5 (shots).
+
+Verificacion E2E con key real (10 fixtures del 2026-08-03): corners 8/10 (antes 0), cards 3/10, shots 2/10; 43-71 mercados por fixture. La API tambien entrega player props reales (Bet365 `Player Shots On Target`).
+
+### 4. Investigacion de APIs (comunidades + fuentes primarias)
+
+- **The Odds API**: tier free 500 creditos/mes (todos los mercados), $30/20K, $59/100K. Mercados soccer: `alternate_totals_corners`, `alternate_totals_cards`, `corners_1x2`, player props (`player_shots_on_target`, `player_to_receive_card`) para EPL/Ligue1/Bundesliga/SerieA/LaLiga/MLS (bookmakers US). NO cubre Liga BetPlay.
+- **Sportmonks**: free tier 2 ligas; desde EUR29/mes (5 ligas) + EUR15/mes add-on Odds (150+ mercados, 50+ bookmakers). Cubre LATAM completo.
+- **OddsJam/OpticOdds**: enterprise sales-gated, props mas profundos (100-200+ books) - para escala.
+- Consenso Reddit (r/algobetting, r/arbitragebetting): The Odds API es la opcion recurrente para props; scrapers propios se rompen; API-Football/Sportmonks tienen problemas de data quality.
+- Informe completo: `docs/DATA_ARCHITECTURE_DEDUP_Y_PROPS.md`.
+
+### 5. Capa 2 - Dedup fuzzy de equipos y partidos
+
+Problema residual en logs de `batch_predict.py`: la tabla `teams` tenia 2 filas para el mismo club con nombres distintos entre proveedores (`Independ. Rivadavia` vs `Independiente Rivadavia`), rompiendo el dedup por team_id.
+
+**Normalizacion** (`apps/api/services/team_normalizer.py`):
+- `_TOKEN_ABBREVIATIONS`: expansion token a token (independ->independiente, jrs->juniors, sde->santiago del estero, cba->cordoba, lp->la plata); puntuacion se elimina ANTES de expandir.
+- `team_name_similarity(a, b)`: Jaccard sobre tokens canonicalizados con boost de cobertura para subconjuntos.
+- `team_identity_key(name)`: clave CONSERVADORA para fusionar teams - elimina sufijos organizativos inequivocos (FC/CF/IF/FF/BK/AIF/SA/FK/EC/CR/SE/FR/FBC/FBPA/AFC) pero conserva "real"/"atletico"/"club"/"sc"/"cd" para NO fusionar clubes distintos (verificado: Real Madrid != Atletico Madrid, Barcelona != Barcelona SC, Botafogo != Botafogo-SP).
+
+**Dedup fuzzy de partidos** (`match_repository.py`):
+- `get_similar_match_in_window(home, away, date)`: consolida si similitud(home) >= 0.85 Y similitud(away) >= 0.85 en ventana +-2h. `populate_existing=True` para sobreescribir relaciones `lazy="noload"`.
+- `upsert_match()` cae al dedup fuzzy cuando el match por team_id exacto no encuentra candidato.
+
+**Limpieza en produccion**:
+- `scripts/dedupe_teams.py` (dry-run + `--apply`): agrupa por `team_identity_key` con guardia de liga (comparten liga en matches o uno es huerfano), eligiendo el canonico (mas partidos > nombre mas completo > id menor), re-apunta FKs, consolida partidos colisionantes. Resultado: **443 -> 401 equipos** (42 fusiones).
+- `scripts/dedupe_matches_fuzzy.py` (dry-run + `--apply`): consolida 21 partidos duplicados fuzzy preexistentes (pares +-2h con pareja >= 0.85), re-apuntando bookmaker_odds/predictions/tactical_analyses/match_events/match_advanced_stats. Resultado: 659 -> 618 partidos.
+- Verificacion: `Sarmiento (Junin) vs Independ. Rivadavia` + variante API-Football -> 1 registro (id=1654, alternate_external_ids=[1493045]); `Central Cordoba (Santiago del Estero) vs San Lorenzo` + `Central Cordoba de Santiago vs San Lorenzo` -> 1 registro (id=1658, [1493034]). Dashboard ventana actual: 10 partidos, 0 duplicados.
+
+**Filtro defensivo**:
+- `scripts/batch_predict.py`: Capa 6 `_deduped_matches()` - agrupa por fecha +-2h + nombres normalizados >= 0.85, procesa solo el registro mas rico; contador `Dups` en el resumen.
+- `apps/web/lib/api.ts`: `matchKey` ahora usa nombres normalizados (no team IDs) + backstop fuzzy >= 0.85 -> una tarjeta por encuentro en el Dashboard.
+
+### 6. Tests y verificacion
+
+- `tests/test_match_dedup.py` (4): upsert mismo ID, consolidacion cross-provider 2h, partidos legitimos > 2h, no-degradacion FINISHED->LIVE.
+- `tests/test_odds_parser_real_payload.py` (5): nombres reales de mercado, agregacion multi-bookmaker, mejor precio, bloqueo de empate anomalo, lineas reales.
+- `tests/test_fuzzy_dedup.py` (6): canonicalizacion del caso del usuario, identidad conservadora, consolidacion Sarmiento/Independiente, Central Cordoba, parejas distintas no fusionadas.
+- Suite completa: **118 passed** (1 fallo pre-existente: `test_cache_resilience.py` requiere pytest-asyncio).
+- `npx tsc --noEmit` en `apps/web`: sin errores.
+
+---
+
+## 🟡 Fase 4.5: Reestructuración de Ligas, Fix Timezone, Feature Engineering (match_type) y UI Polish (Completado)
+
+**Fecha:** 3 de Agosto, 2026  
+**Resumen:** Actualización integral en BetMind AI estructurada en 4 capas de producto y fullstack engineering: corrección estricta de husos horarios para Colombia (COT), expansión y saneamiento del catálogo master de ligas, feature engineering del atributo `match_type` (`LEAGUE` vs `KNOCKOUT_CUP`) a nivel de DB/API/ML/Frontend, y rediseño de jerarquía visual en las tarjetas de predicción.
+
+---
+
+### 1. Capa 1 — Fix Timezone en Dashboard ("Hoy" vs "Mañana")
+- **Diagnóstico:** El endpoint `/matches` utilizaba una ventana móvil de tiempo en UTC puro (`±2h/+36h`) cuando no se pasaba filtro explícito, ocasionando que partidos agendados para el día siguiente en horario local aparecieran agrupados en la pestaña "Hoy".
+- **Solución Backend (`apps/api/routes/v1/matches.py`):**
+  - Eliminación del fallback `use_rolling_window` de UTC puro.
+  - Cuando no se proporciona un `date_filter` o se solicita "today", se calcula y establece por defecto la fecha actual en la zona horaria de Colombia (`America/Bogota` / UTC-5).
+  - Rango de consulta SQL transformado a límites diarios estrictos (`00:00:00` a `23:59:59` COT) convertidos explícitamente a UTC para comparación idempotente con la columna `timestamptz`.
+
+---
+
+### 2. Capa 2 — Configuración Master de Ligas Activas (26 Ligas)
+- **Depuración:** Eliminación de ligas secundarias europeas sin volumen suficiente de mercado: Allsvenskan (Suecia - 113), Superliga (Dinamarca - 119) y Super League (Suiza - 207).
+- **Catálogo Actualizado (`apps/api/config.py` & `apps/api/repositories/match_repository.py`):**
+  - **LATAM:** Liga BetPlay (239), Copa Colombia (241), Liga Profesional Argentina (128), Copa de la Liga Argentina (130), Série A Brasil (71), Série B Brasil (72), Copa do Brasil (73), Liga MX (262), MLS (253), US Open Cup (254), CONMEBOL Libertadores (13), CONMEBOL Sudamericana (11), Liga Pro Ecuador (275), Primera División Chile (274), Liga 1 Perú (281 - fuente única de verdad sincronizada).
+  - **EUROPA TOP:** Premier League (39), EFL Championship (40), LaLiga (140), LaLiga Hypermotion (141), Bundesliga (78), Serie A Italia (135), Ligue 1 (61), Eredivisie (88), UEFA Champions League (2), UEFA Europa League (3), UEFA Conference League (848).
+- **Integración de Constantes:** Definición de `KNOCKOUT_CUP_LEAGUE_IDS` en `config.py` para discriminación rápida en pipelines de ingesta.
+
+---
+
+### 3. Capa 3 — Feature Engineering (`match_type`)
+- **Modelo ORM (`apps/api/models/match.py`):** Agregada columna `match_type` (`String(20)`, indexada, default `"LEAGUE"`).
+- **Migración SQL (`apps/api/migrations/011_add_match_type.sql` & `scripts/apply_migration_011.py` / `apply_migration_011_postgres.py`):**
+  - Adición de columna en PostgreSQL / SQLite.
+  - Backfill automático asignando `"KNOCKOUT_CUP"` a todas las copas nacionales e internacionales (IDs: 241, 130, 73, 254, 13, 11, 2, 3, 848) y `"LEAGUE"` a ligas de puntos.
+- **Repositorio & Ingesta (`match_repository.py` & `sync_today_matches.py`):**
+  - Firma de `upsert_match()` actualizada con parámetro `match_type: str = "LEAGUE"`.
+  - El script de sincronización (`sync_today_matches.py`) asigna automáticamente el tipo de partido leyendo la propiedad `match_type` de `FEATURED_LEAGUES` o mediante evaluación en `KNOCKOUT_CUP_LEAGUE_IDS`.
+- **Exposición en API & Types TypeScript (`matches.py`, `api.ts`, `betmind.ts`):**
+  - Respuesta del endpoint `_match_to_dict_full` expone `"match_type": getattr(m, "match_type", "LEAGUE")`.
+  - Frontend mapea el campo a `Match.matchType` para consumo de componentes y filtrado.
+
+---
+
+### 4. Capa 4 — UI Redesign & Polish de Tarjetas de Predicción
+- **Banner de Apuesta Recomendada (`apps/web/components/betmind/match-card.tsx`):**
+  - Encabezado destacado superior en la tarjeta (`👉 [Mercado con mayor EV+]`) visible exclusivamente en partidos `SCHEDULED` con oportunidad de valor detectada (`best != null`).
+  - Chips visuales adjuntos en el banner: Probabilidad real `XX.X%`, Cuota `@X.XX` y Badge luminoso `🔥 EV+ X.X%`.
+  - Badge de torneo `COPA` en color warning para partidos de eliminación directa/internacionales (`matchType === 'KNOCKOUT_CUP'`).
+- **Filtros Rápidos en Dashboard (`apps/web/components/betmind/dashboard.tsx`):**
+  - Barra de chips rápidos agregada sobre la cartelera en la pestaña Partidos: `Todos`, `⚡ Alta Confianza (>75%)` y `🔥 Mejor Valor (EV+)`.
+  - Filtrado reactivo en cliente sobre los partidos de la fecha seleccionada antes de agrupar por ligas.
+
+---
+
+### 5. Verificación & Quality Assurance
+- **Tests Automatizados (Pytest):** 118 tests unitarios e integrados pasados con éxito.
+- **Verificación de Tipos TypeScript:** `npx tsc --noEmit` ejecutado en `apps/web` sin errores de compilación.
+- **Verificación Visual E2E (Puppeteer):** Capturas de pantalla confirmando carga de carteleras con banners recomendados en verde brillante, jerarquía de cuotas y respuesta fluida de los nuevos filtros de tarjetas.
 

@@ -42,6 +42,54 @@ os.environ["DATABASE_URL"] = database_url
 BATCH_SIZE = 5
 BATCH_DELAY_SECONDS = 2
 
+# Umbral de similitud para el filtro defensivo de partidos duplicados
+DEDUP_SIMILARITY_THRESHOLD = 0.85
+
+
+def _deduped_matches(matches: list) -> list:
+    """
+    Capa 6 (defensiva): garantiza que NUNCA se procesen dos variantes del
+    mismo encuentro (misma fecha ±2h + nombres de equipos normalizados con
+    similitud >= 0.85). Conserva el registro más rico (cuotas > predicción >
+    id menor) por grupo.
+    """
+    from apps.api.services.team_normalizer import team_name_similarity
+
+    grouped: list[list] = []
+    for match in matches:
+        placed = False
+        for group in grouped:
+            ref = group[0]
+            if abs((ref.match_date - match.match_date).total_seconds()) < 2 * 3600:
+                ref_home = ref.home_team.name if ref.home_team else ""
+                ref_away = ref.away_team.name if ref.away_team else ""
+                cur_home = match.home_team.name if match.home_team else ""
+                cur_away = match.away_team.name if match.away_team else ""
+                if (team_name_similarity(ref_home, cur_home) >= DEDUP_SIMILARITY_THRESHOLD
+                        and team_name_similarity(ref_away, cur_away) >= DEDUP_SIMILARITY_THRESHOLD):
+                    group.append(match)
+                    placed = True
+                    break
+        if not placed:
+            grouped.append([match])
+
+    deduped = []
+    for group in grouped:
+        # bookmaker_odds está eager-loaded en el query; id menor como desempate
+        keeper = max(group, key=lambda m: (len(m.bookmaker_odds) > 0, -m.id))
+        for m in group:
+            if m is not keeper:
+                logger.info(
+                    "[dedup-defensivo] Partido %s (%s vs %s) == partido %s (%s vs %s) — "
+                    "procesando solo %s",
+                    m.id, m.home_team.name if m.home_team else "?", m.away_team.name if m.away_team else "?",
+                    keeper.id, keeper.home_team.name if keeper.home_team else "?",
+                    keeper.away_team.name if keeper.away_team else "?",
+                    keeper.id,
+                )
+        deduped.append(keeper)
+    return deduped
+
 
 async def _has_narrative(session, match_id: int) -> bool:
     """Capa 4: verifica si el partido ya tiene análisis táctico no-nulo."""
@@ -103,7 +151,7 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
     )
 
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    stats = {"total": 0, "success": 0, "errors": 0, "skipped": 0, "batches": 0}
+    stats = {"total": 0, "success": 0, "errors": 0, "skipped": 0, "batches": 0, "duplicates": 0}
 
     try:
         async with session_factory() as session:
@@ -130,7 +178,18 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
             result = await session.execute(stmt)
             all_matches = list(result.scalars().all())
             stats["total"] = len(all_matches)
-            logger.info("Found %d matches in rolling -2h/+36h window to process", stats["total"])
+
+            # Capa 6: filtro defensivo de duplicados (fecha + nombres normalizados)
+            deduped_matches = _deduped_matches(all_matches)
+            stats["duplicates"] = len(all_matches) - len(deduped_matches)
+            if stats["duplicates"]:
+                logger.warning(
+                    "Filtro defensivo: %d variantes de partidos duplicados omitidas "
+                    "(%d únicos a procesar)", stats["duplicates"], len(deduped_matches),
+                )
+            all_matches = deduped_matches
+
+            logger.info("Found %d unique matches in rolling -2h/+36h window to process", stats["total"])
 
             match_ids = [m.id for m in all_matches]
 
@@ -237,4 +296,5 @@ if __name__ == "__main__":
     print(f"Success:  {final_stats['success']}")
     print(f"Skipped:  {final_stats['skipped']}")
     print(f"Errors:   {final_stats['errors']}")
+    print(f"Dups:     {final_stats['duplicates']}")
     print(f"Batches:  {final_stats['batches']}")

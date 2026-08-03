@@ -20,7 +20,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy import select, and_
 
-from apps.api.config import settings, FEATURED_LEAGUES
+from apps.api.config import settings, FEATURED_LEAGUES, KNOCKOUT_CUP_LEAGUE_IDS
 from apps.api.services.scrapers.match_fixture_scraper import MatchFixtureScraper
 from apps.api.services.odds_service import OddsService
 from apps.api.services.api_football import APIFootballService
@@ -234,6 +234,8 @@ async def sync_upcoming_matches():
                                 ).hexdigest()[:8], 16)
                                 external_id = raw_hash % 2_000_000_000
 
+                        league_match_type = league_info.get("match_type", "LEAGUE")
+
                         match = await match_repo.upsert_match(
                             external_id=external_id,
                             league_id=league.id,
@@ -244,6 +246,7 @@ async def sync_upcoming_matches():
                             home_score=fixture.get("home_score"),
                             away_score=fixture.get("away_score"),
                             regulation_time_only=True,
+                            match_type=league_match_type,
                         )
 
                         match_date_val = fixture["match_date"]
@@ -412,6 +415,13 @@ async def sync_upcoming_matches():
                         else:
                             # Create new match (for leagues not in ESPN)
                             match_date_dt = match_date_raw if match_date_raw else datetime.now()
+                            # Determine match_type based on league
+                            af_match_type = (
+                                "KNOCKOUT_CUP"
+                                if api_league_id in KNOCKOUT_CUP_LEAGUE_IDS
+                                else "LEAGUE"
+                            )
+
                             match = await match_repo.upsert_match(
                                 external_id=int(api_fixture_id),
                                 league_id=league.id,
@@ -422,6 +432,7 @@ async def sync_upcoming_matches():
                                 home_score=api_home_score,
                                 away_score=api_away_score,
                                 regulation_time_only=True,
+                                match_type=af_match_type,
                             )
                             new_matches += 1
                             logger.info(

@@ -27,6 +27,19 @@ _STOP_WORDS: set[str] = {
     "the", "of", "and", "in", "fc", "sc", "cf", "ac", "cd",
 }
 
+# Abreviaciones a nivel de token: ESPN usa "Independ. Rivadavia" mientras
+# API-Football usa "Independiente Rivadavia". Expansión token a token para que
+# ambas variantes colapsen al mismo canónico.
+_TOKEN_ABBREVIATIONS: dict[str, str] = {
+    "independ": "independiente",
+    "indep": "independiente",
+    "jrs": "juniors",
+    "sde": "santiago del estero",
+    "cba": "cordoba",
+    "lp": "la plata",
+    "acc": "asociacion atletica",
+}
+
 TEAM_NAME_ALIASES: dict[str, str] = {
     "junior": "atletico junior",
     "atletico junior": "junior",
@@ -77,19 +90,43 @@ def _strip_prefixes(name: str) -> str:
     return _PREFIX_PATTERN.sub('', name)
 
 
-def canonical_team_name(name: str) -> str:
-    """
-    Normalizes a team name for cross-provider matching.
+# Sufijos ORGANIZATIVOS inequívocamente genéricos (idioma extranjero o societario).
+# Se eliminan incluso en la clave de identidad conservadora porque NUNCA
+# distinguen clubes en el mismo contexto (FC, CF, IF, FF, BK, AIF, SA, FK,
+# EC=Esporte Clube, CR=Clube de Regatas, SE=Sociedade Esportiva, FR=Futebol
+# e Regatas, FBC=Futebol Clube, FBPA=Futebol e Regatas Porto Alegrense).
+# NOTA: "sc", "cd", "ac", "rc", "ca", "ud", "club", "atletico", "real",
+# "deportivo" NO se eliminan en la identidad porque pueden ser parte del
+# nombre distintivo del club (ej. Barcelona SC (ECU) vs Barcelona (ESP);
+# Real Madrid vs Atletico Madrid).
+_IDENTITY_SUFFIX_PATTERN = re.compile(
+    r'\b(fc|cf|if|ff|bk|aif|sa|fk|ec|cr|se|fr|fbc|fbpa|fcr)\b',
+    re.IGNORECASE,
+)
 
-    Transformations (in order):
-    1. NFKD decomposition (separates base chars from diacritics)
-    2. Remove combining diacritical marks (accents, tildes)
-    3. Lowercase
-    4. Check alias dictionary for known name variants
-    5. Remove common prefixes: Atlético, Club, CD, SD, CA, Real, CF, etc.
-    6. Remove common suffixes: FC, SC, CF, AC, CD, SA, S.A., etc.
-    7. Remove remaining punctuation
-    8. Collapse multiple spaces → single space, trim
+# Prefijos organizativos inequívocos que se eliminan en la identidad
+# (AFC = Association Football Club). "real"/"atletico"/"club"/"deportivo"
+# NO se eliminan (son distintivos).
+_IDENTITY_PREFIX_PATTERN = re.compile(
+    r'\b(afc)\b',
+    re.IGNORECASE,
+)
+
+
+def team_identity_key(name: str) -> str:
+    """
+    Clave de identidad CONSERVADORA para detectar duplicados en la tabla
+    `teams` sin fusionar clubes distintos:
+
+    - Misma normalización base que canonical_team_name (tildes, mayúsculas,
+      puntuación, abreviaciones, alias).
+    - NO elimina prefijos distintivos ("real", "atletico", "club", "deportivo")
+      ni sufijos potencialmente distintivos ("sc", "cd", "ac", "rc", "ec").
+    - Solo elimina sufijos organizativos inequívocos (fc, cf, if, ff, bk,
+      aif, sa, fk).
+
+    Resultado: "Real Madrid" ≠ "Atletico Madrid", "Barcelona" ≠ "Barcelona SC",
+    pero "Arsenal" == "Arsenal FC" y "Independ. Rivadavia" == "Independiente Rivadavia".
     """
     name = unicodedata.normalize('NFKD', name)
     name = ''.join(c for c in name if not unicodedata.combining(c))
@@ -99,9 +136,10 @@ def canonical_team_name(name: str) -> str:
     if alias:
         name = alias
 
-    name = _strip_prefixes(name)
-    name = _SUFFIX_PATTERN.sub('', name)
     name = _PUNCT_PATTERN.sub('', name)
+    name = _expand_token_abbreviations(name)
+    name = _IDENTITY_PREFIX_PATTERN.sub('', name)
+    name = _IDENTITY_SUFFIX_PATTERN.sub('', name)
     name = _SPACES_PATTERN.sub(' ', name).strip()
 
     alias_clean = TEAM_NAME_ALIASES.get(name)
@@ -109,6 +147,89 @@ def canonical_team_name(name: str) -> str:
         name = alias_clean
 
     return name
+
+
+def _expand_token_abbreviations(name: str) -> str:
+    """Expande abreviaciones token a token (ej: 'independ' → 'independiente')."""
+    tokens = name.split()
+    expanded = []
+    for token in tokens:
+        token = _TOKEN_ABBREVIATIONS.get(token, token)
+        expanded.extend(token.split())
+    return " ".join(expanded)
+
+
+def canonical_team_name(name: str) -> str:
+    """
+    Normalizes a team name for cross-provider matching.
+
+    Transformations (in order):
+    1. NFKD decomposition (separates base chars from diacritics)
+    2. Remove combining diacritical marks (accents, tildes)
+    3. Lowercase
+    4. Check alias dictionary for known name variants
+    5. Expand token-level abbreviations (Independ. → Independiente, Jrs → Juniors)
+    6. Remove common prefixes: Atlético, Club, CD, SD, CA, Real, CF, etc.
+    7. Remove common suffixes: FC, SC, CF, AC, CD, SA, S.A., etc.
+    8. Remove remaining punctuation
+    9. Collapse multiple spaces → single space, trim
+    """
+    name = unicodedata.normalize('NFKD', name)
+    name = ''.join(c for c in name if not unicodedata.combining(c))
+    name = name.lower()
+
+    alias = TEAM_NAME_ALIASES.get(name)
+    if alias:
+        name = alias
+
+    # Quitar puntuación ANTES de expandir abreviaciones para que
+    # "Independ." colapse al token "independ" y luego a "independiente".
+    name = _PUNCT_PATTERN.sub('', name)
+    name = _expand_token_abbreviations(name)
+    name = _strip_prefixes(name)
+    name = _SUFFIX_PATTERN.sub('', name)
+    name = _SPACES_PATTERN.sub(' ', name).strip()
+
+    alias_clean = TEAM_NAME_ALIASES.get(name)
+    if alias_clean:
+        name = alias_clean
+
+    return name
+
+
+def team_name_similarity(name_a: str, name_b: str) -> float:
+    """
+    Similitud Jaccard entre dos nombres de equipo canonicalizados (0.0 - 1.0).
+
+    Considera intersección de tokens no-stop sobre unión, ponderando:
+    - Match exacto → 1.0
+    - Un nombre es subconjunto del otro (ej. 'central cordoba santiago'
+      vs 'central cordoba santiago del estero') → proporción de tokens
+      compartidos sobre el mayor conjunto.
+    """
+    norm_a = canonical_team_name(name_a)
+    norm_b = canonical_team_name(name_b)
+    if not norm_a or not norm_b:
+        return 0.0
+    if norm_a == norm_b:
+        return 1.0
+
+    tokens_a = set(norm_a.split()) - _STOP_WORDS
+    tokens_b = set(norm_b.split()) - _STOP_WORDS
+    if not tokens_a or not tokens_b:
+        return 0.0
+
+    intersection = tokens_a & tokens_b
+    union = tokens_a | tokens_b
+    jaccard = len(intersection) / len(union)
+
+    # Si uno es subconjunto casi total del otro, elevar la similitud:
+    # ej: {central cordoba santiago} ⊂ {central cordoba santiago del estero}
+    if tokens_a <= tokens_b or tokens_b <= tokens_a:
+        coverage = len(intersection) / min(len(tokens_a), len(tokens_b))
+        jaccard = max(jaccard, coverage * 0.9)
+
+    return jaccard
 
 
 def fuzzy_match_team(search_name: str, candidates: list[str]) -> Optional[str]:
