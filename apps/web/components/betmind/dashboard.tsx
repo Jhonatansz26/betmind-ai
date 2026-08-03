@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { AlertCircle, RefreshCw, Sparkles } from 'lucide-react'
+import { AlertCircle, RefreshCw, Sparkles, SlidersHorizontal, BrainCircuit } from 'lucide-react'
 
 import { type Match, type Ticket } from '@/lib/betmind'
 import { fetchTickets, fetchMatches } from '@/lib/api'
@@ -12,6 +12,7 @@ import { LeagueAccordion } from './league-accordion'
 import { LeagueLogo } from './league-logo'
 import { ScannerEmptyState } from './scanner-empty-state'
 import { TicketCard } from './ticket-card'
+import { TicketGenerator } from './ticket-generator'
 import { TrackingPanel } from './tracking-panel'
 import { BottomNav, TopNav, type NavTab } from './top-nav'
 import { DateSelector, formatDateTitle, type DateFilter } from './date-selector'
@@ -183,8 +184,11 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 /* Dashboard                                                           */
 /* ------------------------------------------------------------------ */
 
+type TicketViewMode = 'ia' | 'generator'
+
 export function Dashboard() {
   const [tab, setTab] = React.useState<NavTab>('Boletos')
+  const [ticketViewMode, setTicketViewMode] = React.useState<TicketViewMode>('ia')
   const [league, setLeague] = React.useState('all')
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const [dateFilter, setDateFilter] = React.useState<DateFilter>('today')
@@ -364,36 +368,97 @@ export function Dashboard() {
           {showTickets ? (
             <>
               <section className="flex flex-col gap-4">
+                {/* ── View mode toggle ── */}
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div>
                     <h1 className="text-xl font-bold tracking-tight text-foreground">
-                      Oportunidades de {dateInfo.title.toLowerCase()}
+                      {ticketViewMode === 'ia'
+                        ? `Oportunidades de ${dateInfo.title.toLowerCase()}`
+                        : 'Generador de Boletos'}
                     </h1>
-                    <p className="mt-0.5 text-xs text-subtle">{dateInfo.subtitle}</p>
+                    <p className="mt-0.5 text-xs text-subtle">
+                      {ticketViewMode === 'ia' ? dateInfo.subtitle : 'Configura tu boleto con los controles de abajo'}
+                    </p>
                   </div>
-                  <DateSelector value={dateFilter} onChange={setDateFilter} />
-                  <p className="num text-xs text-muted-foreground">
-                    {ticketMeta
-                      ? `${ticketMeta.totalEv} señales +EV · ${formatAge(ticketMeta.generatedAt)}`
-                      : 'Consultando modelo…'}
-                  </p>
+
+                  <div className="flex items-center gap-2">
+                    {ticketViewMode === 'ia' && (
+                      <DateSelector value={dateFilter} onChange={setDateFilter} />
+                    )}
+                    {/* Toggle */}
+                    <div
+                      role="group"
+                      aria-label="Vista de boletos"
+                      className="flex items-center rounded-lg border border-border bg-surface p-0.5"
+                    >
+                      <button
+                        id="view-mode-ia"
+                        type="button"
+                        aria-pressed={ticketViewMode === 'ia'}
+                        onClick={() => setTicketViewMode('ia')}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all duration-200',
+                          ticketViewMode === 'ia'
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        <BrainCircuit size={12} aria-hidden />
+                        Boletos IA
+                      </button>
+                      <button
+                        id="view-mode-generator"
+                        type="button"
+                        aria-pressed={ticketViewMode === 'generator'}
+                        onClick={() => setTicketViewMode('generator')}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all duration-200',
+                          ticketViewMode === 'generator'
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        <SlidersHorizontal size={12} aria-hidden />
+                        Generador
+                      </button>
+                    </div>
+                  </div>
+
+                  {ticketViewMode === 'ia' && (
+                    <p className="num w-full text-xs text-muted-foreground">
+                      {ticketMeta
+                        ? `${ticketMeta.totalEv} señales +EV · ${formatAge(ticketMeta.generatedAt)}`
+                        : 'Consultando modelo…'}
+                    </p>
+                  )}
                 </div>
 
-                {ticketsLoading ? <LoadingState type="tickets" /> : ticketsError ? <ErrorState onRetry={() => setRetryKey((key) => key + 1)} /> : tickets.length > 0 ? (
-                  <div className={cn(
-                    'grid items-stretch gap-4',
-                    tickets.length === 1 ? 'max-w-md' : tickets.length === 2 ? 'md:grid-cols-2 max-w-2xl' : 'md:grid-cols-2 xl:grid-cols-3',
-                  )}>
-                    {tickets.map((ticket) => (
-                      <TicketCard
-                        key={ticket.mode}
-                        ticket={ticket}
-                        onTrack={() => setTrackRefreshKey((k) => k + 1)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState type="tickets" timestamp={ticketMeta?.generatedAt} onRefresh={() => setRetryKey((key) => key + 1)} />
+                {/* ── IA mode: auto-generated tickets ── */}
+                {ticketViewMode === 'ia' && (
+                  ticketsLoading ? <LoadingState type="tickets" /> : ticketsError ? <ErrorState onRetry={() => setRetryKey((key) => key + 1)} /> : tickets.length > 0 ? (
+                    <div className={cn(
+                      'grid items-stretch gap-4',
+                      tickets.length === 1 ? 'max-w-md' : tickets.length === 2 ? 'md:grid-cols-2 max-w-2xl' : 'md:grid-cols-2 xl:grid-cols-3',
+                    )}>
+                      {tickets.map((ticket) => (
+                        <TicketCard
+                          key={ticket.mode}
+                          ticket={ticket}
+                          onTrack={() => setTrackRefreshKey((k) => k + 1)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState type="tickets" timestamp={ticketMeta?.generatedAt} onRefresh={() => setRetryKey((key) => key + 1)} />
+                  )
+                )}
+
+                {/* ── Generator mode: interactive panel ── */}
+                {ticketViewMode === 'generator' && (
+                  <TicketGenerator
+                    matches={matches}
+                    onTrack={() => setTrackRefreshKey((k) => k + 1)}
+                  />
                 )}
               </section>
 
