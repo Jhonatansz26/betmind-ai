@@ -516,6 +516,47 @@ export interface EnrichedMatch extends Match {
   }>
 }
 
+export interface MatchFormRecord {
+  match_id: number
+  match_date: string
+  home_team: string
+  away_team: string
+  home_score: number | null
+  away_score: number | null
+  result: 'W' | 'D' | 'L'
+}
+
+export interface MatchH2HRecord {
+  id: number
+  match_date: string
+  home_team: string
+  away_team: string
+  home_score: number | null
+  away_score: number | null
+  status: string
+  events: Array<{
+    event_type: string
+    minute: number
+    added_time: number
+    is_home: boolean | null
+    player_name: string | null
+  }>
+}
+
+export interface MatchH2HData {
+  match_id: number
+  total: number
+  h2h: MatchH2HRecord[]
+  home_form: MatchFormRecord[]
+  away_form: MatchFormRecord[]
+}
+
+export async function fetchMatchH2H(matchId: string): Promise<MatchH2HData> {
+  const response = await fetch(`${API_BASE}/api/v1/matches/${matchId}/h2h`)
+  if (!response.ok) throw new Error(`H2H API error: ${response.status}`)
+  return response.json()
+}
+
 function mapBackendPrediction(raw: BackendPrediction, baseMatch: Match): EnrichedMatch {
   return {
     ...baseMatch,

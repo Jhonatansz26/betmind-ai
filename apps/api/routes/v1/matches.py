@@ -339,12 +339,52 @@ async def get_match_h2h(
         .options(
             selectinload(Match.home_team),
             selectinload(Match.away_team),
+            selectinload(Match.events),
         )
         .order_by(Match.match_date.desc())
         .limit(limit)
     )
     h2h_result = await db.execute(h2h_stmt)
     h2h_matches = h2h_result.scalars().all()
+
+    async def recent_form(team_id: int):
+        form_stmt = (
+            select(Match)
+            .where(Match.home_team_id == team_id, Match.status == "FINISHED")
+            .options(selectinload(Match.home_team), selectinload(Match.away_team))
+            .order_by(Match.match_date.desc())
+            .limit(5)
+        )
+        away_form_stmt = (
+            select(Match)
+            .where(Match.away_team_id == team_id, Match.status == "FINISHED")
+            .options(selectinload(Match.home_team), selectinload(Match.away_team))
+            .order_by(Match.match_date.desc())
+            .limit(5)
+        )
+        home_result = await db.execute(form_stmt)
+        away_result = await db.execute(away_form_stmt)
+        home_matches = list(home_result.scalars().all())
+        away_matches = list(away_result.scalars().all())
+        matches = sorted(home_matches + away_matches, key=lambda item: item.match_date, reverse=True)[:5]
+        result = []
+        for item in matches:
+            scored = item.home_score if item.home_team_id == team_id else item.away_score
+            conceded = item.away_score if item.home_team_id == team_id else item.home_score
+            outcome = "W" if (scored or 0) > (conceded or 0) else "L" if (scored or 0) < (conceded or 0) else "D"
+            result.append({
+                "match_id": item.id,
+                "match_date": item.match_date.isoformat(),
+                "home_team": item.home_team.name if item.home_team else "Unknown",
+                "away_team": item.away_team.name if item.away_team else "Unknown",
+                "home_score": item.home_score,
+                "away_score": item.away_score,
+                "result": outcome,
+            })
+        return result
+
+    home_form = await recent_form(match.home_team_id)
+    away_form = await recent_form(match.away_team_id)
 
     return {
         "match_id": match_id,
@@ -360,9 +400,21 @@ async def get_match_h2h(
                 "home_logo_url": m.home_team.logo_url if m.home_team else None,
                 "away_logo_url": m.away_team.logo_url if m.away_team else None,
                 "status": m.status,
+                "events": [
+                    {
+                        "event_type": event.event_type,
+                        "minute": event.minute,
+                        "added_time": event.added_time,
+                        "is_home": event.is_home,
+                        "player_name": event.player_name,
+                    }
+                    for event in m.events
+                ],
             }
             for m in h2h_matches
         ],
+        "home_form": home_form,
+        "away_form": away_form,
     }
 
 

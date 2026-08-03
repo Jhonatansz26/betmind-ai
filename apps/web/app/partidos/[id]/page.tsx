@@ -41,8 +41,9 @@ import {
   type MarketRow,
   type Mode,
 } from '@/lib/betmind'
-import { fetchMatchPrediction, type EnrichedMatch } from '@/lib/api'
+import { fetchMatchH2H, fetchMatchPrediction, type EnrichedMatch, type MatchH2HData } from '@/lib/api'
 import { resolveLeague } from '@/lib/league-metadata'
+import { formatMarketName } from '@/lib/formatMarketName'
 import { cn } from '@/lib/utils'
 import { TeamLogo } from '@/components/ui/team-logo'
 import { MatchTabBar, type MatchTab } from '@/components/betmind/match-tab-bar'
@@ -228,6 +229,10 @@ function FormBubbles({ form }: { form: FormResult[] }) {
       })}
     </div>
   )
+}
+
+function toFormResult(result: 'W' | 'D' | 'L'): FormResult {
+  return result === 'W' ? 'V' : result === 'D' ? 'E' : 'D'
 }
 
 const NARRATIVE_SECTIONS: { key: string; icon: React.ElementType; label: string }[] = [
@@ -451,14 +456,29 @@ function ConfidenceBar({ detail, model }: { detail: MatchDetailData; model: Matc
   )
 }
 
-function SignalRail({ match, detail, enriched }: { match: Match; detail: MatchDetailData; enriched: EnrichedMatch | null }) {
+function SignalRail({ match, detail, enriched, marketEdge }: { match: Match; detail: MatchDetailData; enriched: EnrichedMatch | null; marketEdge: number }) {
   const oddsCount = Object.values(match.odds).filter((value) => value > 1).length
   const completeness = Math.round((enriched?.tacticalAnalysis?.data_completeness_score ?? 0) * 100)
+  const marketOpen = marketEdge >= 0.03
   return (
     <div className="grid grid-cols-1 overflow-hidden rounded-2xl border border-primary/20 bg-primary/[0.06] sm:grid-cols-3">
       <div className="flex items-center gap-3 border-b border-primary/10 px-4 py-3 sm:border-b-0 sm:border-r"><Activity size={16} className="text-primary" aria-hidden="true" /><div><p className="text-[10px] tracking-[0.12em] text-subtle">Señal BetMind</p><p className="font-mono text-sm font-bold text-foreground">{detail.confidenceScore}/100</p></div></div>
-      <div className="flex items-center gap-3 border-b border-primary/10 px-4 py-3 sm:border-b-0 sm:border-r"><Clock3 size={16} className="text-positive" aria-hidden="true" /><div><p className="text-[10px] tracking-[0.12em] text-subtle">Cuotas</p><p className="font-mono text-sm font-bold text-positive">{oddsCount ? `${oddsCount} mercados activos` : 'Sin cuotas'}</p></div></div>
-      <div className="flex items-center gap-3 px-4 py-3"><Target size={16} className="text-warning" aria-hidden="true" /><div><p className="text-[10px] tracking-[0.12em] text-subtle">Completitud</p><p className="font-mono text-sm font-bold text-foreground">{completeness}% datos</p></div></div>
+      <div className="flex items-center gap-3 border-b border-primary/10 px-4 py-3 sm:border-b-0 sm:border-r"><Target size={16} className={marketOpen ? 'text-positive' : 'text-subtle'} aria-hidden="true" /><div><p className="text-[10px] tracking-[0.12em] text-subtle">Estado del mercado</p><p className={cn('font-mono text-sm font-bold', marketOpen ? 'text-positive' : 'text-subtle')}>{marketOpen ? 'OPORTUNIDAD +EV' : 'MERCADO AJUSTADO'}</p></div></div>
+      <div className="flex items-center gap-3 px-4 py-3"><Clock3 size={16} className="text-warning" aria-hidden="true" /><div><p className="text-[10px] tracking-[0.12em] text-subtle">Cuotas · datos</p><p className="font-mono text-sm font-bold text-foreground">{oddsCount ? `${oddsCount} activas` : 'Sin cuotas'} · {completeness}%</p></div></div>
+    </div>
+  )
+}
+
+function CapitalProtectionPanel({ match, detail }: { match: Match; detail: MatchDetailData }) {
+  const total = Math.max(0.01, detail.homeExpectedGoals + detail.awayExpectedGoals)
+  const homeWidth = Math.min(100, (detail.homeExpectedGoals / total) * 100)
+  return (
+    <div className="rounded-2xl border border-warning/25 bg-[#11151B] p-5">
+      <div className="rounded-xl border border-warning/20 bg-warning/[0.06] p-4"><p className="text-sm font-semibold text-warning">🛡️ Veredicto BetMind: Protege tu Capital</p><p className="mt-2 text-sm leading-6 text-foreground/80">Las cuotas 1X2 están perfectamente ajustadas por el mercado (0% EV). Explora los mercados secundarios a continuación.</p></div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1fr]">
+        <div><p className="text-[10px] tracking-[0.14em] text-subtle">Radar táctico · xG</p><div className="mt-3 flex items-end justify-between"><span className="font-mono text-lg font-bold text-primary">{detail.homeExpectedGoals.toFixed(2)}</span><span className="text-xs text-subtle">Goles esperados</span><span className="font-mono text-lg font-bold text-warning">{detail.awayExpectedGoals.toFixed(2)}</span></div><div className="mt-2 flex h-3 overflow-hidden rounded-full bg-[#252C35]"><div className="bg-primary" style={{ width: `${homeWidth}%` }} /><div className="bg-warning" style={{ width: `${100 - homeWidth}%` }} /></div><div className="mt-2 flex justify-between text-[10px] text-subtle"><span>{match.home}</span><span>{match.away}</span></div></div>
+        <div className="grid grid-cols-2 gap-2"><div className="rounded-lg border border-[#252C35] bg-[#182029]/60 p-3"><p className="text-[10px] text-subtle">Córneres</p><p className="mt-1 text-sm font-semibold text-foreground">{detail.cornersLine} · {detail.cornersProb}%</p></div><div className="rounded-lg border border-[#252C35] bg-[#182029]/60 p-3"><p className="text-[10px] text-subtle">Fricción</p><p className="mt-1 text-sm font-semibold text-foreground">{detail.cardsFriction}</p></div><div className="col-span-2 rounded-lg border border-[#252C35] bg-[#182029]/60 p-3"><p className="text-[10px] text-subtle">Perfil del árbitro</p><p className="mt-1 text-sm font-semibold text-foreground">{match.refereeProfile?.name ?? 'Pendiente de confirmación'}</p></div></div>
+      </div>
     </div>
   )
 }
@@ -472,12 +492,6 @@ const MARKET_GROUPS = [
   { id: 'shots', label: '🎯 Remates a Puerta', match: (market: string) => market.startsWith('SHOTS_OT_') },
 ] as const
 
-function pageMarketLabel(market: string) {
-  const labels: Record<string, string> = { '1X2_HOME': 'Gana Local', '1X2_DRAW': 'Empate', '1X2_AWAY': 'Gana Visitante', BTTS_YES: 'Ambos Anotan: Sí', BTTS_NO: 'Ambos Anotan: No' }
-  if (labels[market]) return labels[market]
-  return market.replace(/_(\d+)_(\d+)/, ' $1.$2').replaceAll('_', ' ').replace(/\bOVER\b/g, 'Más de').replace(/\bUNDER\b/g, 'Menos de').toLowerCase()
-}
-
 function MarketAccordion({ label, markets, defaultOpen = false }: { label: string; markets: QuantMarket[]; defaultOpen?: boolean }) {
   const [open, setOpen] = React.useState(defaultOpen)
   return (
@@ -485,14 +499,47 @@ function MarketAccordion({ label, markets, defaultOpen = false }: { label: strin
       <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex min-h-11 w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
         <span className="text-sm font-semibold text-foreground">{label}</span><span className="flex items-center gap-2 font-mono text-xs text-subtle">{markets.length}<ChevronDown size={15} className={cn('transition-transform', open && 'rotate-180')} aria-hidden="true" /></span>
       </button>
-      {open && <div className="border-t border-border/70 p-2">{markets.length === 0 ? <p className="px-3 py-4 text-sm text-subtle">Sin mercados disponibles.</p> : markets.map((market) => { const reliable = market.probability >= 0.70 && market.ev > 0; const risky = market.probability < 0.35; return <div key={market.market} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-lg px-3 py-3 even:bg-surface-raised/40"><span className="min-w-0 truncate text-sm text-foreground/85">{pageMarketLabel(market.market)}</span><span className="font-mono text-sm font-semibold text-foreground">{(market.probability * 100).toFixed(1)}%</span><span className={cn('min-w-[92px] rounded-md border px-2 py-1 text-center text-[10px] font-semibold', reliable && 'border-positive/25 bg-positive/10 text-positive', risky && 'border-negative/25 bg-negative/10 text-negative', !reliable && !risky && 'border-border text-subtle')}>{reliable ? '● Confiable / +EV' : risky ? '▲ Riesgo alto' : market.ev > 0 ? `+${(market.ev * 100).toFixed(1)}% EV` : 'Sin ventaja'}</span></div> })}</div>}
+      {open && (
+        <div className="border-t border-[#252C35] p-2">
+          <div className="hidden grid-cols-[minmax(0,1fr)_minmax(120px,0.8fr)_90px_110px] gap-3 px-3 py-2 text-[10px] tracking-[0.12em] text-subtle sm:grid">
+            <span>Mercado</span><span>Probabilidad IA</span><span>Edge</span><span>Estado</span>
+          </div>
+          {markets.length === 0 ? <p className="px-3 py-4 text-sm text-subtle">Sin mercados disponibles.</p> : markets.map((market) => {
+            const reliable = market.probability >= 0.70 && market.ev > 0
+            const risky = market.probability < 0.35
+            const probability = market.probability * 100
+            return (
+              <div key={market.market} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 rounded-lg px-3 py-3 even:bg-[#182029]/50 sm:grid-cols-[minmax(0,1fr)_minmax(120px,0.8fr)_90px_110px] sm:gap-3">
+                <span className="min-w-0 truncate font-sans text-sm text-foreground">{formatMarketName(market.market)}</span>
+                <div className="flex min-w-[112px] flex-col gap-1">
+                  <span className="font-mono text-right text-sm font-semibold text-foreground sm:text-left">{probability.toFixed(1)}%</span>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-[#252C35]"><div className={cn('h-full rounded-full', market.ev > 0 ? 'bg-[#3DE3A5]' : 'bg-[#8577FF]')} style={{ width: `${Math.max(4, Math.min(100, probability))}%` }} /></div>
+                </div>
+                <span className={cn('font-mono text-right text-sm font-semibold', market.ev > 0 ? 'text-[#3DE3A5]' : 'text-subtle')}>{market.ev > 0 ? `+${(market.ev * 100).toFixed(1)}% EV` : `${(market.ev * 100).toFixed(1)}%`}</span>
+                <span className={cn('col-span-2 justify-self-end text-[10px] font-semibold sm:col-span-1 sm:justify-self-start', reliable && 'rounded-md border border-[#3DE3A5]/25 bg-[#3DE3A5]/10 px-2 py-1 text-[#3DE3A5]', risky && 'rounded-md border border-negative/25 bg-negative/10 px-2 py-1 text-negative', !reliable && !risky && 'text-subtle')}>
+                  {reliable ? '● +EV' : risky ? '● Riesgo Alto' : 'Neutro'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
 
+function SignalCard({ market }: { market: QuantMarket }) {
+  const probability = market.probability * 100
+  const fairOdds = market.probability > 0 ? 1 / market.probability : 0
+  const positiveValue = market.ev > 0
+  return <div className="rounded-xl border border-[#252C35] bg-[#11151B] p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-sans text-sm font-semibold text-foreground">{formatMarketName(market.market)}</p><div className="mt-3 flex items-center gap-3"><div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#252C35]"><div className={cn('h-full rounded-full', positiveValue ? 'bg-[#3DE3A5]' : 'bg-[#8577FF]')} style={{ width: `${Math.max(4, Math.min(100, probability))}%` }} /></div><span className="font-mono text-sm font-semibold text-foreground">{probability.toFixed(1)}%</span></div></div><span className={cn('rounded-md border px-2 py-1 font-mono text-xs font-bold', positiveValue ? 'border-[#3DE3A5]/25 bg-[#3DE3A5]/10 text-[#3DE3A5]' : 'border-[#8577FF]/25 bg-[#8577FF]/10 text-[#8577FF]')}>{positiveValue ? `+${(market.ev * 100).toFixed(1)}% EV` : 'Alta probabilidad'}</span></div><div className="mt-4 flex items-end justify-between gap-3 border-t border-[#252C35] pt-3"><div className="flex gap-5 text-xs"><div><p className="text-subtle">Cuota casa</p><p className="mt-1 font-mono font-semibold text-foreground">{market.odds > 1 ? market.odds.toFixed(2) : '—'}</p></div><div><p className="text-subtle">Cuota justa IA</p><p className="mt-1 font-mono font-semibold text-foreground">{fairOdds ? fairOdds.toFixed(2) : '—'}</p></div></div><button type="button" onClick={() => toast.success('Selección lista para añadir al boleto', { description: formatMarketName(market.market) })} className="inline-flex min-h-11 items-center rounded-lg bg-[#8577FF] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#7568EF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8577FF]">Añadir al boleto</button></div></div>
+}
+
 function QuantMarkets({ enriched }: { enriched: EnrichedMatch | null }) {
   const markets = enriched?.evAnalysis ?? []
-  return <div className="flex flex-col gap-3"><div className="flex items-end justify-between"><div><p className="text-[10px] tracking-[0.14em] text-subtle">Motor cuantitativo</p><h2 className="mt-1 text-lg font-semibold text-foreground">56 mercados, una lectura clara</h2></div><span className="font-mono text-xs text-primary">{markets.length}/56 cargados</span></div>{MARKET_GROUPS.map((group, index) => <MarketAccordion key={group.id} label={group.label} markets={markets.filter((market) => group.match(market.market))} defaultOpen={index === 0} />)}{markets.length === 0 && <div className="rounded-xl border border-dashed border-border bg-card px-5 py-8 text-center text-sm text-subtle">Los mercados se cargarán cuando el análisis esté disponible.</div>}<p className="text-xs leading-5 text-subtle">Las etiquetas combinan probabilidad modelada y valor esperado. No sustituyen una gestión responsable del riesgo.</p></div>
+  const [showAll, setShowAll] = React.useState(false)
+  const signals = [...markets].filter((market) => market.ev > 0 || market.probability > 0.65).sort((a, b) => (b.ev - a.ev) || (b.probability - a.probability)).slice(0, 5)
+  return <div className="flex flex-col gap-4"><div className="flex items-end justify-between"><div><p className="text-[10px] tracking-[0.14em] text-subtle">Señales filtradas · 80/20</p><h2 className="mt-1 text-lg font-semibold text-foreground">Lo que merece atención</h2></div><span className="font-mono text-xs text-primary">{markets.length}/56 mercados</span></div>{signals.length > 0 ? <div className="grid gap-3 lg:grid-cols-2">{signals.map((market) => <SignalCard key={market.market} market={market} />)}</div> : <div className="rounded-xl border border-dashed border-[#252C35] bg-[#11151B] px-5 py-8 text-center text-sm text-subtle">No hay señales destacadas en este partido. El mercado está ajustado.</div>}<button type="button" onClick={() => setShowAll((value) => !value)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#252C35] bg-[#11151B] px-4 text-sm font-semibold text-subtle transition-colors hover:border-[#8577FF]/50 hover:text-foreground">📂 {showAll ? 'Ocultar catálogo completo' : 'Explorar los 56 mercados completos (Modo Analista)'}</button>{showAll && <div className="flex flex-col gap-3 pt-2">{MARKET_GROUPS.map((group, index) => <MarketAccordion key={group.id} label={group.label} markets={markets.filter((market) => group.match(market.market))} defaultOpen={index === 0} />)}</div>}<p className="text-xs leading-5 text-subtle">Las señales priorizan valor o probabilidad relevante. Abre el catálogo completo cuando necesites investigar el detalle.</p></div>
 }
 
 function ScouterStats({ match }: { match: Match }) {
@@ -677,6 +724,11 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
       </div>
     </div>
   )
+}
+
+function PrimaryRecommendation({ match, best }: { match: Match; best: MarketRow | null }) {
+  if (!best) return <div className="rounded-xl border border-dashed border-[#252C35] bg-[#11151B] p-5"><p className="text-[10px] tracking-[0.14em] text-subtle">Pronóstico principal</p><p className="mt-3 text-sm text-subtle">No hay una ventaja suficiente para recomendar una selección.</p></div>
+  return <div className="rounded-xl border border-[#3DE3A5]/25 bg-[#11151B] p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] tracking-[0.14em] text-[#3DE3A5]">Pronóstico principal · +EV máximo</p><h2 className="mt-2 text-xl font-semibold text-foreground">{best.label}</h2><p className="mt-1 text-sm text-subtle">Ventaja detectada sobre la probabilidad implícita del mercado.</p></div><span className="rounded-lg border border-[#3DE3A5]/25 bg-[#3DE3A5]/10 px-2.5 py-1 font-mono text-sm font-bold text-[#3DE3A5]">+{(best.edge * 100).toFixed(1)}%</span></div><div className="mt-5 flex items-end justify-between border-t border-[#252C35] pt-4"><div><p className="text-[10px] tracking-[0.12em] text-subtle">Cuota disponible</p><p className="mt-1 font-mono text-2xl font-bold text-foreground">{best.odds.toFixed(2)}</p></div><button type="button" onClick={() => toast.success('Selección lista para añadir al boleto', { description: `${best.label} · ${match.home} vs ${match.away}` })} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#8577FF] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#7568ef] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8577FF]"><Zap size={15} aria-hidden="true" /> Añadir al boleto</button></div></div>
 }
 
 /* ------------------------------------------------------------------ */
@@ -1033,13 +1085,13 @@ function PreviaTab({
   best: MarketRow | null
   detail: MatchDetailData
 }) {
+  const mainEdge = Math.max(...rows.filter((row) => row.key === 'home' || row.key === 'draw' || row.key === 'away').map((row) => row.edge), 0)
   return (
     <div className="flex flex-col gap-5">
        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         {/* Left */}
-        <div className="flex flex-col gap-5 min-w-0">
-          <EVTable rows={rows} match={match} best={best} />
-          <AdditionalMarkets detail={detail} />
+         <div className="flex flex-col gap-5 min-w-0">
+           {mainEdge >= 0.03 ? <PrimaryRecommendation match={match} best={best} /> : <CapitalProtectionPanel match={match} detail={detail} />}
         </div>
 
         {/* Right */}
@@ -1059,18 +1111,52 @@ function PreviaTab({
 /* H2HTab                                                              */
 /* ------------------------------------------------------------------ */
 
+function RadarChart({ home, away }: { home: number[]; away: number[] }) {
+  const labels = ['Ataque', 'Defensa', 'Fricción', 'Córneres', 'Forma']
+  const center = 100
+  const radius = 68
+  const point = (value: number, index: number) => {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / labels.length
+    const distance = radius * Math.max(0, Math.min(100, value)) / 100
+    return `${center + Math.cos(angle) * distance},${center + Math.sin(angle) * distance}`
+  }
+  const axis = (index: number) => {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / labels.length
+    return `${center + Math.cos(angle) * radius},${center + Math.sin(angle) * radius}`
+  }
+  return <div className="flex flex-col items-center gap-3"><svg viewBox="0 0 200 200" className="h-64 w-64" role="img" aria-label="Comparativa táctica de cinco métricas"><polygon points={labels.map((_, index) => axis(index)).join(' ')} fill="none" stroke="var(--border)" strokeWidth="1" />{[25, 50, 75].map((scale) => <polygon key={scale} points={labels.map((_, index) => point(scale, index)).join(' ')} fill="none" stroke="var(--border)" strokeWidth="0.7" opacity="0.8" />)}{labels.map((label, index) => <line key={label} x1={center} y1={center} x2={axis(index).split(',')[0]} y2={axis(index).split(',')[1]} stroke="var(--border)" strokeWidth="0.7" />)}<polygon points={home.map((value, index) => point(value, index)).join(' ')} fill="rgba(133,119,255,0.20)" stroke="#8577FF" strokeWidth="2" /><polygon points={away.map((value, index) => point(value, index)).join(' ')} fill="rgba(61,227,165,0.12)" stroke="#3DE3A5" strokeWidth="2" />{labels.map((label, index) => { const [x, y] = axis(index).split(',').map(Number); return <text key={label} x={x} y={y + (y < center ? -7 : 14)} textAnchor="middle" className="fill-subtle text-[8px]">{label}</text> })}</svg><div className="flex items-center gap-4 text-[11px]"><span className="flex items-center gap-1.5 text-primary"><span className="size-2 rounded-full bg-primary" />Local</span><span className="flex items-center gap-1.5 text-positive"><span className="size-2 rounded-full bg-positive" />Visitante</span></div></div>
+}
+
+function TacticalRadar({ match, detail, h2h }: { match: Match; detail: MatchDetailData; h2h: MatchH2HData | null }) {
+  const formValue = (form: Array<{ result: 'W' | 'D' | 'L' }>) => form.length ? form.reduce((sum, item) => sum + (item.result === 'W' ? 100 : item.result === 'D' ? 50 : 0), 0) / form.length : 50
+  const refereeCards = match.refereeProfile?.yellow_cards_avg ?? 3.5
+  const cornersHome = match.advancedStats?.home_corners ?? detail.cornersProb / 10
+  const cornersAway = match.advancedStats?.away_corners ?? detail.cornersProb / 10
+  const home = [Math.min(100, match.lambdaHome / 2.5 * 100), Math.max(0, 100 - match.lambdaAway / 2.5 * 100), Math.min(100, refereeCards * 15), Math.min(100, cornersHome * 10), formValue(h2h?.home_form ?? [])]
+  const away = [Math.min(100, match.lambdaAway / 2.5 * 100), Math.max(0, 100 - match.lambdaHome / 2.5 * 100), Math.min(100, refereeCards * 15), Math.min(100, cornersAway * 10), formValue(h2h?.away_form ?? [])]
+  return <div className="rounded-xl border border-[#252C35] bg-[#11151B] p-4"><div className="mb-2"><p className="text-[10px] tracking-[0.14em] text-subtle">Lectura táctica</p><h3 className="mt-1 text-base font-semibold text-foreground">Radar de forma y amenaza</h3></div><RadarChart home={home} away={away} /></div>
+}
+
 function H2HTab({
   match,
   enriched,
   model,
   detail,
+  h2h,
 }: {
   match: Match
   enriched: EnrichedMatch | null
   model: MatchModel
   detail: MatchDetailData
+  h2h: MatchH2HData | null
 }) {
   const hasLambdas = match.lambdaHome > 0 || match.lambdaAway > 0
+  const homeForm = h2h?.home_form ?? []
+  const awayForm = h2h?.away_form ?? []
+  const h2hMatches = h2h?.h2h ?? []
+  const goalEvents = h2hMatches.flatMap((item) => item.events.filter((event) => event.event_type === 'goal'))
+  const secondHalfGoals = goalEvents.filter((event) => event.minute > 45).length
+  const secondHalfShare = goalEvents.length ? Math.round((secondHalfGoals / goalEvents.length) * 100) : null
 
   return (
     <div className="flex flex-col gap-4">
@@ -1089,16 +1175,16 @@ function H2HTab({
         <div className="px-4 pb-4 flex flex-col gap-4">
           {/* Recent form */}
           <div className="bg-surface/40 border border-border rounded-xl p-4">
-            <p className="text-[10px] font-bold text-subtle uppercase tracking-widest mb-3">Forma Reciente · Últimos 5</p>
+              <p className="text-[10px] font-bold text-subtle tracking-[0.14em] mb-3">Forma Reciente · Últimos 5</p>
             <div className="flex items-center gap-3">
               <div className="flex flex-col gap-1.5 flex-1">
                 <p className="text-[10px] font-bold text-subtle uppercase tracking-wider">{match.home}</p>
-                <FormBubbles form={detail.homeRecentForm} />
+                <FormBubbles form={homeForm.map((item) => toFormResult(item.result))} />
               </div>
               <span className="text-[10px] font-bold text-muted-foreground uppercase">vs</span>
               <div className="flex flex-col gap-1.5 flex-1 items-end">
                 <p className="text-[10px] font-bold text-subtle uppercase tracking-wider text-right">{match.away}</p>
-                <FormBubbles form={detail.awayRecentForm} />
+                <FormBubbles form={awayForm.map((item) => toFormResult(item.result))} />
               </div>
             </div>
           </div>
@@ -1181,6 +1267,16 @@ function H2HTab({
             </p>
           </div>
         </div>
+      </div>
+
+      <TacticalRadar match={match} detail={detail} h2h={h2h} />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-[#252C35] bg-[#11151B] p-4">
+          <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold text-foreground">Historial H2H</h3><span className="font-mono text-xs text-subtle">{h2hMatches.length} partidos</span></div>
+          {h2hMatches.length ? <div className="flex flex-col divide-y divide-[#252C35]">{h2hMatches.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"><div className="min-w-0"><p className="truncate text-xs font-medium text-foreground">{item.home_team} vs {item.away_team}</p><p className="mt-1 text-[10px] text-subtle">{new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Bogota' }).format(new Date(item.match_date))}</p></div><span className="shrink-0 font-mono text-sm font-bold text-foreground">{item.home_score ?? '—'} - {item.away_score ?? '—'}</span></div>)}</div> : <p className="py-5 text-sm text-subtle">No hay enfrentamientos directos registrados.</p>}
+        </div>
+        <div className="rounded-xl border border-[#252C35] bg-[#11151B] p-4"><h3 className="text-sm font-semibold text-foreground">Contexto de minutos</h3>{secondHalfShare !== null ? <><p className="mt-3 font-mono text-3xl font-bold text-primary">{secondHalfShare}%</p><p className="mt-1 text-xs leading-5 text-subtle">de los goles registrados en H2H llegaron después del descanso.</p><div className="mt-4 h-2 overflow-hidden rounded-full bg-[#252C35]"><div className="h-full bg-primary" style={{ width: `${secondHalfShare}%` }} /></div></> : <p className="mt-5 text-sm leading-6 text-subtle">Los minutos exactos aparecerán cuando existan eventos históricos persistidos.</p>}</div>
       </div>
 
       {/* Narrative */}
@@ -1305,7 +1401,7 @@ function ArbitroTab({ match, detail }: { match: Match; detail: MatchDetailData }
 /* MatchDetailContent                                                  */
 /* ------------------------------------------------------------------ */
 
-function MatchDetailContent({ match, enriched }: { match: Match; enriched?: EnrichedMatch | null }) {
+function MatchDetailContent({ match, enriched, h2h }: { match: Match; enriched?: EnrichedMatch | null; h2h: MatchH2HData | null }) {
   const [activeTab, setActiveTab] = React.useState<MatchTab>('preview')
   const model = React.useMemo(() => buildModel(match.lambdaHome, match.lambdaAway), [match])
   const rows  = React.useMemo(() => marketRows(match, model), [match, model])
@@ -1315,12 +1411,13 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
   }, [rows])
   const detail = React.useMemo(() => buildDetail(match, enriched ?? null, model), [match, enriched, model])
   const leagueMeta = resolveLeague(match.leagueExternalId, match.league)
+  const mainEdge = Math.max(...rows.filter((row) => row.key === 'home' || row.key === 'draw' || row.key === 'away').map((row) => row.edge), 0)
 
   return (
     <div className="flex flex-col gap-4">
       <MatchHero match={match} leagueMeta={leagueMeta} model={model} />
 
-      <SignalRail match={match} detail={detail} enriched={enriched ?? null} />
+      <SignalRail match={match} detail={detail} enriched={enriched ?? null} marketEdge={mainEdge} />
 
       {detail.confidenceScore > 0 && (
         <ConfidenceBar detail={detail} model={model} />
@@ -1338,7 +1435,7 @@ function MatchDetailContent({ match, enriched }: { match: Match; enriched?: Enri
         </div>
       )}
       {activeTab === 'h2h' && (
-        <H2HTab match={match} enriched={enriched ?? null} model={model} detail={detail} />
+        <H2HTab match={match} enriched={enriched ?? null} model={model} detail={detail} h2h={h2h} />
       )}
     </div>
   )
@@ -1368,6 +1465,7 @@ export default function PartidoDetailPage() {
   const params = useParams<{ id: string }>()
   const [match, setMatch]     = React.useState<Match | null>(null)
   const [enriched, setEnriched] = React.useState<EnrichedMatch | null>(null)
+  const [h2h, setH2H] = React.useState<MatchH2HData | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError]     = React.useState(false)
 
@@ -1375,8 +1473,13 @@ export default function PartidoDetailPage() {
     let cancelled = false
     async function load() {
       try {
-        const result = await fetchMatchPrediction(params.id)
+        const [predictionResult, h2hResult] = await Promise.allSettled([
+          fetchMatchPrediction(params.id),
+          fetchMatchH2H(params.id),
+        ])
+        const result = predictionResult.status === 'fulfilled' ? predictionResult.value : null
         if (!cancelled) {
+          if (h2hResult.status === 'fulfilled') setH2H(h2hResult.value)
           if (result) {
             setMatch(result)
             setEnriched(result)
@@ -1431,7 +1534,7 @@ export default function PartidoDetailPage() {
               </Link>
             </div>
           )}
-          {match && !loading && <MatchDetailContent match={match} enriched={enriched} />}
+          {match && !loading && <MatchDetailContent match={match} enriched={enriched} h2h={h2h} />}
         </div>
       </div>
     </div>

@@ -6319,5 +6319,130 @@ batch_predict.py --mode quant --limit 20 --force:
 - **3 patrones:** HOME_SIEGE, TIGHT_MATCH, OPEN_GAME activándose correctamente
 - **Supabase:** 56 mercados persistidos en `predictions.markets_json` por partido
 
+---
+
+## Fase 10: Automatizacion, Datos Avanzados y Estabilidad Operativa (Completado)
+
+### 1. Ventana movil de partidos y estados
+
+- Se reemplazo la dependencia de fechas UTC estrictas por una ventana operativa de `now - 2h` hasta `now + 36h` para sincronizacion, ligas, partidos y batch predictivo.
+- Se centralizo la normalizacion de estados en `apps/api/core/enums.py`.
+- Alias soportados: `NS`, `TBD`, `TIMED`, `IN_PLAY`, `INPLAY`, `LIVE`, `FT`, `AET` y `PEN`.
+- `today` y `tomorrow` del generador de boletos usan limites exactos del dia local `America/Bogota`, convertidos a UTC para conservar indices SQL.
+- `all` conserva la ventana movil y no se mezcla con el filtro estricto de calendario.
+
+### 2. GitHub Actions
+
+- `.github/workflows/daily_predictions.yml` ahora se ejecuta cada 2 horas con cron UTC: `0 */2 * * *`.
+- El flujo ejecuta primero `sync_today_matches.py` y despues `batch_predict.py`.
+- Se agregaron `concurrency` y permisos minimos `contents: read`.
+- Secrets documentados: `DATABASE_URL`, `API_FOOTBALL_KEY`, `REDIS_URL`, `GROQ_API_KEY`/`GROQ_API_KEYS` y `GEMINI_API_KEY` opcional.
+- Se elimino `|| true` de la instalacion para no ocultar fallos de dependencias.
+
+### 3. Lectura rapida de boletos
+
+- `/api/v1/tickets/generate` dejo de ejecutar `PredictionOrchestrator` en cada cache miss.
+- El endpoint lee directamente `matches`, `predictions.markets_json` y `bookmaker_odds`.
+- Cuando no hay predicciones devuelve una respuesta vacia limpia y cachea el resultado durante 30 segundos.
+- Las predicciones pesadas se generan exclusivamente por batch o por el endpoint de prediccion cuando corresponde.
+
+### 4. Tablas de estadisticas avanzadas y RLS
+
+- Migraciones ejecutadas en Supabase:
+  - `008_create_sofascore_statistics.sql`
+  - `009_enable_rls_statistics.sql`
+  - `010_enable_rls_global.sql`
+- Tablas creadas: `match_events`, `match_advanced_stats` y `referee_profiles`.
+- `matches` incorpora `sofascore_event_id` y `referee_id`.
+- RLS activo en tablas historicas y avanzadas.
+- Lectura publica limitada a datos deportivos; `users` no tiene SELECT publico porque contiene `hashed_password`.
+- Escritura reservada a `service_role`.
+
+### 5. Ingesta Playwright
+
+- Se creo `apps/api/services/match_stats_ingester.py`.
+- Playwright carga eventos publicos de SofaScore mediante navegador headless, evitando peticiones directas bloqueadas por el proveedor.
+- Se persisten eventos, goles, tarjetas, remates, corners, faltas, xG y perfil del arbitro cuando la fuente los entrega.
+- Se mantiene fallback honesto cuando no existen datos avanzados.
+
+### 6. Correccion del batch predictivo
+
+- Se restauro `_build_match_context()` en `PredictionOrchestrator` despues de detectar una definicion huérfana.
+- Se agrego precarga explicita de `home_team`, `away_team`, `league` y `bookmaker_odds` con `selectinload`.
+- Se corrigio el error `greenlet_spawn has not been called` causado por acceso relacional asincrono posterior al fallo.
+- Verificacion local:
+  - `batch_predict.py --mode full --limit 3`: `Success: 3`, `Errors: 0`.
+  - Tests relevantes: `40 passed`.
+- Commit publicado: `7047434`.
+
+---
+
+## Fase 11: Plataforma UI Premium y Pagina Dedicada de Partido (Completado)
+
+### 1. Design system y responsive
+
+- Tokens visuales establecidos:
+  - Carbono: `#080A0D`
+  - Panel: `#11151B`
+  - Bordes: `#252C35`
+  - Violeta: `#8577FF`
+  - Verde EV: `#3DE3A5`
+- Se incorporo IBM Plex Mono para cuotas, probabilidades, edges y marcadores.
+- Se agrego safe area para navegacion movil y areas tactiles de 44px.
+- El detalle usa una columna en movil y dos columnas amplias en escritorio.
+- Estados de dashboard diferenciados: loading, empty y error con reintento.
+
+### 2. Unificacion de la experiencia de analisis
+
+- Se elimino `components/betmind/match-modal.tsx`.
+- Se elimino la accion duplicada `Vista rapida`.
+- Las tarjetas de partido navegan directamente a `/partidos/[id]`.
+- La experiencia integral vive exclusivamente en la pagina dedicada.
+- Commit publicado: `db939c0`.
+
+### 3. Pagina dedicada VIP
+
+- Header con equipos, liga, hora COT y probabilidades 1X2.
+- Signal Rail con:
+  - Fuerza del modelo IA.
+  - Estado del mercado: `OPORTUNIDAD +EV` o `MERCADO AJUSTADO`.
+  - Estado de cuotas y completitud de datos.
+- Tabs activas:
+  - Resumen & Insights
+  - Pronosticos (56M)
+  - Bet Builder
+  - Cara a Cara
+- El resumen muestra panel de proteccion de capital cuando 1X2 no presenta edge positivo.
+
+### 4. Senal frente a ruido
+
+- Se creo `apps/web/lib/formatMarketName.ts` para convertir claves tecnicas a nombres humanos.
+- Pronosticos filtra por defecto las mejores señales con EV positivo o probabilidad superior al 65%.
+- Los mercados neutros quedan dentro de `Explorar los 56 mercados completos (Modo Analista)`.
+- Cada Signal Card muestra probabilidad, barra visual, cuota casa, cuota justa IA, EV y accion para añadir al boleto.
+- Los 56 mercados completos siguen organizados en cuatro acordeones: goles, corners, tarjetas y remates a puerta.
+
+### 5. Scouter, H2H y radar tactico
+
+- El endpoint H2H ahora entrega forma reciente local/visitante, historial, marcadores y eventos persistidos.
+- La pagina muestra insignias de forma `V`, `E` y `D`.
+- Se implemento Radar Tactico SVG con cinco ejes: ataque, defensa, friccion, corners y forma.
+- Se agrego historial H2H con fecha y marcador real.
+- Se agrego contexto de minutos de gol en segundo tiempo cuando existen eventos historicos.
+- Se agrego perfil del arbitro con promedio de tarjetas y nivel de friccion cuando esta disponible.
+- Cuando no hay eventos se muestra `Datos en vivo al finalizar el partido` en lugar de bloques vacios.
+
+### 6. Verificacion UI
+
+- `npx tsc --noEmit`: correcto.
+- `npm run build`: correcto.
+- Chrome MCP verificado en escritorio y movil.
+- La pestaña Cara a Cara renderiza forma reciente, radar, H2H y contexto temporal.
+
+### 7. Estado de publicacion
+
+- Cambios publicados anteriormente: `fec5b71`, `6950c75`, `db939c0` y `7047434`.
+- Los ultimos refinamientos de Scouter, H2H, radar y filtro de señales estan implementados localmente y pendientes de su siguiente commit/push.
+
 
 
