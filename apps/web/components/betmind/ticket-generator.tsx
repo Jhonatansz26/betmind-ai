@@ -173,6 +173,9 @@ function GeneratorLeg({
         >
           {evPositive ? '+' : ''}{(leg.ev * 100).toFixed(1)}% EV
         </span>
+        <span className="text-[10px] leading-tight text-subtle" title="Cuota real comparada contra el modelo Poisson">
+          Cuota real · Poisson calibrado
+        </span>
       </div>
       <span className="num ml-2 shrink-0 rounded-lg border border-border/60 bg-surface-raised/60 px-3 py-1.5 text-sm font-bold tabular-nums text-foreground">
         {leg.odds.toFixed(2)}
@@ -237,8 +240,9 @@ export function TicketGenerator({
 
         if (cancelled) return
 
+        if (!result.ok) throw new Error(result.error.message)
         const candidate =
-          result.tickets.find((t) => t.mode === mode) ?? result.tickets[0] ?? null
+          result.data.tickets.find((t) => t.mode === mode) ?? result.data.tickets[0] ?? null
         setTicket(candidate)
       } catch {
         if (!cancelled) setError(true)
@@ -287,9 +291,9 @@ export function TicketGenerator({
     })
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!ticket) return
-    addToTracking(ticket)
+    await addToTracking(ticket)
     onTrack?.()
     toast('Añadido a seguimiento', {
       description: `${displayedLegs.length} selecciones en seguimiento.`,
@@ -687,6 +691,22 @@ export function TicketGenerator({
               <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
                 <span className="font-semibold text-foreground/80">Análisis IA · </span>
                 {ticket.analysis}
+              </p>
+            </div>
+          )}
+
+          {ticket && !loading && displayedLegs.length > 0 && (
+            <div className="border-t border-primary/15 bg-primary/[0.04] px-5 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Razonamiento de la IA</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {ticket.rationale.map((item) => (
+                  <span key={item} className="rounded-md border border-border/60 bg-surface/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">
+                    {item}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-subtle" title={ticket.correlation}>
+                Filtros y seguridad: {ticket.correlation}
               </p>
             </div>
           )}

@@ -1477,12 +1477,12 @@ export default function PartidoDetailPage() {
           fetchMatchPrediction(params.id),
           fetchMatchH2H(params.id),
         ])
-        const result = predictionResult.status === 'fulfilled' ? predictionResult.value : null
+        const prediction = predictionResult.status === 'fulfilled' ? predictionResult.value : null
         if (!cancelled) {
-          if (h2hResult.status === 'fulfilled') setH2H(h2hResult.value)
-          if (result) {
-            setMatch(result)
-            setEnriched(result)
+          if (h2hResult.status === 'fulfilled' && h2hResult.value.ok) setH2H(h2hResult.value.data)
+          if (prediction?.ok && prediction.data) {
+            setMatch(prediction.data)
+            setEnriched(prediction.data)
           } else {
             setError(true)
           }

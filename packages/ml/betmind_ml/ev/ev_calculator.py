@@ -27,6 +27,28 @@ from betmind_ml.config import EV_POSITIVE_THRESHOLD, EV_AVOID_THRESHOLD
 logger = logging.getLogger(__name__)
 
 
+def calculate_ev_metrics(
+    probability: float,
+    bookmaker_odds: float,
+    odds_dict: dict[str, float] | None = None,
+    market_name: str = "market",
+) -> tuple[float, float, float]:
+    """Return implied probability, edge and EV for real bookmaker odds."""
+    if bookmaker_odds <= 1.0:
+        raise ValueError("bookmaker_odds must be greater than 1.0")
+    odds_dict = odds_dict or {}
+    implied_probability = _compute_fair_probability(
+        market_name, bookmaker_odds, odds_dict
+    )
+    edge = probability - implied_probability
+    expected_value = (probability * (bookmaker_odds - 1.0)) - (1.0 - probability)
+    return (
+        round(implied_probability, 4),
+        round(edge * 100, 2),
+        round(expected_value, 4),
+    )
+
+
 def _compute_fair_probability(
     market_name: str,
     odds: float,

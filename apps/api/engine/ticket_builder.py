@@ -209,20 +209,16 @@ def build_ticket_for_mode(
 
             prob = mkt.get("our_probability", 0)
             bm_odds = mkt.get("bookmaker_odds", 0)
-            implied = mkt.get("implied_probability", 0)
-            ev = mkt.get("expected_value", -1)
+            implied = mkt.get("implied_probability")
+            ev = mkt.get("expected_value")
 
             if prob < min_prob:
                 continue
 
-            if bm_odds <= 1.0:
-                if prob > 0:
-                    # Sintetizar cuota justa con overround del 5%
-                    bm_odds = round(1.0 / (prob / 1.05), 2)
-                    implied = prob / 1.05
-                    ev = round(prob * bm_odds - 1, 4)
-                else:
-                    continue
+            # A model probability is not a bookmaker price. Without real odds
+            # there is no market comparison and therefore no ticket candidate.
+            if bm_odds <= 1.0 or implied is None or ev is None:
+                continue
 
             if mkt_name == "1X2_DRAW" and bm_odds < 2.10:
                 continue

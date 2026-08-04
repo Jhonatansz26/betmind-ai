@@ -43,6 +43,7 @@ async def init_db() -> None:
     from apps.api.models import (
         Team, League, Match, Prediction, User, BookmakerOdd,
         MatchEvent, MatchAdvancedStats, RefereeProfile,
+        SavedTicket,
     )
 
     async with engine.begin() as conn:

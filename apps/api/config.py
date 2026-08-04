@@ -1,9 +1,10 @@
 import logging
+import json
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, NoDecode
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,10 @@ class Settings(BaseSettings):
     APP_NAME: str = "BetMind AI"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+    ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
     DATABASE_URL: str = "sqlite+aiosqlite:///./betmind.db"
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -97,6 +102,20 @@ class Settings(BaseSettings):
         
         return v
 
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def normalize_allowed_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            # Supports comma-separated values and JSON arrays from deployment envs.
+            try:
+                decoded = json.loads(v)
+                if isinstance(decoded, list):
+                    return [str(origin).strip() for origin in decoded if str(origin).strip()]
+            except json.JSONDecodeError:
+                pass
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
     def __init__(self, **kwargs: Any):
         env_files = _find_env_files()
         
@@ -107,6 +126,11 @@ class Settings(BaseSettings):
             logger.warning("No .env file found, using default values")
         
         super().__init__(**kwargs)
+
+        if not self.DEBUG and self.SECRET_KEY == "change-me-in-production":
+            raise ValueError(
+                "SECRET_KEY must be changed when DEBUG=False; refusing to start in production"
+            )
         
         logger.info(f"DATABASE_URL: {self.DATABASE_URL[:80]}...")
 

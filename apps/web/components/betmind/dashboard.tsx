@@ -233,11 +233,12 @@ export function Dashboard() {
         const filterParam = dateFilter === 'all' ? undefined : dateFilter
         const result = await fetchTickets(['EDGE', 'VALUE', 'BOLD'], undefined, filterParam)
         if (!cancelled) {
-          setTickets(result.tickets)
+          if (!result.ok) throw new Error(result.error.message)
+          setTickets(result.data.tickets)
           setTicketMeta({
-            matchesAnalyzed: result.matchesAnalyzed,
-            totalEv: result.totalEvOpportunities,
-            generatedAt: result.generatedAt,
+            matchesAnalyzed: result.data.matchesAnalyzed,
+            totalEv: result.data.totalEvOpportunities,
+            generatedAt: result.data.generatedAt,
           })
         }
       } catch {
@@ -262,7 +263,8 @@ export function Dashboard() {
         const filterParam = dateFilter === 'all' ? undefined : dateFilter
         const fetchedMatches = await fetchMatches(filterParam)
         if (!cancelled) {
-          setMatches(fetchedMatches.length > 0 ? fetchedMatches : [])
+          if (!fetchedMatches.ok) throw new Error(fetchedMatches.error.message)
+          setMatches(fetchedMatches.data.length > 0 ? fetchedMatches.data : [])
           setMatchesUpdatedAt(new Date().toISOString())
         }
       } catch {

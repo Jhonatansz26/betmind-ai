@@ -12,6 +12,7 @@ class Verdict(str, Enum):
     POSITIVE_VALUE = "POSITIVE_VALUE"
     NO_VALUE = "NO_VALUE"
     INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
+    NO_ODDS_AVAILABLE = "NO_ODDS_AVAILABLE"
 
 
 class ConfidenceLevel(str, Enum):

@@ -2,6 +2,7 @@ import logging
 import json
 
 from fastapi import APIRouter, Depends, Query
+from fastapi import HTTPException, status
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy import select, and_
@@ -11,6 +12,9 @@ from apps.api.schemas.ticket import (
     TicketGenerateRequest,
     TicketGenerateResponse,
     TicketMode,
+    SaveTicketRequest,
+    SavedTicketResponse,
+    UpdateTicketStatusRequest,
 )
 from apps.api.core.enums import UPCOMING_MATCH_STATUSES
 from apps.api.models.bookmaker_odd import BookmakerOdd
@@ -19,12 +23,49 @@ from apps.api.models.league import League
 from apps.api.repositories.match_repository import LEAGUE_KEY_TO_EXTERNAL_ID
 from apps.api.engine.ticket_builder import build_ticket_for_mode
 from apps.api.dependencies import get_async_session, get_cache_service
+from apps.api.repositories.ticket_repository import TicketRepository
+from betmind_ml.ev.ev_calculator import calculate_ev_metrics
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
 COT = ZoneInfo("America/Bogota")
+
+
+@router.post("/save", response_model=SavedTicketResponse, status_code=status.HTTP_201_CREATED)
+async def save_ticket(
+    request: SaveTicketRequest,
+    session=Depends(get_async_session),
+):
+    """Persist a ticket snapshot for the user's tracking history."""
+    repository = TicketRepository(session)
+    return await repository.create(
+        ticket_data=request.ticket_data,
+        total_odds=request.total_odds,
+        total_ev=request.total_ev,
+    )
+
+
+@router.get("/history", response_model=list[SavedTicketResponse])
+async def get_ticket_history(
+    session=Depends(get_async_session),
+):
+    repository = TicketRepository(session)
+    return await repository.list_history()
+
+
+@router.patch("/{ticket_id}/status", response_model=SavedTicketResponse)
+async def update_ticket_status(
+    ticket_id: int,
+    request: UpdateTicketStatusRequest,
+    session=Depends(get_async_session),
+):
+    repository = TicketRepository(session)
+    ticket = await repository.update_status(ticket_id, request.status.value)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Saved ticket not found")
+    return ticket
 
 
 def _ticket_window(date_filter: str | None) -> tuple[datetime, datetime]:
@@ -114,15 +155,23 @@ def _stored_market_rows(match: Match, odds_by_match: dict[int, dict[str, float]]
         if not isinstance(name, str) or not isinstance(probability, (int, float)):
             continue
         bookmaker_odds = odds.get(name)
-        implied = 1 / bookmaker_odds if bookmaker_odds and bookmaker_odds > 1 else 0
-        expected_value = probability * bookmaker_odds - 1 if bookmaker_odds and bookmaker_odds > 1 else 0
+        if bookmaker_odds and bookmaker_odds > 1:
+            implied, edge, expected_value = calculate_ev_metrics(
+                probability, bookmaker_odds, odds, name
+            )
+            verdict = "POSITIVE_VALUE" if expected_value >= 0.05 else "NO_VALUE"
+        else:
+            implied = edge = expected_value = None
+            verdict = "NO_ODDS_AVAILABLE"
         rows.append({
             "market_name": name,
             "market_label": _market_label(name),
             "our_probability": probability,
-            "bookmaker_odds": bookmaker_odds or 0,
+            "bookmaker_odds": bookmaker_odds,
             "implied_probability": implied,
+            "edge_percentage": edge,
             "expected_value": expected_value,
+            "verdict": verdict,
         })
     return rows
 
@@ -191,7 +240,7 @@ async def generate_tickets(
     total_ev = sum(
         1 for pred in all_predictions
         for mkt in pred["markets"]
-        if mkt["expected_value"] > 0.05
+        if mkt["expected_value"] is not None and mkt["expected_value"] > 0.05
     )
 
     tickets = []
@@ -243,40 +292,3 @@ def _market_label(market_name: str) -> str:
         "CARDS_OVER":   "Más Tarjetas",
     }
     return labels.get(market_name, market_name.replace("_", " ").title())
-
-
-_BOOKMAKER_OVERROUND = 1.08
-
-
-def _derive_markets_from_probabilities(
-    markets: list[dict],
-    pred,
-) -> None:
-    """
-    For matches WITHOUT real bookmaker odds, derive market entries from Poisson
-    model probabilities. Uses a synthetic overround to estimate fair bookmaker
-    odds, then calculates expected value as model edge over the market.
-    """
-    prob = pred.probabilities
-    prob_map = {
-        "1X2_HOME": prob.home_win,
-        "1X2_DRAW": prob.draw,
-        "1X2_AWAY": prob.away_win,
-        "OVER_2_5": prob.over_2_5,
-        "OVER_1_5": prob.over_1_5,
-    }
-    for market_name, our_prob in prob_map.items():
-        if our_prob <= 0:
-            continue
-        implied_prob = our_prob / _BOOKMAKER_OVERROUND
-        bm_odds = round(1 / implied_prob, 2) if implied_prob > 0 else 0
-        ev = round((our_prob - implied_prob) / implied_prob, 4) if implied_prob > 0 else 0
-
-        markets.append({
-            "market_name":       market_name,
-            "market_label":      _market_label(market_name),
-            "our_probability":   round(our_prob, 4),
-            "bookmaker_odds":    bm_odds,
-            "implied_probability": round(implied_prob, 4),
-            "expected_value":    ev,
-        })

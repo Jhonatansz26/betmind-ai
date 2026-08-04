@@ -95,6 +95,7 @@ export interface TicketLegData {
   prob: number
   odds: number
   ev: number
+  reason?: string
 }
 
 export interface Ticket {
@@ -109,6 +110,7 @@ export interface Ticket {
   analysis: string
   pros: string[]
   cons: string[]
+  rationale: string[]
 }
 
 /* ------------------------------------------------------------------ */

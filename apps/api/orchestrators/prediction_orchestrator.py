@@ -7,7 +7,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from apps.api.config import settings
+from apps.api.config import FEATURED_LEAGUES, settings
 from apps.api.core.exceptions import PredictionNotAvailableException
 from apps.api.models.match import Match
 from apps.api.repositories.match_repository import MatchRepository
@@ -25,6 +25,12 @@ from betmind_ml.schemas.tactical_analysis import TacticalAnalysis
 logger = logging.getLogger(__name__)
 _CACHE_TTL_SECONDS = 60 * 60 * 6  # 6 horas
 _TACTICAL_CACHE_HOURS = 6  # Cache de análisis táctico en DB
+
+# Single source of truth: every featured external league ID gets its ML key.
+LEAGUE_EXTERNAL_ID_TO_KEY = {
+    info["api_football_id"]: league_key
+    for league_key, info in FEATURED_LEAGUES.items()
+}
 
 
 class PredictionOrchestrator:
@@ -299,12 +305,7 @@ class PredictionOrchestrator:
 
     def _get_league_key(self, league) -> str:
         """Obtiene la clave de la liga para el pipeline ML."""
-        league_map = {
-            39: "premier_league",
-            140: "laliga",
-            239: "liga_betplay",
-        }
-        return league_map.get(league.external_id, "default")
+        return LEAGUE_EXTERNAL_ID_TO_KEY.get(league.external_id, "default")
 
     async def _persist_tactical_analysis(
         self,
@@ -761,7 +762,7 @@ class PredictionOrchestrator:
                     edge_percentage=None,
                     expected_value=None,
                     kelly_stake=None,
-                    verdict=Verdict.INSUFFICIENT_DATA,
+                    verdict=Verdict.NO_ODDS_AVAILABLE,
                 ))
 
         # Construir narrativa táctica

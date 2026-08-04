@@ -9,8 +9,9 @@ from apps.api.models.prediction import Prediction
 from apps.api.models.tactical_analysis import TacticalAnalysis
 from apps.api.models.team import Team
 from apps.api.models.user import User
+from apps.api.models.ticket import SavedTicket
 
 __all__ = [
     "Base", "TimestampMixin", "BookmakerOdd", "MatchEvent", "MatchAdvancedStats",
-    "RefereeProfile", "League", "Match", "Prediction", "TacticalAnalysis", "Team", "User",
+    "RefereeProfile", "League", "Match", "Prediction", "TacticalAnalysis", "Team", "User", "SavedTicket",
 ]

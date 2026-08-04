@@ -13,8 +13,8 @@ import { addToTracking } from './tracking-panel'
 export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (ticket: Ticket) => void }) {
   const meta = MODE_META[ticket.mode]
 
-  function handleTrack() {
-    addToTracking(ticket)
+  async function handleTrack() {
+    await addToTracking(ticket)
     onTrack?.(ticket)
     toast('Añadido a seguimiento', {
       description: `${ticket.legs.length} selecciones en seguimiento.`,
@@ -55,6 +55,20 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
         <span className="num text-xs font-semibold text-positive">
           +EV {(ticket.evAverage * 100).toFixed(1)}% promedio
         </span>
+      </div>
+
+      <div className="mx-4 mb-3 rounded-lg border border-primary/15 bg-primary/[0.06] px-3 py-2.5">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Por qué esta selección</p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {ticket.rationale.map((item) => (
+            <span key={item} className="rounded-md border border-border/60 bg-surface/60 px-2 py-1 text-[10px] font-medium text-muted-foreground">
+              {item}
+            </span>
+          ))}
+        </div>
+        <p className="mt-2 text-[10px] leading-relaxed text-subtle" title={ticket.correlation}>
+          Seguridad del motor: {ticket.correlation}
+        </p>
       </div>
 
       {/* ── LEGS — fills remaining vertical space ── */}

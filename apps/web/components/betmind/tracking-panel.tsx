@@ -1,18 +1,24 @@
 'use client'
 
 import * as React from 'react'
-import { CheckCircle2Icon, CircleDotIcon, ClockIcon, XCircleIcon, Trash2Icon } from 'lucide-react'
+import { CheckCircle2Icon, ClockIcon, XCircleIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { MODE_META, type Mode, type Ticket } from '@/lib/betmind'
+import {
+  fetchTicketHistory,
+  saveTicket,
+  updateTicketStatus,
+  type SavedTicketStatus,
+} from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type TrackStatus = 'PENDING' | 'LIVE' | 'WON' | 'LOST'
+export type TrackStatus = SavedTicketStatus
 
 export interface TrackedTicket {
   id: string
@@ -22,6 +28,7 @@ export interface TrackedTicket {
   legsCount: number
   trackedAt: string // ISO string
   status: TrackStatus
+  remote?: boolean
 }
 
 /* ------------------------------------------------------------------ */
@@ -48,7 +55,10 @@ function saveTracked(tickets: TrackedTicket[]) {
   }
 }
 
-export function addToTracking(ticket: Ticket): void {
+export async function addToTracking(ticket: Ticket): Promise<void> {
+  const remoteResult = await saveTicket(ticket)
+  if (remoteResult.ok) return
+
   const existing = loadTracked()
   const entryId = `${ticket.mode}-${Date.now()}`
   const entry: TrackedTicket = {
@@ -59,6 +69,7 @@ export function addToTracking(ticket: Ticket): void {
     legsCount: ticket.legs.length,
     trackedAt: new Date().toISOString(),
     status: 'PENDING',
+    remote: false,
   }
   const updated = [entry, ...existing].slice(0, 10)
   saveTracked(updated)
@@ -77,11 +88,6 @@ const STATUS_CONFIG: Record<
     icon: <ClockIcon className="size-3.5" aria-hidden />,
     className: 'border-border bg-muted/60 text-muted-foreground',
   },
-  LIVE: {
-    label: 'En Juego',
-    icon: <CircleDotIcon className="size-3.5" aria-hidden />,
-    className: 'border-primary/40 bg-primary/10 text-primary',
-  },
   WON: {
     label: 'Ganada',
     icon: <CheckCircle2Icon className="size-3.5" aria-hidden />,
@@ -91,6 +97,11 @@ const STATUS_CONFIG: Record<
     label: 'Perdida',
     icon: <XCircleIcon className="size-3.5" aria-hidden />,
     className: 'border-negative/40 bg-negative/10 text-negative',
+  },
+  VOID: {
+    label: 'Anulada',
+    icon: <XCircleIcon className="size-3.5" aria-hidden />,
+    className: 'border-warning/40 bg-warning/10 text-warning',
   },
 }
 
@@ -117,10 +128,10 @@ function TrackRow({
   })
 
   const nextStatus: Record<TrackStatus, TrackStatus> = {
-    PENDING: 'LIVE',
-    LIVE: 'WON',
+    PENDING: 'WON',
     WON: 'LOST',
-    LOST: 'PENDING',
+    LOST: 'VOID',
+    VOID: 'PENDING',
   }
 
   return (
@@ -182,17 +193,43 @@ function TrackRow({
 export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
   const [entries, setEntries] = React.useState<TrackedTicket[]>([])
 
-  // Load from localStorage on mount + whenever refreshKey changes (ticket added externally)
   React.useEffect(() => {
-    setEntries(loadTracked())
+    let cancelled = false
+    async function loadHistory() {
+      const result = await fetchTicketHistory()
+      if (cancelled) return
+      if (result.ok) {
+        setEntries(result.data.map((saved) => {
+          const mode = saved.ticket_data.mode
+          return {
+            id: String(saved.id),
+            mode,
+            combinedOdds: saved.total_odds,
+            confidence: saved.ticket_data.confidence,
+            legsCount: saved.ticket_data.legs.length,
+            trackedAt: saved.created_at,
+            status: saved.status,
+            remote: true,
+          }
+        }))
+      } else {
+        setEntries(loadTracked())
+      }
+    }
+    void loadHistory()
+    return () => { cancelled = true }
   }, [refreshKey])
 
-  function handleStatusChange(id: string, status: TrackStatus) {
-    setEntries((prev) => {
-      const next = prev.map((e) => (e.id === id ? { ...e, status } : e))
+  async function handleStatusChange(id: string, status: TrackStatus) {
+    const current = entries.find((entry) => entry.id === id)
+    const next = entries.map((entry) => (entry.id === id ? { ...entry, status } : entry))
+    setEntries(next)
+    if (current?.remote && /^\d+$/.test(id)) {
+      const result = await updateTicketStatus(Number(id), status)
+      if (!result.ok) saveTracked(next)
+    } else {
       saveTracked(next)
-      return next
-    })
+    }
   }
 
   function handleRemove(id: string) {
@@ -218,7 +255,7 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
 
   const won = entries.filter((e) => e.status === 'WON').length
   const lost = entries.filter((e) => e.status === 'LOST').length
-  const pending = entries.filter((e) => e.status === 'PENDING' || e.status === 'LIVE').length
+  const pending = entries.filter((e) => e.status === 'PENDING').length
 
   return (
     <div className="rounded-xl border border-border bg-card">
@@ -245,7 +282,7 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
       </ul>
 
       <p className="border-t border-border-subtle px-4 py-2.5 text-[10px] text-subtle">
-        Estado local · Los datos se guardan en este navegador
+        Historial sincronizado · Se usa almacenamiento local solo si la API no responde
       </p>
     </div>
   )

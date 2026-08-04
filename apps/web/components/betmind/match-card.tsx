@@ -111,6 +111,9 @@ export function MatchCard({ match }: { match: Match }) {
           <span className="num ev-glow shrink-0 rounded-full border border-positive/30 bg-positive/10 px-2 py-0.5 text-[10px] font-bold text-positive shadow-[0_0_8px_-3px_var(--positive)]">
             🔥 EV+{(best.edge * 100).toFixed(1)}%
           </span>
+          <span className="mt-1 basis-full pl-6 text-[10px] text-subtle">
+            Poisson calibrado · EV real {(best.ev * 100).toFixed(1)}% · Confianza {(best.probability * 100).toFixed(0)}%
+          </span>
         </div>
       )}
 

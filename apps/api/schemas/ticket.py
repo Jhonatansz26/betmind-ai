@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -53,3 +56,31 @@ class TicketGenerateResponse(BaseModel):
     tickets: list[GeneratedTicket]
     total_ev_opportunities: int
     matches_analyzed: int
+
+
+class SavedTicketStatus(str, Enum):
+    PENDING = "PENDING"
+    WON = "WON"
+    LOST = "LOST"
+    VOID = "VOID"
+
+
+class SaveTicketRequest(BaseModel):
+    ticket_data: dict[str, Any]
+    total_odds: float = Field(..., gt=1.0)
+    total_ev: float
+
+
+class UpdateTicketStatusRequest(BaseModel):
+    status: SavedTicketStatus
+
+
+class SavedTicketResponse(BaseModel):
+    id: int
+    ticket_data: dict[str, Any]
+    status: SavedTicketStatus
+    total_odds: float
+    total_ev: float
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

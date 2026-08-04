@@ -2,6 +2,57 @@ import type { Mode, Ticket, TicketLegData, Match, MatchStatus, TacticalFactor, R
 import { resolveLeague } from './league-metadata'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_TIMEOUT_MS = 12_000
+
+export interface ApiError {
+  code: string
+  message: string
+}
+
+export type ApiResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: ApiError }
+
+/** Single HTTP boundary: normalizes transport, timeout and API failures. */
+export async function apiFetch<T>(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+): Promise<ApiResult<T>> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(input, { ...init, signal: controller.signal })
+    if (!response.ok) {
+      let detail = `No se pudo completar la solicitud (${response.status}).`
+      try {
+        const body = await response.json() as { detail?: string; message?: string }
+        detail = body.detail ?? body.message ?? detail
+      } catch {
+        // The status is enough when the server did not return JSON.
+      }
+      return {
+        ok: false,
+        error: { code: `HTTP_${response.status}`, message: detail },
+      }
+    }
+
+    return { ok: true, data: await response.json() as T }
+  } catch (error) {
+    const isTimeout = error instanceof DOMException && error.name === 'AbortError'
+    return {
+      ok: false,
+      error: {
+        code: isTimeout ? 'REQUEST_TIMEOUT' : 'NETWORK_ERROR',
+        message: isTimeout
+          ? 'La solicitud tardó demasiado. Comprueba tu conexión e inténtalo de nuevo.'
+          : 'No se pudo conectar con BetMind AI. Comprueba tu conexión e inténtalo de nuevo.',
+      },
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
 
 export const COUNTRY_ISO: Record<string, string> = {
   'England': 'GB-ENG',
@@ -141,6 +192,7 @@ function mapLeg(leg: BackendLeg): TicketLegData {
     prob: leg.our_probability,
     odds: leg.bookmaker_odds,
     ev: leg.expected_value,
+    reason: 'Cuota real comparada contra el modelo Poisson',
   }
 }
 
@@ -161,6 +213,14 @@ function mapBackendTicket(raw: BackendTicket): Ticket {
     analysis: raw.tactical_summary,
     pros: raw.pros,
     cons: raw.cons,
+    rationale: [
+      'Modelo Poisson calibrado',
+      `+${(raw.average_ev * 100).toFixed(1)}% EV medio`,
+      `${raw.confidence_score}% de confianza del modelo`,
+      raw.correlation_validated
+        ? 'Validación de correlación negativa superada'
+        : 'Selecciones independientes, sin correlación detectada',
+    ],
   }
 }
 
@@ -171,11 +231,49 @@ export interface TicketFetchResult {
   generatedAt: string
 }
 
+export type SavedTicketStatus = 'PENDING' | 'WON' | 'LOST' | 'VOID'
+
+export interface SavedTicketRecord {
+  id: number
+  ticket_data: Ticket
+  status: SavedTicketStatus
+  total_odds: number
+  total_ev: number
+  created_at: string
+}
+
+export async function saveTicket(ticket: Ticket): Promise<ApiResult<SavedTicketRecord>> {
+  return apiFetch<SavedTicketRecord>(`${API_BASE}/api/v1/tickets/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ticket_data: ticket,
+      total_odds: ticket.combinedOdds,
+      total_ev: ticket.evAverage,
+    }),
+  })
+}
+
+export async function fetchTicketHistory(): Promise<ApiResult<SavedTicketRecord[]>> {
+  return apiFetch<SavedTicketRecord[]>(`${API_BASE}/api/v1/tickets/history`)
+}
+
+export async function updateTicketStatus(
+  ticketId: number,
+  status: SavedTicketStatus,
+): Promise<ApiResult<SavedTicketRecord>> {
+  return apiFetch<SavedTicketRecord>(`${API_BASE}/api/v1/tickets/${ticketId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })
+}
+
 export async function fetchTickets(
   modes: Mode[] = ['EDGE', 'VALUE', 'BOLD'],
   leagueFilter?: string[],
   dateFilter?: string,
-): Promise<TicketFetchResult> {
+): Promise<ApiResult<TicketFetchResult>> {
   const url = new URL(`${API_BASE}/api/v1/tickets/generate`)
   if (dateFilter) {
     url.searchParams.set('date_filter', dateFilter)
@@ -188,24 +286,21 @@ export async function fetchTickets(
     body.league_filter = leagueFilter
   }
 
-  const res = await fetch(url.toString(), {
+  const result = await apiFetch<BackendResponse>(url.toString(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
 
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`)
-  }
+  if (!result.ok) return result
+  const data = result.data
 
-  const data: BackendResponse = await res.json()
-
-  return {
+  return { ok: true, data: {
     tickets: data.tickets.map(mapBackendTicket),
     totalEvOpportunities: data.total_ev_opportunities,
     matchesAnalyzed: data.matches_analyzed,
     generatedAt: data.generated_at,
-  }
+  } }
 }
 
 interface BackendMatch {
@@ -368,7 +463,7 @@ function mapBackendMatch(raw: BackendMatch): Match {
   }
 }
 
-export async function fetchMatches(dateFilter?: string): Promise<Match[]> {
+export async function fetchMatches(dateFilter?: string): Promise<ApiResult<Match[]>> {
   const params = new URLSearchParams({
     limit: '200',
     include_upcoming: 'true',
@@ -378,14 +473,9 @@ export async function fetchMatches(dateFilter?: string): Promise<Match[]> {
     params.set('date_filter', dateFilter)
   }
 
-  const res = await fetch(`${API_BASE}/api/v1/matches/?${params.toString()}`)
-
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`)
-  }
-
-  const data: BackendMatchesResponse = await res.json()
-  return dedupeMatches(data.matches.map(mapBackendMatch))
+  const result = await apiFetch<BackendMatchesResponse>(`${API_BASE}/api/v1/matches/?${params.toString()}`)
+  if (!result.ok) return result
+  return { ok: true, data: dedupeMatches(result.data.matches.map(mapBackendMatch)) }
 }
 
 const DEDUP_WINDOW_MS = 2 * 60 * 60 * 1000
@@ -506,14 +596,11 @@ interface BackendLeaguesResponse {
   total: number
 }
 
-export async function fetchLeagues(targetDate?: string): Promise<LeagueData[]> {
+export async function fetchLeagues(targetDate?: string): Promise<ApiResult<LeagueData[]>> {
   const params = targetDate ? `?date=${targetDate}` : ""
-  const res = await fetch(`${API_BASE}/api/v1/leagues/${params}`)
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`)
-  }
-  const data: BackendLeaguesResponse = await res.json()
-  return data.leagues
+  const result = await apiFetch<BackendLeaguesResponse>(`${API_BASE}/api/v1/leagues/${params}`)
+  if (!result.ok) return result
+  return { ok: true, data: result.data.leagues }
 }
 
 /* ------------------------------------------------------------------ */
@@ -657,10 +744,8 @@ export interface MatchH2HData {
   away_form: MatchFormRecord[]
 }
 
-export async function fetchMatchH2H(matchId: string): Promise<MatchH2HData> {
-  const response = await fetch(`${API_BASE}/api/v1/matches/${matchId}/h2h`)
-  if (!response.ok) throw new Error(`H2H API error: ${response.status}`)
-  return response.json()
+export async function fetchMatchH2H(matchId: string): Promise<ApiResult<MatchH2HData>> {
+  return apiFetch<MatchH2HData>(`${API_BASE}/api/v1/matches/${matchId}/h2h`)
 }
 
 function mapBackendPrediction(raw: BackendPrediction, baseMatch: Match): EnrichedMatch {
@@ -699,57 +784,30 @@ function mapBackendPrediction(raw: BackendPrediction, baseMatch: Match): Enriche
   }
 }
 
-export async function fetchMatchPrediction(matchId: string): Promise<EnrichedMatch | null> {
+export async function fetchMatchPrediction(matchId: string): Promise<ApiResult<EnrichedMatch | null>> {
   const matchUrl = `${API_BASE}/api/v1/matches/${matchId}`
   const predUrl = `${API_BASE}/api/v1/predictions/${matchId}`
 
-  console.log(`[fetchMatchPrediction] Loading match ${matchId}`)
-
-  const [matchRes, predRes] = await Promise.allSettled([
-    fetch(matchUrl),
-    fetch(predUrl),
+  const [matchResult, predictionResult] = await Promise.all([
+    apiFetch<BackendMatch>(matchUrl),
+    apiFetch<BackendPrediction>(predUrl),
   ])
 
-  if (matchRes.status === 'rejected') {
-    throw new Error(`Match API error: ${matchRes.reason}`)
-  }
+  if (!matchResult.ok) return matchResult
+  const baseMatch = mapBackendMatch(matchResult.data)
 
-  if (!matchRes.value.ok) {
-    console.warn(`[fetchMatchPrediction] Match not found (HTTP ${matchRes.value.status}), returning null`)
-    return null
-  }
-
-  const matchData = await matchRes.value.json()
-  const baseMatch = mapBackendMatch(matchData)
-
-  if (predRes.status === 'rejected' || !predRes.value.ok) {
-    console.warn(
-      `[fetchMatchPrediction] Prediction not available for match ${matchId} ` +
-      `(HTTP ${predRes.status === 'rejected' ? 'REJECTED' : predRes.value.status}). ` +
-      `Returning base match — prediction data is insufficient or unavailable.`
-    )
+  if (!predictionResult.ok) {
     return {
-      ...baseMatch,
-      lambdaHome: baseMatch.lambdaHome,
-      lambdaAway: baseMatch.lambdaAway,
-      probabilities: { home_win: 0, draw: 0, away_win: 0, over_2_5: 0, over_1_5: 0 },
-      evAnalysis: [],
-      confidenceScore: 0,
-      riskLevel: 'MEDIUM',
-      tacticalNarrative: '',
-      tacticalHeadline: '',
-      llmModelUsed: 'none',
-      tacticalAnalysis: null,
-      betBuilder: [],
+      ok: true,
+      data: {
+        ...baseMatch,
+        probabilities: { home_win: 0, draw: 0, away_win: 0, over_2_5: 0, over_1_5: 0 },
+        evAnalysis: [], confidenceScore: 0, riskLevel: 'MEDIUM',
+        tacticalNarrative: '', tacticalHeadline: '', llmModelUsed: 'none',
+        tacticalAnalysis: null, betBuilder: [],
+      },
     }
   }
 
-  const predData: BackendPrediction = await predRes.value.json()
-  console.log(
-    `[fetchMatchPrediction] Prediction loaded: lambda_home=${predData.lambda_home}, ` +
-    `lambda_away=${predData.lambda_away}, ` +
-    `confidence=${predData.confidence_score}, ` +
-    `llm=${predData.tactical_analysis?.llm_model_used ?? 'none'}`
-  )
-  return mapBackendPrediction(predData, baseMatch)
+  return { ok: true, data: mapBackendPrediction(predictionResult.data, baseMatch) }
 }

@@ -23,6 +23,11 @@ export function TicketLeg({ leg, index = 0 }: { leg: TicketLegData; index?: numb
         <span className={cn('text-[10px] font-semibold', evPositive ? 'text-positive' : 'text-negative')}>
           {evText}
         </span>
+        {leg.reason && (
+          <span className="text-[10px] leading-tight text-subtle" title={leg.reason}>
+            {leg.reason}
+          </span>
+        )}
       </div>
 
       {/* Right: Odds box */}
