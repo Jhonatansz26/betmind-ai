@@ -3,7 +3,6 @@
 import { CalendarIcon, ScanIcon, TicketIcon } from 'lucide-react'
 import { MenuIcon } from 'lucide-react'
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -24,8 +23,8 @@ interface TopNavProps {
 
 export function TopNav({ active, onChange, onToggleSidebar }: TopNavProps) {
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur-md">
-      <div className="mx-auto flex h-14 w-full max-w-[1600px] items-center gap-3 px-4">
+    <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-4 border-b border-border/60 bg-card/80 px-6 backdrop-blur-md">
+      <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -36,14 +35,16 @@ export function TopNav({ active, onChange, onToggleSidebar }: TopNavProps) {
           <MenuIcon aria-hidden="true" />
         </Button>
 
-        <p className="flex shrink-0 items-center text-base font-bold tracking-tight text-foreground">
+        <div className="flex shrink-0 items-center gap-2">
+          <p className="text-base font-bold tracking-tight text-foreground">
           <span>
             Bet<span className="font-bold">Mind</span>
           </span>
-          <span className="ml-1.5 rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary shadow-sm backdrop-blur-md">
-            AI
+          </p>
+          <span className="rounded border border-border/60 bg-surface/50 px-2 py-0.5 text-[10px] font-mono font-medium text-muted-foreground">
+            v0.1.0 • QUANT ENGINE
           </span>
-        </p>
+        </div>
 
         <nav
           aria-label="Primary"
@@ -68,17 +69,14 @@ export function TopNav({ active, onChange, onToggleSidebar }: TopNavProps) {
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-3 md:ml-0">
-          <span className="hidden items-center gap-1.5 text-[10px] font-semibold tracking-wide text-positive sm:flex">
+        <div className="ml-auto flex items-center gap-2">
+          <span className="hidden rounded-md border border-border/50 bg-surface/30 px-2.5 py-1 text-[11px] font-mono text-muted-foreground sm:inline-flex">
+            COT (UTC-5)
+          </span>
+          <span className="hidden items-center gap-1.5 rounded-md border border-positive/30 bg-positive/10 px-2.5 py-1 text-[11px] font-mono font-semibold text-positive sm:inline-flex">
             <span className="live-dot size-1.5 rounded-full bg-positive" aria-hidden />
-            DATOS EN VIVO
+            26 LIGAS EN VIVO
           </span>
-          <span className="hidden rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-medium tracking-wide text-primary lg:inline-flex">
-            MIEMBRO EDGE
-          </span>
-          <Avatar className="size-7">
-            <AvatarFallback className="bg-muted text-[10px] text-muted-foreground">AM</AvatarFallback>
-          </Avatar>
         </div>
       </div>
     </header>

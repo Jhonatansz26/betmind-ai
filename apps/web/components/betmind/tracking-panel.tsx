@@ -1,11 +1,10 @@
 'use client'
 
 import * as React from 'react'
-import { CheckCircle2Icon, ClockIcon, XCircleIcon, Trash2Icon } from 'lucide-react'
+import { Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/ui/button'
-import { MODE_META, type Mode, type Ticket } from '@/lib/betmind'
+import { type Mode, type Ticket } from '@/lib/betmind'
 import {
   fetchTicketHistory,
   saveTicket,
@@ -24,6 +23,7 @@ export interface TrackedTicket {
   id: string
   mode: Mode
   combinedOdds: number
+  evAverage: number
   confidence: number
   legsCount: number
   trackedAt: string // ISO string
@@ -41,7 +41,8 @@ function loadTracked(): TrackedTicket[] {
   if (typeof window === 'undefined') return []
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as TrackedTicket[]) : []
+    const parsed = raw ? (JSON.parse(raw) as TrackedTicket[]) : []
+    return parsed.map((ticket) => ({ ...ticket, evAverage: ticket.evAverage ?? 0 }))
   } catch {
     return []
   }
@@ -65,6 +66,7 @@ export async function addToTracking(ticket: Ticket): Promise<void> {
     id: entryId,
     mode: ticket.mode,
     combinedOdds: ticket.combinedOdds,
+    evAverage: ticket.evAverage,
     confidence: ticket.confidence,
     legsCount: ticket.legs.length,
     trackedAt: new Date().toISOString(),
@@ -81,27 +83,23 @@ export async function addToTracking(ticket: Ticket): Promise<void> {
 
 const STATUS_CONFIG: Record<
   TrackStatus,
-  { label: string; icon: React.ReactNode; className: string }
+  { label: string; className: string }
 > = {
   PENDING: {
-    label: 'Pendiente',
-    icon: <ClockIcon className="size-3.5" aria-hidden />,
-    className: 'border-border bg-muted/60 text-muted-foreground',
+    label: 'PENDING',
+    className: 'border-warning/40 bg-warning/10 text-warning',
   },
   WON: {
-    label: 'Ganada',
-    icon: <CheckCircle2Icon className="size-3.5" aria-hidden />,
+    label: 'WON',
     className: 'border-positive/40 bg-positive/10 text-positive',
   },
   LOST: {
-    label: 'Perdida',
-    icon: <XCircleIcon className="size-3.5" aria-hidden />,
+    label: 'LOST',
     className: 'border-negative/40 bg-negative/10 text-negative',
   },
   VOID: {
-    label: 'Anulada',
-    icon: <XCircleIcon className="size-3.5" aria-hidden />,
-    className: 'border-warning/40 bg-warning/10 text-warning',
+    label: 'VOID',
+    className: 'border-border bg-surface text-muted-foreground',
   },
 }
 
@@ -118,13 +116,12 @@ function TrackRow({
   onStatusChange: (id: string, status: TrackStatus) => void
   onRemove: (id: string) => void
 }) {
-  const meta = MODE_META[entry.mode]
   const statusCfg = STATUS_CONFIG[entry.status]
   const date = new Date(entry.trackedAt).toLocaleDateString('es-CO', {
     day: 'numeric',
     month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
+    year: 'numeric',
+    timeZone: 'America/Bogota',
   })
 
   const nextStatus: Record<TrackStatus, TrackStatus> = {
@@ -135,53 +132,41 @@ function TrackRow({
   }
 
   return (
-    <li className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 border-b border-border-subtle py-3 last:border-b-0">
-      {/* Mode badge */}
-      <span
-        className={cn(
-          'shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide',
-          meta.border,
-          meta.bg,
-          meta.text,
-        )}
-      >
-        {meta.glyph}
-      </span>
-
-      {/* Info */}
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">
-          {meta.label.replace('MODO ', '')}
-          <span className="num ml-1.5 text-xs text-subtle">×{entry.combinedOdds.toFixed(2)}</span>
-        </p>
-        <p className="text-[10px] text-subtle">
-          {entry.legsCount} selecciones · {date}
-        </p>
+    <li className="flex items-center justify-between gap-4 border-b border-border/40 px-4 py-3 text-xs transition-colors hover:bg-surface/40 last:border-b-0">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0 rounded border border-border/60 bg-surface px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase text-foreground">{entry.mode}</span>
+        <div className="min-w-0">
+          <p className="truncate font-mono text-xs text-muted-foreground">{entry.legsCount} selecciones</p>
+          <p className="truncate font-mono text-[10px] tabular-nums text-muted-foreground">{date}</p>
+        </div>
       </div>
 
-      {/* Status badge — click to cycle */}
-      <button
-        type="button"
-        title="Cambiar estado"
-        onClick={() => onStatusChange(entry.id, nextStatus[entry.status])}
-        className={cn(
-          'inline-flex shrink-0 items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:opacity-80',
-          statusCfg.className,
-        )}
-      >
-        {statusCfg.icon}
-        {statusCfg.label}
-      </button>
+      <div className="flex shrink-0 items-center gap-4">
+        <div className="text-right">
+          <p className="font-mono text-sm font-bold tabular-nums text-foreground">{entry.combinedOdds.toFixed(2)}</p>
+          <p className="font-mono text-xs font-semibold tabular-nums text-positive">+{(entry.evAverage * 100).toFixed(1)}% EV</p>
+        </div>
+        <button
+          type="button"
+          title="Cambiar estado"
+          onClick={() => onStatusChange(entry.id, nextStatus[entry.status])}
+          className={cn(
+            'inline-flex shrink-0 cursor-pointer rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tabular-nums transition-all hover:opacity-80',
+            statusCfg.className,
+          )}
+        >
+          {statusCfg.label}
+        </button>
 
-      {/* Remove */}
-      <button
-        type="button"
-        title="Eliminar de seguimiento"
-        onClick={() => onRemove(entry.id)}
-        className="shrink-0 text-subtle transition-colors hover:text-negative"
-      >
-        <Trash2Icon className="size-3.5" aria-hidden />
-      </button>
+        <button
+          type="button"
+          title="Eliminar de seguimiento"
+          onClick={() => onRemove(entry.id)}
+          className="shrink-0 text-subtle transition-colors hover:text-negative"
+        >
+          <Trash2Icon className="size-3.5" aria-hidden />
+        </button>
+      </div>
     </li>
   )
 }
@@ -205,6 +190,7 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
             id: String(saved.id),
             mode,
             combinedOdds: saved.total_odds,
+            evAverage: saved.total_ev,
             confidence: saved.ticket_data.confidence,
             legsCount: saved.ticket_data.legs.length,
             trackedAt: saved.created_at,
@@ -241,47 +227,52 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
     toast('Boleto eliminado del seguimiento')
   }
 
-  if (entries.length === 0) {
-    return (
-      <div className="rounded-xl border border-border bg-card p-5 text-center">
-        <p className="text-sm font-medium text-foreground">Sin boletos en seguimiento</p>
-        <p className="mt-1 text-xs text-subtle">
-          Pulsa <span className="font-semibold text-foreground">Seguir</span> en cualquier boleto para
-          agregarlo aquí.
-        </p>
-      </div>
-    )
-  }
-
-  const won = entries.filter((e) => e.status === 'WON').length
-  const lost = entries.filter((e) => e.status === 'LOST').length
+  const averageOdds = entries.length
+    ? entries.reduce((sum, entry) => sum + entry.combinedOdds, 0) / entries.length
+    : 0
+  const averageEv = entries.length
+    ? entries.reduce((sum, entry) => sum + entry.evAverage, 0) / entries.length
+    : 0
   const pending = entries.filter((e) => e.status === 'PENDING').length
 
   return (
-    <div className="rounded-xl border border-border bg-card">
-      {/* Panel header */}
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-foreground">Seguimiento</h2>
-        <div className="flex items-center gap-3 text-[11px]">
-          <span className="num text-subtle">{pending} pendiente{pending !== 1 ? 's' : ''}</span>
-          {won > 0 && <span className="num text-positive">✓ {won} ganado{won !== 1 ? 's' : ''}</span>}
-          {lost > 0 && <span className="num text-negative">✗ {lost} perdido{lost !== 1 ? 's' : ''}</span>}
-        </div>
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <div className="grid grid-cols-2 divide-x divide-y divide-border/50 rounded-lg border border-border/60 bg-surface/30 px-4 py-3 text-xs sm:grid-cols-4 sm:divide-y-0">
+        <div className="pr-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Boletos guardados</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{entries.length}</span></div>
+        <div className="px-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Cuota promedio</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{averageOdds.toFixed(2)}</span></div>
+        <div className="px-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">+EV medio</span><span className="font-mono text-sm font-bold tabular-nums text-positive">+{(averageEv * 100).toFixed(1)}%</span></div>
+        <div className="pl-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">En seguimiento</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{pending}</span></div>
       </div>
 
-      {/* Rows */}
-      <ul className="px-4">
-        {entries.map((entry) => (
-          <TrackRow
-            key={entry.id}
-            entry={entry}
-            onStatusChange={handleStatusChange}
-            onRemove={handleRemove}
-          />
-        ))}
-      </ul>
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/25 bg-primary/[0.04] px-4 py-2.5 text-xs">
+        <p className="font-mono text-xs font-medium text-foreground">MODO ANÓNIMO ACTIVO • Sincroniza tu Track Record en la nube y activa gestión de bankroll PRO</p>
+        <button type="button" onClick={() => toast('Cuenta PRO', { description: 'La conexión de cuenta estará disponible próximamente.' })} className="shrink-0 rounded-md border border-primary/40 bg-primary/10 px-3 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/20">Conectar Cuenta PRO</button>
+      </div>
 
-      <p className="border-t border-border-subtle px-4 py-2.5 text-[10px] text-subtle">
+      <div className="flex items-center justify-between gap-3 border-b border-border/50 px-1 pb-2">
+        <h2 className="text-sm font-semibold text-foreground">Ledger de seguimiento</h2>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{entries.length ? 'Historial cargado' : 'Sin registros'}</span>
+      </div>
+
+      {entries.length > 0 ? (
+        <ul className="-mx-4">
+          {entries.map((entry) => (
+            <TrackRow
+              key={entry.id}
+              entry={entry}
+              onStatusChange={handleStatusChange}
+              onRemove={handleRemove}
+            />
+          ))}
+        </ul>
+      ) : (
+        <div className="px-4 py-6 text-center">
+          <p className="text-sm font-medium text-foreground">Sin boletos en seguimiento</p>
+          <p className="mt-1 text-xs text-muted-foreground">Pulsa Seguir en cualquier boleto para agregarlo aquí.</p>
+        </div>
+      )}
+
+      <p className="border-t border-border/40 px-1 pt-2.5 text-[10px] text-muted-foreground">
         Historial sincronizado · Se usa almacenamiento local solo si la API no responde
       </p>
     </div>

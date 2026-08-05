@@ -4,7 +4,7 @@ import * as React from 'react'
 import { AlertCircle, RefreshCw, Sparkles, SlidersHorizontal, BrainCircuit, Filter } from 'lucide-react'
 
 import { type Match, type Ticket, buildModel, marketRows, bestOpportunity } from '@/lib/betmind'
-import { fetchTickets, fetchMatches } from '@/lib/api'
+import { fetchTickets, fetchMatches, fetchLeagues, type LeagueData } from '@/lib/api'
 import { resolveLeague } from '@/lib/league-metadata'
 import { cn } from '@/lib/utils'
 import { LeagueSidebar } from './league-sidebar'
@@ -15,7 +15,7 @@ import { TicketCard } from './ticket-card'
 import { TicketGenerator } from './ticket-generator'
 import { TrackingPanel } from './tracking-panel'
 import { BottomNav, TopNav, type NavTab } from './top-nav'
-import { DateSelector, formatDateTitle, type DateFilter } from './date-selector'
+import { DateSelector, formatDateKey, formatDateTitle, type DateFilter } from './date-selector'
 
 /* ------------------------------------------------------------------ */
 /* Skeletons                                                           */
@@ -198,6 +198,7 @@ export function Dashboard() {
   const [tickets, setTickets] = React.useState<Ticket[]>([])
   const [ticketsLoading, setTicketsLoading] = React.useState(true)
   const [matches, setMatches] = React.useState<Match[]>([])
+  const [leagues, setLeagues] = React.useState<LeagueData[]>([])
   const [matchesLoading, setMatchesLoading] = React.useState(true)
   const [ticketsError, setTicketsError] = React.useState(false)
   const [matchesError, setMatchesError] = React.useState(false)
@@ -251,6 +252,16 @@ export function Dashboard() {
       }
     }
     load()
+    return () => { cancelled = true }
+  }, [dateFilter, retryKey])
+
+  React.useEffect(() => {
+    let cancelled = false
+    async function loadLeagues() {
+      const result = await fetchLeagues(formatDateKey(dateFilter, new Date()))
+      if (!cancelled) setLeagues(result.ok ? result.data : [])
+    }
+    loadLeagues()
     return () => { cancelled = true }
   }, [dateFilter, retryKey])
 
@@ -371,7 +382,7 @@ export function Dashboard() {
               : 'hidden',
           )}
         >
-          <LeagueSidebar active={league} onSelect={selectLeague} matches={matches} />
+          <LeagueSidebar active={league} onSelect={selectLeague} matches={matches} leagues={leagues} />
         </aside>
 
         {sidebarOpen ? (

@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models.ticket import SavedTicket
@@ -48,3 +48,17 @@ class TicketRepository:
         await self._session.flush()
         await self._session.refresh(ticket)
         return ticket
+
+    async def claim_anonymous_tickets(self, ticket_ids: list[int], user_id: int) -> int:
+        if not ticket_ids:
+            return 0
+        result = await self._session.execute(
+            update(SavedTicket)
+            .where(
+                SavedTicket.id.in_(ticket_ids),
+                SavedTicket.user_id.is_(None),
+            )
+            .values(user_id=user_id)
+        )
+        await self._session.commit()
+        return result.rowcount or 0

@@ -75,6 +75,15 @@ class UpdateTicketStatusRequest(BaseModel):
     status: SavedTicketStatus
 
 
+class ClaimTicketsRequest(BaseModel):
+    ticket_ids: list[int] = Field(default_factory=list)
+
+
+class ClaimTicketsResponse(BaseModel):
+    claimed_count: int
+    message: str
+
+
 class SavedTicketResponse(BaseModel):
     id: int
     ticket_data: dict[str, Any]

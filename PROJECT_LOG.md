@@ -6567,3 +6567,158 @@ Problema residual en logs de `batch_predict.py`: la tabla `teams` tenia 2 filas 
 - **Verificación de Tipos TypeScript:** `npx tsc --noEmit` ejecutado en `apps/web` sin errores de compilación.
 - **Verificación Visual E2E (Puppeteer):** Capturas de pantalla confirmando carga de carteleras con banners recomendados en verde brillante, jerarquía de cuotas y respuesta fluida de los nuevos filtros de tarjetas.
 
+---
+
+## 🔴 Fixes Críticos de Backend: EV Fantasma, Mapeo de Ligas ML y Configuración de Entornos (Completado)
+
+### 1. Eliminación del "EV+ Fantasma" (cuotas sintéticas)
+- **`apps/api/engine/ticket_builder.py`:** Eliminada por completo la síntesis de cuotas (`bm_odds = 1.0 / (prob / 1.05)` con overround genérico). Un mercado sin `bookmaker_odds` reales ya NO es candidato a ticket.
+- **`apps/api/routes/v1/tickets.py`:** Eliminada la función `_derive_markets_from_probabilities()` (overround sintético del 8%). Mercados sin cuotas reales se serializan con `verdict: "NO_ODDS_AVAILABLE"`, `bookmaker_odds: null` y sin `expected_value`.
+- **Centralización del cálculo EV:** Nueva función `calculate_ev_metrics()` en `packages/ml/betmind_ml/ev/ev_calculator.py` (probabilidad implícita desmarginalizada + edge + EV). Importada en el orquestador y en la ruta de tickets para eliminar la reimplementación de la fórmula.
+- **Nuevo estado en la API (`apps/api/schemas/prediction.py`):** `Verdict.NO_ODDS_AVAILABLE = "NO_ODDS_AVAILABLE"` — los mercados sin cuota se marcan explícitamente y quedan fuera de recomendaciones EV+.
+- **Ticket Builder:** Requiere `bookmaker_odds > 1.0`, `implied_probability` y `expected_value` presentes; en caso contrario descarta el candidato. `total_ev_opportunities` solo cuenta EV numérico real.
+- Verificado: dos partidos sin odds reales no generan tickets ni badges EV+ falsos.
+
+### 2. Mapeo completo de ligas en el pipeline ML
+- **`apps/api/orchestrators/prediction_orchestrator.py`:** `_get_league_key()` ahora usa `LEAGUE_EXTERNAL_ID_TO_KEY`, diccionario derivado automáticamente de `FEATURED_LEAGUES` (fuente única de verdad). Las **26 ligas configuradas** (antes solo 3: 39, 140, 239) mapean a su clave Poisson correcta; ninguna cae en el rango genérico "default".
+
+### 3. Configuración de entornos y seguridad
+- **`apps/api/main.py`:** CORS lee `settings.ALLOWED_ORIGINS` (variable de entorno `ALLOWED_ORIGINS` — soporta lista separada por comas o JSON) en lugar de hardcodear `localhost:3000`.
+- **`apps/api/config.py`:** Guard de arranque — si `DEBUG=False` y `SECRET_KEY == "change-me-in-production"`, `Settings.__init__` lanza `ValueError` y la app se rehúsa a iniciar en producción.
+
+### 4. Verificación
+- Backend: `118 passed` (1 deselected pre-existente por falta de `pytest-asyncio`).
+- `NO_ODDS_AVAILABLE` y exclusión de mercados sin odds verificados con pruebas manuales del Ticket Builder.
+
+---
+
+## 🟢 Paso 1: Resiliencia HTTP y Explicabilidad en Boletos (Completado)
+
+### 1. Manejo uniforme de errores HTTP (`apps/web/lib/api.ts`)
+- **Helper centralizado `apiFetch<T>()`:** única puerta HTTP de la app. Timeout de 12s (`AbortController`), captura fallas de red/timeout/CORS y retorna `ApiResult<T>` = `{ ok: true, data } | { ok: false, error: { code, message } }`.
+- Códigos de error: `NETWORK_ERROR`, `REQUEST_TIMEOUT`, `HTTP_<status>` (mensajes seguros en español).
+- **Todos los consumidores migrados a `ApiResult`:** `fetchTickets`, `fetchMatches`, `fetchLeagues`, `fetchMatchH2H`, `fetchMatchPrediction` (dashboard, ticket-generator y página de detalle de partido adaptados).
+- **Eliminados los `console.log` de depuración:** `[fetchMatchPrediction]` y logs del scanner (`scanner-empty-state.tsx`).
+
+### 2. Explicabilidad en boletos y predicciones
+- **`ticket-card.tsx`:** Nueva sección "Por qué esta selección" con chips: `Modelo Poisson calibrado`, `+X.X% EV medio`, `X% de confianza del modelo` y estado de validación de correlación (seguridad del motor).
+- **`ticket-generator.tsx`:** Bloque "Razonamiento de la IA" en la vista previa + etiqueta secundaria por leg ("Cuota real · Poisson calibrado").
+- **`ticket-leg.tsx`:** Razón de la selección (tooltip) por cada pata.
+- **`match-card.tsx`:** Línea de evidencia bajo el banner de apuesta recomendada: `Poisson calibrado · EV real X.X% · Confianza X%`.
+- Nuevo campo `Ticket.rationale: string[]` y `TicketLegData.reason` en `lib/betmind.ts`.
+
+### 3. Verificación
+- `npm run build` (Next.js 16.2.6 + TypeScript): 0 errores.
+
+---
+
+## 🟢 Paso 2: Historial de Tickets en Base de Datos (Completado)
+
+### 1. Capa de datos y ORM
+- **Migración `apps/api/migrations/012_create_saved_tickets.sql`:** Tabla `saved_tickets` con `id SERIAL PK`, `ticket_data JSONB`, `status VARCHAR(10)` (`PENDING/WON/LOST/VOID`), `total_odds`, `total_ev`, `created_at TIMESTAMPTZ` + índice por `created_at DESC`.
+- **Modelo `apps/api/models/ticket.py`:** `SavedTicket` con `ticket_data` JSON/JSONB (variant para PostgreSQL), registrado en `models/__init__.py` y `init_db()`.
+- **Repositorio `apps/api/repositories/ticket_repository.py`:** `create()`, `list_history()` (orden descendente), `get_by_id()`, `update_status()`.
+
+### 2. Endpoints REST (`apps/api/routes/v1/tickets.py`)
+- `POST /api/v1/tickets/save` → crea el ticket guardado (201).
+- `GET /api/v1/tickets/history` → lista ordenada por `created_at DESC`.
+- `PATCH /api/v1/tickets/{ticket_id}/status` → actualiza estado (`WON`, `LOST`, etc.), 404 si no existe.
+- Schemas Pydantic: `SaveTicketRequest`, `SavedTicketResponse`, `SavedTicketStatus`, `UpdateTicketStatusRequest`.
+
+### 3. Frontend y persistencia
+- **`apps/web/lib/api.ts`:** `saveTicket()`, `fetchTicketHistory()`, `updateTicketStatus()` sobre `apiFetch`.
+- **`tracking-panel.tsx`:** Fuente primaria = historial remoto; `localStorage` queda como fallback de lectura/escritura cuando la API no responde. Ciclo de estados `PENDING → WON → LOST → VOID` (eliminado `LIVE` para alinear con el contrato del backend). `addToTracking()` ahora es async y guarda primero en API.
+- **`ticket-card.tsx` / `ticket-generator.tsx`:** Guardado vía API con degradación elegante.
+
+### 4. Verificación
+- Repositorio probado con SQLite in-memory: create → list → update_status OK.
+- Backend: `118 passed`. Frontend: `npm run build` 0 errores TypeScript.
+
+---
+
+## 🟢 Fix: Manejo de `bm_odds = None` en Ticket Builder (Completado)
+
+### 1. Bug corregido
+- **`apps/api/engine/ticket_builder.py`:** La condición de filtrado en `build_ticket_for_mode()` fallaba con `TypeError: '<=' not supported between instances of 'NoneType' and 'float'` cuando la cuota de la casa de apuestas llegaba como `None` (mercados marcados `NO_ODDS_AVAILABLE`).
+- **Fix:** `if bm_odds <= 1.0 or implied is None or ev is None:` → `if bm_odds is None or bm_odds <= 1.0 or implied is None or ev is None:`. Las comparaciones posteriores (`bm_odds < 2.10`, `bm_odds > max_individual_odds`, `calculate_quarter_kelly`) quedan protegidas por el early `continue`.
+
+### 2. Verificación
+- `npx tsc --noEmit` (frontend): 0 errores.
+- `git diff --check`: sin problemas de whitespace.
+
+---
+
+## 🔵 Refactorización UI/UX — Terminal Cuantitativa Institucional (Completado)
+
+**Fecha:** 5 de Agosto, 2026
+**Resumen:** 4 sesiones de refactorización visual alineando los principales componentes a un estándar de terminal cuantitativa y software SaaS financiero (estilo Bloomberg/Linear/Vercel): tipografía `font-mono tabular-nums` estricta para cifras, densidad alta, jerarquía única de CTA y erradicación de emojis/sombras infladas.
+
+### Sesión 1 — Generador de Boletos y Tarjetas
+- **`ticket-generator.tsx`:** Selector de selecciones compacto (`−` / número `font-mono text-xl font-bold tabular-nums` con sufijo `sel.` / `+`) dentro de contenedor `border-border/60 rounded-lg`; eliminados los indicadores de puntos (2-7). Perfiles de riesgo como selector segmentado de 3 columnas: `EDGE` (Baja Varianza), `VALUE` (+EV Óptimo), `BOLD` (Alta Varianza) — estado activo `border-primary/60 bg-primary/10 text-primary`, sin iconos ni sombras. Botón regenerar en estilo outline discreto. Cuota combinada HERO en `font-mono tabular-nums text-4xl` con etiqueta `CUOTA COMBINADA`. Fila de estadísticas compacta con `divide-x` (Confianza IA / +EV Promedio / Rango con punto indicador `size-1.5`).
+- **CTAs del footer:** Botón primario único `#generator-copy-ticket` (`w-full bg-primary`, cambia a `¡Boleto Copiado!` en verde técnico) y `#generator-save-ticket` como secundario discreto debajo.
+- **`ticket-leg.tsx` / `GeneratorLeg`:** Filas de alta densidad (`px-3.5 py-2.5 border-b border-border/40`), descripción "Cuota real · Poisson calibrado" movida al atributo `title` de la fila, pill de EV+ en `font-mono text-xs font-bold` (`bg-positive/10 border-positive/20`) y cuota `@{odds.toFixed(2)}`.
+- **`ticket-card.tsx`:** Cuota combinada HERO `text-4xl` + barra de métricas compacta; eliminada `ConfidenceBar` del encabezado (sustituida por métricas tabulares).
+- Funcionalidad preservada: `navigator.clipboard.writeText`, `fetchTickets`, `addToTracking`.
+
+### Sesión 2 — Navegación Institucional
+- **`top-nav.tsx`:** Header ultracompacto `h-14 px-6 border-b border-border/60 bg-card/80 backdrop-blur-md sticky top-0 z-40`; identidad `BetMind AI` + badge `v0.1.0 • QUANT ENGINE`; pills técnicos `COT (UTC-5)` y `26 LIGAS EN VIVO` con punto verde intermitente. Eliminados Avatar y badge "MIEMBRO EDGE".
+- **`date-selector.tsx`:** Selector segmentado con `Ayer / Hoy / Mañana / Todas` (nuevo valor `yesterday` en `DateFilter`), estado activo `bg-primary/15 border-primary/30 text-primary`; representación cuantitativa de la fecha activa en `font-mono tabular-nums` (formato ISO + local es-CO). Nuevo helper `formatDateKey()` para traducir filtro → fecha `YYYY-MM-DD` al consultar ligas.
+- **`league-sidebar.tsx`:** Encabezado `CATÁLOGO DE LIGAS (26)`; "Todas las Ligas" como fila completa con contador; filas compactas (`px-3 py-1.5`) con tag textual `COPA` (`KNOCKOUT_CUP`) y contador `active_matches` en pill numérico monoespaciado (atenuado si 0).
+- **`dashboard.tsx`:** Nueva carga `fetchLeagues(formatDateKey(...))` → el sidebar recibe `leagues: LeagueData[]` con `active_matches` reales del backend (fallback al conteo local desde `matches` si el endpoint no responde). Callbacks `onSelectLeague`, `onSelectDate` y `dateFilter` intactos.
+
+### Sesión 3 — Detalle de Partido Institucional
+- **`market-table.tsx`:** Reescrita como grid financiero de alta densidad (`border-border/60 divide-y divide-border/40`), encabezados `text-[10px] font-mono font-bold uppercase tracking-widest bg-surface/40`, todas las métricas en `font-mono tabular-nums`. Veredictos técnicos: `POSITIVE_EV` (verde), `NO_VALUE`/`AVOID` (sobrios), `SIN CUOTAS` atenuado.
+- **`tactical-panel.tsx`:** Reescrito como "memorándum de investigación cuantitativa": tarjeta `border-border bg-card rounded-xl p-5`, barra técnica `MODELO / COMPLETITUD DE DATOS / TOKENS` (acepta metadata opcional `TacticalMetadata`), titular `match_preview_headline`, narrativas por mercado en secciones separadas, pros/cons con etiqueta de impacto `HIGH/MEDIUM/LOW` sobria en `font-mono`.
+- **`referee-widget.tsx`:** Contenedor sobrio `FACTOR AMBIENTAL • ÁRBITRO`, nombre del árbitro, rigurosidad `X/100` y desglose tabular 2×2 (partidos clave, tendencia, amarillas/partido, rojas/partido) en `font-mono tabular-nums`.
+- **`bet-builder-cards.tsx`:** Reescrito como "estrategias cuantitativas": tarjetas `border-border/60 bg-surface/30 rounded-lg p-4`, etiqueta de perfil (BAJA VARIANZA / RIESGO MEDIO / ALTA VARIANZA / +EV MÁXIMO), celdas de `Confianza` y `Kelly sugerido` en monoespaciado.
+- **`app/partidos/[id]/page.tsx`:** Eliminados emojis (`🛡️`, `⚽`, `🚩`, `🟨`, `🎯`, `📂`, `→`, `🔥`, `👉`), veredictos inline migrados a pills técnicos, ~30 cifras (cuotas, probabilidades, xG, confianza, marcadores, tarjetas, córneres) migradas a `font-mono tabular-nums`, import `XCircle` huérfano eliminado. `npx tsc --noEmit`: 0 errores.
+
+### Sesión 4 — Ledger de Portafolio Cuantitativo (TrackingPanel)
+- **`tracking-panel.tsx`:** Reescrito como ledger institucional:
+  - Barra de KPIs tabular `grid grid-cols-4 divide-x divide-border/50`: `BOLETOS GUARDADOS`, `CUOTA PROMEDIO`, `+EV MEDIO`, `EN SEGUIMIENTO` (PENDING) — todo en `font-mono tabular-nums`.
+  - Banner de autenticación progresiva: `MODO ANÓNIMO ACTIVO • Sincroniza tu Track Record en la nube y activa gestión de bankroll PRO` + botón `Conectar Cuenta PRO` (toast explicativo por ahora).
+  - Filas tipo libro contable: pill de modo (`EDGE/VALUE/BOLD`), selecciones + fecha, cuota combinada y EV+ como cifras hero, badge de estado interactivo que cicla `PENDING → WON → LOST → VOID` invocando `updateTicketStatus` (con fallback a `localStorage`).
+  - Persistencia preservada: `saveTicket`, `fetchTicketHistory`, `updateTicketStatus` y key `betmind_tracked_tickets` intactos; nuevo campo `evAverage` con normalización `?? 0` para registros locales antiguos.
+
+### Verificación transversal
+- `npx tsc --noEmit` (frontend): 0 errores en todas las sesiones.
+- `git diff --check`: limpio en todos los archivos tocados.
+
+---
+
+## 🔐 Fase 2: Multi-Tenancy — `user_id`, RLS y Endpoint de Reclamación PRO (Completado)
+
+**Fecha:** 5 de Agosto, 2026
+**Resumen:** Preparación de infraestructura para el SaaS VIP: columna `user_id` en `saved_tickets`, políticas RLS y endpoint `POST /api/v1/tickets/claim` para reclamar boletos anónimos tras el login. **Decisión de diseño:** `public.users.id` existente es `INTEGER`, por lo que `user_id` se implementó como `INTEGER` (no UUID, que habría sido incompatible con la FK existente).
+
+### 1. Migración SQL ejecutada en Supabase vía MCP
+- **Archivo:** `apps/api/migrations/013_add_user_id_to_saved_tickets.sql`
+- **Aplicada en proyecto `sruhpmucytkaksdtkrsi` (Betmind - Apuestas Deportivas):**
+  - `ALTER TABLE saved_tickets ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL` (idempotente, no destructiva).
+  - Índice parcial `idx_saved_tickets_user_id ON saved_tickets (user_id) WHERE user_id IS NOT NULL`.
+  - `ALTER TABLE saved_tickets ENABLE ROW LEVEL SECURITY`.
+  - Políticas `saved_tickets_read_policy` (SELECT), `saved_tickets_insert_policy` (INSERT) y `saved_tickets_update_policy` (UPDATE) con `user_id IS NULL OR user_id = NULLIF(auth.jwt() ->> 'user_id', '')::INTEGER` — los boletos anónimos (NULL) siguen siendo legibles/actualizables y los reclamados quedan restringidos al dueño del JWT.
+- **Confirmación MCP (`information_schema` / `pg_policies`):**
+  - `user_id`: `data_type=integer`, `is_nullable=YES`, `udt_name=int4`. ✅
+  - `rls_enabled=true` en `saved_tickets`. ✅
+  - 3 políticas activas con `qual`/`with_check` verificados. ✅
+
+### 2. Capa ORM (`apps/api/models/ticket.py`)
+- `SavedTicket.user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)` + import `ForeignKey` desde SQLAlchemy.
+
+### 3. Repositorio (`apps/api/repositories/ticket_repository.py`)
+- Nuevo método async `claim_anonymous_tickets(ticket_ids: list[int], user_id: int) -> int`: `UPDATE ... SET user_id = :uid WHERE id IN (...) AND user_id IS NULL`, commit y retorno de `rowcount`.
+
+### 4. Schemas Pydantic (`apps/api/schemas/ticket.py`)
+- `ClaimTicketsRequest` con `ticket_ids: list[int]` y `ClaimTicketsResponse` con `claimed_count: int` + `message: str`.
+
+### 5. Endpoint FastAPI (`apps/api/routes/v1/tickets.py`)
+- `POST /api/v1/tickets/claim` → invoca `TicketRepository.claim_anonymous_tickets(...)` y responde `ClaimTicketsResponse`.
+- `# TODO: Usar current_user.id en Fase 2` — temporalmente usa `current_user_id = 1` (mock) hasta integrar el dependency JWT final.
+
+### 6. Verificación
+- **MCP:** migración `add_user_id_to_saved_tickets` registrada en historial de migraciones del proyecto.
+- **Backend:** `python -m compileall apps/api` OK; import test `backend imports ok` (modelo, repositorio, schemas y ruta importables sin errores SQLAlchemy/FastAPI).
+- **Frontend:** `npx tsc --noEmit`: 0 errores.
+- **Tests:** `pytest -q` → `118 passed, 3 failed` (los 3 fallos son pre-existentes por ausencia de plugin `pytest-asyncio` en el entorno, no relacionados con esta fase).
+

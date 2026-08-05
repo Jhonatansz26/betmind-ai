@@ -1,6 +1,5 @@
 'use client'
 
-import * as React from 'react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -25,168 +24,58 @@ interface BetBuilderCardsProps {
   awayTeam: string
 }
 
-const PROFILE_CONFIG: Record<
-  string,
-  {
-    gradient: string
-    border: string
-    badgeBg: string
-    badgeText: string
-    icon: string
-    riskLabel: string
-    oddsColor: string
-    glowColor: string
-  }
-> = {
-  CONSERVATIVE: {
-    gradient: 'from-emerald-950/60 to-zinc-900/60',
-    border: 'border-emerald-500/20',
-    badgeBg: 'bg-emerald-500/15',
-    badgeText: 'text-emerald-400',
-    icon: '🛡️',
-    riskLabel: 'BAJO RIESGO',
-    oddsColor: 'text-emerald-400',
-    glowColor: 'shadow-emerald-900/40',
-  },
-  MODERATE: {
-    gradient: 'from-amber-950/60 to-zinc-900/60',
-    border: 'border-amber-500/20',
-    badgeBg: 'bg-amber-500/15',
-    badgeText: 'text-amber-400',
-    icon: '⚖️',
-    riskLabel: 'RIESGO MEDIO',
-    oddsColor: 'text-amber-400',
-    glowColor: 'shadow-amber-900/40',
-  },
-  BOLD: {
-    gradient: 'from-rose-950/60 to-zinc-900/60',
-    border: 'border-rose-500/20',
-    badgeBg: 'bg-rose-500/15',
-    badgeText: 'text-rose-400',
-    icon: '🔥',
-    riskLabel: 'ALTO RIESGO',
-    oddsColor: 'text-rose-400',
-    glowColor: 'shadow-rose-900/40',
-  },
-  CAZADOR: {
-    gradient: 'from-rose-950/60 to-zinc-900/60',
-    border: 'border-rose-500/20',
-    badgeBg: 'bg-rose-500/15',
-    badgeText: 'text-rose-400',
-    icon: '🎯',
-    riskLabel: '+EV MÁXIMO',
-    oddsColor: 'text-rose-400',
-    glowColor: 'shadow-rose-900/40',
-  },
+const PROFILE_LABELS: Record<string, string> = {
+  CONSERVATIVE: 'BAJA VARIANZA',
+  MODERATE: 'RIESGO MEDIO',
+  BOLD: 'ALTA VARIANZA',
+  CAZADOR: '+EV MÁXIMO',
 }
 
-function getConfig(profile: string) {
+function profileLabel(profile: string) {
   const upper = profile.toUpperCase()
-  return (
-    PROFILE_CONFIG[upper] ??
-    PROFILE_CONFIG[
-      upper.includes('CONS') || upper.includes('CONSERV')
-        ? 'CONSERVATIVE'
-        : upper.includes('MOD')
-          ? 'MODERATE'
-          : 'BOLD'
-    ] ??
-    PROFILE_CONFIG.BOLD
-  )
+  return PROFILE_LABELS[upper] ?? (upper.includes('CONS') ? PROFILE_LABELS.CONSERVATIVE : PROFILE_LABELS.BOLD)
 }
 
 export function BetBuilderCards({ profiles, homeTeam, awayTeam }: BetBuilderCardsProps) {
-  if (!profiles || profiles.length === 0) return null
+  if (!profiles.length) return null
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <span className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase">
-          Bet Builder Sugerido
-        </span>
-        <span className="h-px flex-1 bg-white/[0.05]" />
-        <span className="rounded-sm bg-[#6366f1]/15 px-1.5 py-0.5 text-[10px] font-medium text-[#a5b4fc]">
-          IA · Groq
-        </span>
+        <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground">ESTRATEGIAS CORRELACIONADAS</span>
+        <span className="h-px flex-1 bg-border/50" />
+        <span className="font-mono text-[10px] text-muted-foreground">QUANT ENGINE</span>
       </div>
-
       <div className="grid gap-3 sm:grid-cols-3">
-        {profiles.map((profile) => {
-          const cfg = getConfig(profile.profile)
-          return (
-            <div
-              key={profile.profile}
-              className={cn(
-                'group relative flex flex-col gap-3 overflow-hidden rounded-xl border p-4 transition-all duration-200',
-                `bg-gradient-to-b ${cfg.gradient}`,
-                cfg.border,
-                'hover:scale-[1.01] hover:shadow-lg',
-                cfg.glowColor,
-              )}
-            >
-              {/* Top badge row */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex flex-col gap-1">
-                  <span
-                    className={cn(
-                      'inline-flex w-fit items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase',
-                      cfg.badgeBg,
-                      cfg.badgeText,
-                    )}
-                  >
-                    {cfg.icon} {cfg.riskLabel}
-                  </span>
-                  <span className="text-sm font-semibold text-zinc-100">{profile.label}</span>
-                </div>
-                {/* Combined odds */}
-                <div className="flex flex-col items-end gap-0.5">
-                  <span className="text-[10px] text-zinc-500">Cuota comb.</span>
-                  <span className={cn('num text-xl font-bold', cfg.oddsColor)}>
-                    {profile.combined_odds.toFixed(2)}
-                  </span>
-                </div>
+        {profiles.map((profile) => (
+          <div key={profile.profile} className="flex flex-col gap-2 rounded-lg border border-border/60 bg-surface/30 p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <span className="inline-flex rounded border border-border/60 bg-surface px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-muted-foreground">{profileLabel(profile.profile)}</span>
+                <p className="mt-1 truncate text-xs font-semibold text-foreground">{profile.label}</p>
               </div>
-
-              {/* Selections */}
-              <ul className="flex flex-col gap-1.5">
-                {profile.selections.map((sel) => (
-                  <li
-                    key={sel.market_name}
-                    className="flex items-center justify-between gap-2 rounded-md border border-white/[0.05] bg-black/20 px-2.5 py-1.5"
-                  >
-                    <span className="text-[11px] text-zinc-300 leading-tight">{sel.label}</span>
-                    <span className="num shrink-0 text-[11px] font-medium text-zinc-400">
-                      {sel.odds_estimate.toFixed(2)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-
-              {/* Probability pill */}
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-zinc-500">
-                  Prob. comb. {(profile.combined_probability * 100).toFixed(0)}%
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    toast.success('Añadido al boleto', {
-                      description: `${profile.label} · ${homeTeam} vs ${awayTeam}`,
-                    })
-                  }
-                  className={cn(
-                    'rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all',
-                    cfg.badgeBg,
-                    cfg.badgeText,
-                    'hover:brightness-125',
-                  )}
-                >
-                  Copiar al boleto →
-                </button>
+              <div className="text-right">
+                <span className="block text-[9px] uppercase tracking-wider text-muted-foreground">Cuota</span>
+                <span className="font-mono text-lg font-bold tabular-nums text-foreground">{profile.combined_odds.toFixed(2)}</span>
               </div>
             </div>
-          )
-        })}
+            <ul className="flex flex-col divide-y divide-border/40 border-y border-border/40">
+              {profile.selections.map((selection) => (
+                <li key={selection.market_name} className="flex items-center justify-between gap-2 py-1.5">
+                  <span className="truncate text-[11px] text-muted-foreground">{selection.label}</span>
+                  <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-foreground">@{selection.odds_estimate.toFixed(2)}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="grid grid-cols-2 divide-x divide-border/40 rounded border border-border/50 bg-surface/40">
+              <div className="px-2 py-1.5"><span className="block text-[9px] uppercase text-muted-foreground">Confianza</span><span className="font-mono text-xs font-semibold tabular-nums text-foreground">{(profile.combined_probability * 100).toFixed(0)}%</span></div>
+              <div className="px-2 py-1.5"><span className="block text-[9px] uppercase text-muted-foreground">Kelly sugerido</span><span className="font-mono text-xs font-semibold tabular-nums text-foreground">{(profile.combined_probability * 100 * 0.25).toFixed(1)}%</span></div>
+            </div>
+            <button type="button" onClick={() => toast.success('Añadido al boleto', { description: `${profile.label} · ${homeTeam} vs ${awayTeam}` })} className={cn('mt-1 rounded border border-border bg-transparent px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-surface hover:text-foreground')}>
+              Añadir estrategia
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   )

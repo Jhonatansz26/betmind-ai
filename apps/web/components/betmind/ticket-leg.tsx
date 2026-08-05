@@ -1,4 +1,3 @@
-import { GlobeIcon } from 'lucide-react'
 import type { TicketLegData } from '@/lib/betmind'
 import { cn } from '@/lib/utils'
 
@@ -8,32 +7,28 @@ export function TicketLeg({ leg, index = 0 }: { leg: TicketLegData; index?: numb
 
   return (
     <li
-      className="stagger-item flex items-center justify-between rounded-lg border border-border/60 bg-surface/60 px-3.5 py-3 transition-colors hover:border-border"
+      title="Cuota de bookmaker comparada contra probabilidad desmarquinizada de modelo Poisson"
+      className="stagger-item flex items-center justify-between gap-3 border-b border-border/40 px-3.5 py-2.5 last:border-b-0 transition-colors hover:bg-surface/40"
       style={{ animationDelay: `${index * 80}ms` }}
     >
-      {/* Left: market name / teams / EV */}
-      <div className="flex flex-col gap-0.5 min-w-0 pr-3">
-        <span className="truncate text-sm font-semibold text-foreground">{leg.market}</span>
-        <div className="flex items-center gap-1.5 text-subtle">
-          <GlobeIcon className="size-3 shrink-0" aria-hidden />
-          <span className="block text-xs text-muted-foreground leading-tight" title={leg.match}>
-            {leg.match}
-          </span>
-        </div>
-        <span className={cn('text-[10px] font-semibold', evPositive ? 'text-positive' : 'text-negative')}>
-          {evText}
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-xs font-semibold text-foreground">{leg.market}</span>
+        <span className="block truncate text-[11px] leading-tight text-muted-foreground" title={leg.match}>
+          {leg.match}
         </span>
-        {leg.reason && (
-          <span className="text-[10px] leading-tight text-subtle" title={leg.reason}>
-            {leg.reason}
-          </span>
-        )}
       </div>
 
-      {/* Right: Odds box */}
-      <span className="num ml-2 shrink-0 rounded-md bg-surface-raised/80 px-2.5 py-1 text-base font-bold text-foreground">
-        {leg.odds.toFixed(2)}
-      </span>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className={cn(
+          'rounded border px-1.5 py-0.5 font-mono text-xs font-bold tabular-nums',
+          evPositive
+            ? 'border-positive/20 bg-positive/10 text-positive'
+            : 'border-negative/20 bg-negative/10 text-negative',
+        )}>
+          {evText}
+        </span>
+        <span className="font-mono text-sm font-bold tabular-nums text-foreground">@{leg.odds.toFixed(2)}</span>
+      </div>
     </li>
   )
 }

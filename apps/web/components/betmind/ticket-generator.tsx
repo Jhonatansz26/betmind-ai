@@ -5,12 +5,10 @@ import {
   Copy,
   Star,
   RefreshCw,
-  ChevronDown,
-  ChevronUp,
+  Minus,
+  Plus,
   Zap,
-  Shield,
-  TrendingUp,
-  CheckCircle2,
+  Check,
   AlertCircle,
   Target,
   Flag,
@@ -50,36 +48,24 @@ const RISK_PROFILES: Array<{
   label: string
   sublabel: string
   mode: 'EDGE' | 'VALUE' | 'BOLD'
-  icon: React.ElementType
-  activeClass: string
-  inactiveClass: string
 }> = [
   {
     key: 'conservative',
-    label: 'Conservador',
-    sublabel: 'Bajo Riesgo',
+    label: 'EDGE',
+    sublabel: 'Baja Varianza',
     mode: 'EDGE',
-    icon: Shield,
-    activeClass: 'border-primary/50 bg-primary/12 text-primary shadow-lg shadow-primary/15',
-    inactiveClass: 'border-border bg-surface/40 text-muted-foreground hover:bg-surface hover:text-foreground',
   },
   {
     key: 'balanced',
-    label: 'Equilibrado',
-    sublabel: 'Value',
+    label: 'VALUE',
+    sublabel: '+EV Óptimo',
     mode: 'VALUE',
-    icon: TrendingUp,
-    activeClass: 'border-warning/50 bg-warning/12 text-warning shadow-lg shadow-warning/15',
-    inactiveClass: 'border-border bg-surface/40 text-muted-foreground hover:bg-surface hover:text-foreground',
   },
   {
     key: 'aggressive',
-    label: 'Agresivo',
-    sublabel: 'Bold / +EV Máx',
+    label: 'BOLD',
+    sublabel: 'Alta Varianza',
     mode: 'BOLD',
-    icon: Zap,
-    activeClass: 'border-negative/50 bg-negative/12 text-negative shadow-lg shadow-negative/15',
-    inactiveClass: 'border-border bg-surface/40 text-muted-foreground hover:bg-surface hover:text-foreground',
   },
 ]
 
@@ -152,34 +138,29 @@ function GeneratorLeg({
 
   return (
     <li
-      className="stagger-item flex items-center justify-between rounded-lg border border-border/50 bg-surface/40 px-4 py-3 transition-colors hover:border-border hover:bg-surface/70"
+      title="Cuota de bookmaker comparada contra probabilidad desmarquinizada de modelo Poisson"
+      className="stagger-item flex items-center justify-between gap-3 border-b border-border/40 px-3.5 py-2.5 last:border-b-0 transition-colors hover:bg-surface/40"
       style={{ animationDelay: `${index * 55}ms` }}
     >
-      <div className="flex flex-col gap-0.5 min-w-0 pr-4">
-        <span className="truncate text-sm font-semibold text-foreground leading-snug">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-xs font-semibold leading-snug text-foreground">
           {humanMarket}
         </span>
-        <span
-          className="block text-xs font-medium text-muted-foreground leading-tight truncate"
-          title={leg.match}
-        >
+        <span className="block truncate text-[11px] leading-tight text-muted-foreground" title={leg.match}>
           {leg.match}
         </span>
-        <span
-          className={cn(
-            'text-[10px] font-bold tracking-wide',
-            evPositive ? 'text-positive' : 'text-negative',
-          )}
-        >
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className={cn(
+          'rounded border px-1.5 py-0.5 font-mono text-xs font-bold tabular-nums',
+          evPositive
+            ? 'border-positive/20 bg-positive/10 text-positive'
+            : 'border-negative/20 bg-negative/10 text-negative',
+        )}>
           {evPositive ? '+' : ''}{(leg.ev * 100).toFixed(1)}% EV
         </span>
-        <span className="text-[10px] leading-tight text-subtle" title="Cuota real comparada contra el modelo Poisson">
-          Cuota real · Poisson calibrado
-        </span>
+        <span className="font-mono text-sm font-bold tabular-nums text-foreground">@{leg.odds.toFixed(2)}</span>
       </div>
-      <span className="num ml-2 shrink-0 rounded-lg border border-border/60 bg-surface-raised/60 px-3 py-1.5 text-sm font-bold tabular-nums text-foreground">
-        {leg.odds.toFixed(2)}
-      </span>
     </li>
   )
 }
@@ -364,47 +345,31 @@ export function TicketGenerator({
             <legend className="text-[10px] font-bold uppercase tracking-widest text-subtle">
               Selecciones
             </legend>
-            <div className="flex items-center gap-3">
+            <div className="flex w-fit items-center gap-3 rounded-lg border border-border/60 p-1">
               <button
                 type="button"
                 aria-label="Reducir"
                 onClick={() => updateCount(-1)}
                 disabled={config.selectionCount <= 2}
-                className="flex size-9 items-center justify-center rounded-lg border border-border bg-surface text-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-25"
+                className="flex size-8 items-center justify-center rounded-md text-foreground transition-colors hover:bg-surface-raised disabled:pointer-events-none disabled:opacity-25"
               >
-                <ChevronDown size={15} aria-hidden />
+                <Minus size={15} aria-hidden />
               </button>
-              <div className="flex min-w-[5rem] items-baseline justify-center gap-0.5 rounded-xl border border-primary/25 bg-primary/8 px-3 py-2">
-                <span className="num text-2xl font-bold tracking-tight text-primary">
+              <div className="flex min-w-[5rem] items-baseline justify-center gap-0.5 px-2">
+                <span className="font-mono text-xl font-bold tabular-nums text-foreground">
                   {config.selectionCount}
                 </span>
-                <span className="text-[10px] font-semibold text-primary/50 ml-0.5">sel.</span>
+                <span className="ml-0.5 text-[10px] font-semibold text-muted-foreground">sel.</span>
               </div>
               <button
                 type="button"
                 aria-label="Aumentar"
                 onClick={() => updateCount(1)}
                 disabled={config.selectionCount >= 7}
-                className="flex size-9 items-center justify-center rounded-lg border border-border bg-surface text-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-25"
+                className="flex size-8 items-center justify-center rounded-md text-foreground transition-colors hover:bg-surface-raised disabled:pointer-events-none disabled:opacity-25"
               >
-                <ChevronUp size={15} aria-hidden />
+                <Plus size={15} aria-hidden />
               </button>
-              {/* Dot indicators */}
-              <div className="flex flex-1 items-center gap-1">
-                {[2, 3, 4, 5, 6, 7].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    aria-label={`${n} selecciones`}
-                    aria-pressed={config.selectionCount === n}
-                    onClick={() => setConfig((prev) => ({ ...prev, selectionCount: n }))}
-                    className={cn(
-                      'h-1.5 flex-1 rounded-full transition-all duration-200',
-                      config.selectionCount >= n ? 'bg-primary' : 'bg-border',
-                    )}
-                  />
-                ))}
-              </div>
             </div>
           </fieldset>
 
@@ -417,7 +382,6 @@ export function TicketGenerator({
             </legend>
             <div className="grid grid-cols-3 gap-2">
               {RISK_PROFILES.map((profile) => {
-                const Icon = profile.icon
                 const active = config.riskProfile === profile.key
                 return (
                   <button
@@ -429,15 +393,16 @@ export function TicketGenerator({
                       setConfig((prev) => ({ ...prev, riskProfile: profile.key }))
                     }
                     className={cn(
-                      'flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-center transition-all duration-200',
-                      active ? profile.activeClass : profile.inactiveClass,
+                      'flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-center transition-colors',
+                      active
+                        ? 'border-primary/60 bg-primary/10 text-primary'
+                        : 'border-border bg-surface/40 text-muted-foreground hover:bg-surface hover:text-foreground',
                     )}
                   >
-                    <Icon size={15} aria-hidden />
                     <span className="text-[11px] font-bold leading-none">
                       {profile.label}
                     </span>
-                    <span className="text-[9px] font-medium opacity-60 leading-none">
+                    <span className="text-[9px] font-medium leading-none opacity-70">
                       {profile.sublabel}
                     </span>
                   </button>
@@ -528,7 +493,7 @@ export function TicketGenerator({
             id="generator-regenerate"
             onClick={() => setGenerationKey((k) => k + 1)}
             disabled={loading}
-            className="mt-auto flex items-center justify-center gap-2 rounded-xl border border-primary/25 bg-primary/8 px-4 py-3 text-sm font-semibold text-primary transition-all hover:border-primary/50 hover:bg-primary/15 disabled:opacity-40"
+            className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface-raised disabled:opacity-40"
           >
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} aria-hidden />
             {loading ? 'Generando…' : 'Regenerar Boleto'}
@@ -570,13 +535,13 @@ export function TicketGenerator({
                 <div className="flex flex-col items-end">
                   <span
                     className={cn(
-                      'num font-mono text-4xl font-bold tracking-tighter leading-none',
+                      'font-mono text-4xl font-bold tabular-nums tracking-tight leading-none',
                       combinedOddsInRange ? 'text-positive' : 'text-warning',
                     )}
                   >
                     {combinedOddsDisplay.toFixed(2)}
                   </span>
-                  <span className="mt-0.5 text-[9px] font-bold uppercase tracking-widest text-subtle">
+                  <span className="mt-0.5 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
                     Cuota Combinada
                   </span>
                 </div>
@@ -590,34 +555,30 @@ export function TicketGenerator({
 
             {/* Stats row */}
             {ticket && !loading ? (
-              <div className="grid grid-cols-3 divide-x divide-border/50 rounded-xl border border-border/60 bg-surface/30">
-                <div className="flex flex-col items-center gap-0.5 px-3 py-2.5">
+              <div className="my-2 flex items-center justify-between divide-x divide-border/50 rounded-lg border border-border/60 bg-surface/30 px-4 py-2 text-xs">
+                <div className="flex flex-col gap-0.5 pr-3">
                   <span className="text-[9px] font-bold uppercase tracking-widest text-subtle">
                     Confianza IA
                   </span>
                   {/* confidence is 0-95 integer from backend */}
-                  <span className="num text-lg font-bold tabular-nums text-foreground">
+                  <span className="font-mono font-bold tabular-nums text-foreground">
                     {ticket.confidence}%
                   </span>
                 </div>
-                <div className="flex flex-col items-center gap-0.5 px-3 py-2.5">
+                <div className="flex flex-col gap-0.5 px-3">
                   <span className="text-[9px] font-bold uppercase tracking-widest text-subtle">
                     +EV Promedio
                   </span>
-                  <span className="num text-lg font-bold tabular-nums text-positive">
+                  <span className="font-mono font-bold tabular-nums text-positive">
                     +{(ticket.evAverage * 100).toFixed(1)}%
                   </span>
                 </div>
-                <div className="flex flex-col items-center gap-0.5 px-3 py-2.5">
+                <div className="flex flex-col gap-0.5 pl-3">
                   <span className="text-[9px] font-bold uppercase tracking-widest text-subtle">
                     Rango
                   </span>
                   <div className="flex items-center gap-1">
-                    {combinedOddsInRange ? (
-                      <CheckCircle2 size={12} className="text-positive" aria-hidden />
-                    ) : (
-                      <AlertCircle size={12} className="text-warning" aria-hidden />
-                    )}
+                    <span className={cn('size-1.5 rounded-full', combinedOddsInRange ? 'bg-positive' : 'bg-warning')} aria-hidden />
                     <span
                       className={cn(
                         'text-xs font-bold',
@@ -713,25 +674,25 @@ export function TicketGenerator({
 
           {/* Footer actions */}
           <div className="border-t border-border/40 bg-surface-raised/40 p-4">
-            <div className="flex gap-2.5">
+            <div className="flex flex-col">
               <button
                 type="button"
                 id="generator-copy-ticket"
                 onClick={handleCopy}
                 disabled={!displayedLegs.length || loading}
                 className={cn(
-                  'flex flex-1 items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-35',
+                  'flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-35',
                   copied
-                    ? 'border-positive/40 bg-positive/12 text-positive'
-                    : 'border-border bg-surface text-foreground hover:border-primary/40 hover:bg-primary/8 hover:text-primary',
+                    ? 'bg-positive text-white'
+                    : 'bg-primary text-primary-foreground',
                 )}
               >
                 {copied ? (
-                  <CheckCircle2 size={13} aria-hidden />
+                  <Check size={13} aria-hidden />
                 ) : (
                   <Copy size={13} aria-hidden />
                 )}
-                {copied ? '¡Copiado!' : 'Copiar Boleto'}
+                {copied ? '¡Boleto Copiado!' : 'Copiar Boleto'}
               </button>
 
               <button
@@ -739,7 +700,7 @@ export function TicketGenerator({
                 id="generator-save-ticket"
                 onClick={handleSave}
                 disabled={!ticket || loading}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/8 px-4 py-2.5 text-sm font-semibold text-primary transition-all hover:border-primary/55 hover:bg-primary/18 disabled:opacity-35"
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-transparent py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-35"
               >
                 <Star size={13} aria-hidden />
                 Guardar en Seguimiento

@@ -1,94 +1,48 @@
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import type { MarketRow } from '@/lib/betmind'
 import { cn } from '@/lib/utils'
 
-const VERDICT_META: Record<MarketRow['verdict'], { icon: string; className: string; label: string }> = {
-  'EV+': { icon: '✅', className: 'text-positive', label: 'VALOR (+EV)' },
-  MARGINAL: { icon: '⚪', className: 'text-muted-foreground', label: 'MARGINAL' },
-  'NO EDGE': { icon: '❌', className: 'text-subtle', label: 'SIN EDGE' },
-  AVOID: { icon: '❌', className: 'text-negative', label: 'EVITAR' },
+const VERDICT_META: Record<string, { className: string; label: string }> = {
+  'EV+': { className: 'border border-positive/30 bg-positive/10 text-positive', label: 'POSITIVE_EV' },
+  'POSITIVE_EV': { className: 'border border-positive/30 bg-positive/10 text-positive', label: 'POSITIVE_EV' },
+  MARGINAL: { className: 'border border-border/50 bg-surface text-muted-foreground', label: 'NO_VALUE' },
+  'NO EDGE': { className: 'border border-border/50 bg-surface text-muted-foreground', label: 'NO_VALUE' },
+  NO_VALUE: { className: 'border border-border/50 bg-surface text-muted-foreground', label: 'NO_VALUE' },
+  AVOID: { className: 'border border-border/50 bg-surface text-muted-foreground', label: 'AVOID' },
+  NO_ODDS_AVAILABLE: { className: 'text-subtle opacity-60', label: 'SIN CUOTAS' },
 }
 
 export function MarketTable({ rows }: { rows: MarketRow[] }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border">
-      <Table className="min-w-[560px]">
-        <TableHeader>
-          <TableRow className="border-border">
-            <TableHead className="text-xs text-subtle">Mercado</TableHead>
-            <TableHead className="text-right text-xs text-subtle">Nuestra Prob.</TableHead>
-            <TableHead className="text-right text-xs text-subtle">Cuota</TableHead>
-            <TableHead className="text-right text-xs text-subtle">Implícita</TableHead>
-            <TableHead className="text-right text-xs text-subtle">Edge</TableHead>
-            <TableHead className="text-right text-xs text-subtle">VE</TableHead>
-            <TableHead className="text-right text-xs text-subtle">Veredicto</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+    <div className="overflow-hidden rounded-lg border border-border/60 bg-card text-xs">
+      <table className="w-full min-w-[620px]">
+        <thead className="bg-surface/40">
+          <tr className="divide-border/40">
+            {['Mercado', 'Prob. modelo', 'Cuota casa', 'Implícita', 'Edge', 'EV', 'Veredicto'].map((label, index) => (
+              <th key={label} className={cn('px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground', index > 0 && 'text-right')}>
+                {label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/40">
           {rows.map((row) => {
-            const verdict = VERDICT_META[row.verdict]
-            const isEvPositive = row.verdict === 'EV+'
-            const isAvoid = row.verdict === 'AVOID'
-
+            const verdict = VERDICT_META[row.verdict] ?? VERDICT_META.NO_VALUE
             return (
-              <TableRow
-                key={row.key}
-                className={cn(
-                  'border-border/60 transition-colors',
-                  isEvPositive && 'bg-positive/[0.04] hover:bg-positive/[0.08]',
-                )}
-              >
-                <TableCell className="text-sm font-semibold text-foreground">{row.label}</TableCell>
-                <TableCell className="num text-right text-sm text-muted-foreground">
-                  {`${(row.probability * 100).toFixed(1)}%`}
-                </TableCell>
-                <TableCell className="num text-right text-sm font-medium text-foreground">
-                  {row.odds.toFixed(2)}
-                </TableCell>
-                <TableCell className="num text-right text-sm text-muted-foreground">
-                  {`${(row.implied * 100).toFixed(1)}%`}
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    'num text-right text-sm font-medium',
-                    row.edge > 0 ? 'text-positive' : 'text-negative',
-                  )}
-                >
-                  {`${row.edge >= 0 ? '+' : ''}${(row.edge * 100).toFixed(1)}%`}
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    'num text-right text-sm font-bold',
-                    row.ev > 0 ? 'text-positive' : 'text-negative',
-                  )}
-                >
-                  {`${row.ev >= 0 ? '+' : ''}${row.ev.toFixed(2)}`}
-                </TableCell>
-                <TableCell className="text-right">
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold',
-                      isEvPositive && 'bg-positive/15 text-positive border border-positive/30',
-                      isAvoid && 'bg-negative/15 text-negative border border-negative/30',
-                      !isEvPositive && !isAvoid && 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    <span aria-hidden>{verdict.icon}</span>
-                    {verdict.label}
-                  </span>
-                </TableCell>
-              </TableRow>
+              <tr key={row.key} className="transition-colors hover:bg-surface/40">
+                <td className="px-3 py-2.5 font-medium text-foreground">{row.label}</td>
+                <td className="px-3 py-2.5 text-right font-mono font-medium tabular-nums text-foreground">{(row.probability * 100).toFixed(1)}%</td>
+                <td className="px-3 py-2.5 text-right font-mono font-medium tabular-nums text-foreground">{row.odds > 1 ? row.odds.toFixed(2) : '—'}</td>
+                <td className="px-3 py-2.5 text-right font-mono font-medium tabular-nums text-foreground">{row.implied ? `${(row.implied * 100).toFixed(1)}%` : '—'}</td>
+                <td className={cn('px-3 py-2.5 text-right font-mono font-medium tabular-nums', row.edge >= 0 ? 'text-positive' : 'text-foreground')}>{row.edge >= 0 ? '+' : ''}{(row.edge * 100).toFixed(1)}%</td>
+                <td className={cn('px-3 py-2.5 text-right font-mono font-medium tabular-nums', row.ev >= 0 ? 'text-positive' : 'text-foreground')}>{row.ev >= 0 ? '+' : ''}{(row.ev * 100).toFixed(1)}%</td>
+                <td className="px-3 py-2.5 text-right">
+                  <span className={cn('inline-flex rounded px-2 py-0.5 font-mono text-[10px] font-bold', verdict.className)}>{verdict.label}</span>
+                </td>
+              </tr>
             )
           })}
-        </TableBody>
-      </Table>
+        </tbody>
+      </table>
     </div>
   )
 }

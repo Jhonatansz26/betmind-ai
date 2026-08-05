@@ -217,7 +217,7 @@ def build_ticket_for_mode(
 
             # A model probability is not a bookmaker price. Without real odds
             # there is no market comparison and therefore no ticket candidate.
-            if bm_odds <= 1.0 or implied is None or ev is None:
+            if bm_odds is None or bm_odds <= 1.0 or implied is None or ev is None:
                 continue
 
             if mkt_name == "1X2_DRAW" and bm_odds < 2.10:

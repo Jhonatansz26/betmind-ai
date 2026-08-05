@@ -6,7 +6,6 @@ import { StarIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { MODE_META, type Ticket } from '@/lib/betmind'
 import { cn } from '@/lib/utils'
-import { ConfidenceBar } from './confidence-bar'
 import { TicketLeg } from './ticket-leg'
 import { addToTracking } from './tracking-panel'
 
@@ -42,19 +41,33 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
             {meta.label}
           </span>
 
-          {/* Combined odds — @ X.XX format */}
-          <span className="num font-mono text-2xl font-bold tracking-tight text-foreground">
-            @ {ticket.combinedOdds.toFixed(2)}
-          </span>
+          <div className="flex flex-col items-end">
+            <span className="font-mono text-4xl font-bold tabular-nums tracking-tight leading-none text-foreground">
+              {ticket.combinedOdds.toFixed(2)}
+            </span>
+            <span className="mt-0.5 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+              Cuota Combinada
+            </span>
+          </div>
         </div>
 
-        {/* Row 2: confidence bar */}
-        <ConfidenceBar score={ticket.confidence} />
-
-        {/* Row 3: EV average */}
-        <span className="num text-xs font-semibold text-positive">
-          +EV {(ticket.evAverage * 100).toFixed(1)}% promedio
-        </span>
+        <div className="my-2 flex items-center justify-between divide-x divide-border/50 rounded-lg border border-border/60 bg-surface/30 px-4 py-2 text-xs">
+          <div className="flex flex-col gap-0.5 pr-3">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-subtle">Confianza IA</span>
+            <span className="font-mono font-bold tabular-nums text-foreground">{ticket.confidence}%</span>
+          </div>
+          <div className="flex flex-col gap-0.5 px-3">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-subtle">+EV Promedio</span>
+            <span className="font-mono font-bold tabular-nums text-positive">+{(ticket.evAverage * 100).toFixed(1)}%</span>
+          </div>
+          <div className="flex flex-col gap-0.5 pl-3">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-subtle">Rango</span>
+            <span className="flex items-center gap-1 text-xs font-bold text-positive">
+              <span className="size-1.5 rounded-full bg-positive" aria-hidden />
+              En rango
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="mx-4 mb-3 rounded-lg border border-primary/15 bg-primary/[0.06] px-3 py-2.5">
@@ -72,7 +85,7 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
       </div>
 
       {/* ── LEGS — fills remaining vertical space ── */}
-      <ul className="flex flex-1 list-none flex-col gap-2 px-4 pb-4">
+      <ul className="flex flex-1 list-none flex-col px-4 pb-4">
         {ticket.legs.map((leg, i) => (
           <TicketLeg key={`${leg.match}-${leg.market}`} leg={leg} index={i} />
         ))}

@@ -15,6 +15,8 @@ from apps.api.schemas.ticket import (
     SaveTicketRequest,
     SavedTicketResponse,
     UpdateTicketStatusRequest,
+    ClaimTicketsRequest,
+    ClaimTicketsResponse,
 )
 from apps.api.core.enums import UPCOMING_MATCH_STATUSES
 from apps.api.models.bookmaker_odd import BookmakerOdd
@@ -66,6 +68,24 @@ async def update_ticket_status(
     if ticket is None:
         raise HTTPException(status_code=404, detail="Saved ticket not found")
     return ticket
+
+
+@router.post("/claim", response_model=ClaimTicketsResponse)
+async def claim_anonymous_tickets(
+    request: ClaimTicketsRequest,
+    session=Depends(get_async_session),
+):
+    # TODO: Usar current_user.id en Fase 2 cuando el dependency JWT esté activo.
+    current_user_id = 1
+    repository = TicketRepository(session)
+    claimed_count = await repository.claim_anonymous_tickets(
+        request.ticket_ids,
+        current_user_id,
+    )
+    return ClaimTicketsResponse(
+        claimed_count=claimed_count,
+        message=f"{claimed_count} boletos anónimos reclamados para la cuenta PRO.",
+    )
 
 
 def _ticket_window(date_filter: str | None) -> tuple[datetime, datetime]:
