@@ -4,6 +4,57 @@ Verifica que run_prediction() funcione correctamente y calcule las probabilidade
 """
 from betmind_ml.pipeline.prediction_pipeline import run_prediction
 from betmind_ml.schemas.prediction_output import PredictionVerdict
+from betmind_ml.models.poisson_engine import calculate_lambdas
+from betmind_ml.schemas.team_strength import TeamStrengthProfile
+
+
+def _strength(team_id: int, defense_index: float) -> TeamStrengthProfile:
+    return TeamStrengthProfile(
+        team_id=team_id,
+        team_name=f"Team {team_id}",
+        league_id=1,
+        season=2026,
+        attack_index=1.0,
+        defense_index=defense_index,
+        avg_goals_scored=1.35,
+        avg_goals_conceded=1.35,
+        form_points=7.5,
+        form_goal_diff=0.0,
+        form_matches_used=5,
+        h2h_matches_available=0,
+        h2h_win_rate=0.5,
+        h2h_avg_goals_scored=1.35,
+    )
+
+
+def test_stronger_home_defense_reduces_away_xg():
+    weak_home = _strength(1, 0.8)
+    strong_home = _strength(1, 1.6)
+    away = _strength(2, 1.0)
+
+    _, weak_defense_away_xg = calculate_lambdas(
+        weak_home, away, "default", 1.35, is_neutral_venue=True
+    )
+    _, strong_defense_away_xg = calculate_lambdas(
+        strong_home, away, "default", 1.35, is_neutral_venue=True
+    )
+
+    assert strong_defense_away_xg < weak_defense_away_xg
+
+
+def test_defense_index_above_one_divides_rival_attack_factor():
+    baseline_home = _strength(1, 1.0)
+    elite_home = _strength(1, 2.0)
+    away = _strength(2, 1.0)
+
+    _, baseline_away_xg = calculate_lambdas(
+        baseline_home, away, "default", 1.35, is_neutral_venue=True
+    )
+    _, elite_away_xg = calculate_lambdas(
+        elite_home, away, "default", 1.35, is_neutral_venue=True
+    )
+
+    assert elite_away_xg < baseline_away_xg
 
 
 def test_run_prediction_basic():

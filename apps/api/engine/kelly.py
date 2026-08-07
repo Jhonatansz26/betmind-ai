@@ -14,6 +14,9 @@ Quarter-Kelly (25% de Kelly):
 Esto reduce la varianza y el riesgo de ruina significativamente.
 """
 
+MIN_KELLY_STAKE = 0.0025
+MAX_KELLY_STAKE = 0.02
+
 
 def calculate_quarter_kelly(p_real: float, odds: float) -> float:
     """
@@ -49,8 +52,10 @@ def calculate_quarter_kelly(p_real: float, odds: float) -> float:
     # Quarter-Kelly (25% de Kelly completo)
     stake = 0.25 * f_star
     
-    # Asegurar que no sea negativo
-    return max(0.0, round(stake, 4))
+    if stake <= 0.0:
+        return 0.0
+
+    return round(min(MAX_KELLY_STAKE, max(MIN_KELLY_STAKE, stake)), 4)
 
 
 def calculate_kelly_percentage(p_real: float, odds: float) -> float:

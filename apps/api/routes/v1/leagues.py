@@ -9,9 +9,23 @@ from apps.api.dependencies import get_async_session
 from apps.api.models.league import League
 from apps.api.models.match import Match
 from apps.api.core.enums import UPCOMING_MATCH_STATUSES
+from apps.api.config import FEATURED_LEAGUES, FEATURED_LEAGUE_IDS
 
 router = APIRouter(prefix="/leagues", tags=["Leagues"])
 COT = ZoneInfo("America/Bogota")
+BIG_FIVE_IDS = {39, 140, 78, 135, 61}
+
+
+def _catalog_group(external_id: int, info: dict) -> str:
+    if external_id in BIG_FIVE_IDS:
+        return "Big 5 Europa"
+    if info.get("match_type") == "KNOCKOUT_CUP" and info.get("country") == "Europa":
+        return "Copas UEFA"
+    if info.get("country") in {
+        "Colombia", "Argentina", "Brasil", "Sudamerica", "Ecuador", "Chile", "Peru",
+    }:
+        return "Sudamérica"
+    return "OTRAS LIGAS ACTIVAS"
 
 
 @router.get("/")
@@ -50,13 +64,24 @@ async def list_leagues(
             match_count_subquery.c.match_count.label("active_matches"),
         )
         .join(match_count_subquery, League.id == match_count_subquery.c.league_id)
+        .where(League.external_id.in_(FEATURED_LEAGUE_IDS))
         .order_by(League.name)
     )
 
     result = await db.execute(stmt)
+    key_by_external_id = {
+        info["api_football_id"]: key
+        for key, info in FEATURED_LEAGUES.items()
+    }
     leagues = []
     for row in result:
+        league_key = key_by_external_id.get(row.external_id)
+        if league_key is None:
+            continue
+        league_info = FEATURED_LEAGUES[league_key]
         leagues.append({
+            "key": league_key,
+            "group": _catalog_group(row.external_id, league_info),
             "id": row.id,
             "external_id": row.external_id,
             "name": row.name,

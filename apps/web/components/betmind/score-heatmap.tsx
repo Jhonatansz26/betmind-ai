@@ -94,7 +94,7 @@ export function ScoreHeatmap({
                   <div
                     key={a}
                     className={cn(
-                      'flex flex-1 aspect-square items-center justify-center rounded-sm cursor-default transition-all duration-150',
+                      'flex flex-1 aspect-square items-center justify-center rounded-sm cursor-default transition-colors duration-150',
                       isTop && 'ring-1 ring-inset ring-[#6366f1]/60',
                       isHovered && 'scale-110 z-10 ring-1 ring-inset ring-white/30',
                     )}

@@ -24,9 +24,15 @@ from apps.api.models.match import Match
 from apps.api.models.league import League
 from apps.api.repositories.match_repository import LEAGUE_KEY_TO_EXTERNAL_ID
 from apps.api.engine.ticket_builder import build_ticket_for_mode
-from apps.api.dependencies import get_async_session, get_cache_service
+from apps.api.dependencies import (
+    get_async_session,
+    get_cache_service,
+    get_current_user_id,
+    get_optional_user_id,
+)
 from apps.api.repositories.ticket_repository import TicketRepository
 from betmind_ml.ev.ev_calculator import calculate_ev_metrics
+from betmind_ml.config import EV_POSITIVE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +45,7 @@ COT = ZoneInfo("America/Bogota")
 async def save_ticket(
     request: SaveTicketRequest,
     session=Depends(get_async_session),
+    current_user_id: int | None = Depends(get_optional_user_id),
 ):
     """Persist a ticket snapshot for the user's tracking history."""
     repository = TicketRepository(session)
@@ -46,15 +53,17 @@ async def save_ticket(
         ticket_data=request.ticket_data,
         total_odds=request.total_odds,
         total_ev=request.total_ev,
+        user_id=current_user_id,
     )
 
 
 @router.get("/history", response_model=list[SavedTicketResponse])
 async def get_ticket_history(
     session=Depends(get_async_session),
+    current_user_id: int = Depends(get_current_user_id),
 ):
     repository = TicketRepository(session)
-    return await repository.list_history()
+    return await repository.list_history(current_user_id)
 
 
 @router.patch("/{ticket_id}/status", response_model=SavedTicketResponse)
@@ -62,9 +71,10 @@ async def update_ticket_status(
     ticket_id: int,
     request: UpdateTicketStatusRequest,
     session=Depends(get_async_session),
+    current_user_id: int = Depends(get_current_user_id),
 ):
     repository = TicketRepository(session)
-    ticket = await repository.update_status(ticket_id, request.status.value)
+    ticket = await repository.update_status(ticket_id, request.status.value, current_user_id)
     if ticket is None:
         raise HTTPException(status_code=404, detail="Saved ticket not found")
     return ticket
@@ -74,9 +84,8 @@ async def update_ticket_status(
 async def claim_anonymous_tickets(
     request: ClaimTicketsRequest,
     session=Depends(get_async_session),
+    current_user_id: int = Depends(get_current_user_id),
 ):
-    # TODO: Usar current_user.id en Fase 2 cuando el dependency JWT esté activo.
-    current_user_id = 1
     repository = TicketRepository(session)
     claimed_count = await repository.claim_anonymous_tickets(
         request.ticket_ids,
@@ -88,7 +97,10 @@ async def claim_anonymous_tickets(
     )
 
 
-def _ticket_window(date_filter: str | None) -> tuple[datetime, datetime]:
+def _ticket_window(
+    date_filter: str | None,
+    horizon_hours: int = 48,
+) -> tuple[datetime, datetime]:
     """Return UTC bounds for the requested local COT calendar day.
 
     Comparing UTC bounds is equivalent to ``date(match_date AT TIME ZONE
@@ -109,15 +121,20 @@ def _ticket_window(date_filter: str | None) -> tuple[datetime, datetime]:
             target = now_cot.date()
     else:
         now_utc = now_cot.astimezone(timezone.utc)
-        return now_utc - timedelta(hours=2), now_utc + timedelta(hours=36)
+        return now_utc - timedelta(hours=2), now_utc + timedelta(hours=horizon_hours)
 
     start_cot = datetime.combine(target, datetime.min.time(), tzinfo=COT)
     end_cot = datetime.combine(target, datetime.max.time(), tzinfo=COT)
     return start_cot.astimezone(timezone.utc), end_cot.astimezone(timezone.utc)
 
 
-async def _read_stored_predictions(session, date_filter: str | None, league_filter: list[str] | None):
-    start_utc, end_utc = _ticket_window(date_filter)
+async def _read_stored_predictions(
+    session,
+    date_filter: str | None,
+    league_filter: list[str] | None,
+    horizon_hours: int = 48,
+):
+    start_utc, end_utc = _ticket_window(date_filter, horizon_hours=horizon_hours)
     conditions = [
         Match.status.in_(UPCOMING_MATCH_STATUSES),
         Match.match_date >= start_utc,
@@ -179,7 +196,7 @@ def _stored_market_rows(match: Match, odds_by_match: dict[int, dict[str, float]]
             implied, edge, expected_value = calculate_ev_metrics(
                 probability, bookmaker_odds, odds, name
             )
-            verdict = "POSITIVE_VALUE" if expected_value >= 0.05 else "NO_VALUE"
+            verdict = "POSITIVE_VALUE" if expected_value is not None and expected_value >= EV_POSITIVE_THRESHOLD else "NO_VALUE"
         else:
             implied = edge = expected_value = None
             verdict = "NO_ODDS_AVAILABLE"
@@ -194,6 +211,97 @@ def _stored_market_rows(match: Match, odds_by_match: dict[int, dict[str, float]]
             "verdict": verdict,
         })
     return rows
+
+
+_MARKET_CATEGORY_PREFIXES: dict[str, tuple[str, ...]] = {
+    "GOALS": ("1X2_", "OVER_", "UNDER_", "BTTS_"),
+    "CORNERS": ("CORNERS_",),
+    "1X2": ("1X2_",),
+    "CARDS": ("CARDS_",),
+    "SHOTS": ("SHOTS_",),
+}
+
+
+def _market_matches_categories(market_name: str, categories: set[str]) -> bool:
+    normalized = market_name.upper()
+    return any(
+        normalized.startswith(prefix)
+        for category in categories
+        for prefix in _MARKET_CATEGORY_PREFIXES.get(category, ())
+    )
+
+
+def _positive_ev_count(
+    predictions: list[dict],
+    markets: set[str] | None = None,
+) -> int:
+    return sum(
+        1
+        for prediction in predictions
+        for market in prediction["markets"]
+        if market["expected_value"] is not None
+        and market["expected_value"] >= EV_POSITIVE_THRESHOLD
+        and (not markets or _market_matches_categories(market["market_name"], markets))
+    )
+
+
+def _merge_prediction_sources(
+    matches: list[Match],
+    odds_map: dict[int, dict[str, float]],
+    additional_matches: list[Match],
+    additional_odds: dict[int, dict[str, float]],
+) -> tuple[list[Match], dict[int, dict[str, float]]]:
+    by_id = {match.id: match for match in matches}
+    by_id.update({match.id: match for match in additional_matches})
+    merged_odds = {**odds_map}
+    for match_id, odds in additional_odds.items():
+        merged_odds.setdefault(match_id, {}).update(odds)
+    return sorted(by_id.values(), key=lambda match: match.match_date), merged_odds
+
+
+def _prediction_rows(
+    matches: list[Match],
+    odds_map: dict[int, dict[str, float]],
+) -> list[dict]:
+    rows: list[dict] = []
+    for match in matches:
+        try:
+            markets = _stored_market_rows(match, odds_map)
+            if not markets:
+                continue
+            rows.append({
+                "match_id": match.id,
+                "home_team": match.home_team.name,
+                "away_team": match.away_team.name,
+                "league": match.league.name,
+                "league_key": next(
+                    (
+                        key for key, external_id in LEAGUE_KEY_TO_EXTERNAL_ID.items()
+                        if external_id == match.league.external_id
+                    ),
+                    None,
+                ),
+                "match_time_cot": _format_cot_time(match.match_date),
+                "xg_home": getattr(match.predictions[0], "lambda_home", None),
+                "xg_away": getattr(match.predictions[0], "lambda_away", None),
+                "reasoning": getattr(match.predictions[0], "reasoning", None),
+                "markets": markets,
+            })
+        except Exception:
+            logger.warning("Error processing prediction for match_id=%s", match.id, exc_info=True)
+    return rows
+
+
+def _bridge_market_categories(markets: set[str]) -> set[str]:
+    """Expand only to related categories; the builder still enforces +EV."""
+    bridged = set(markets)
+    if "CORNERS" in markets:
+        bridged.update({"SHOTS", "GOALS"})
+    if "SHOTS" in markets:
+        bridged.add("GOALS")
+    if "CARDS" in markets:
+        bridged.add("GOALS")
+    return bridged
 
 
 @router.post(
@@ -214,8 +322,13 @@ async def generate_tickets(
     now_cot = datetime.now(COT)
     start_utc, end_utc = _ticket_window(date_filter)
     window_slug = f"{start_utc.strftime('%Y%m%d%H')}_{end_utc.strftime('%Y%m%d%H')}"
-    leagues_slug = ",".join(sorted(request.league_filter or [])) or "all"
-    cache_key = f"tickets:stored:{date_filter or 'rolling'}:{window_slug}:{leagues_slug}"
+    normalized_league_keys = {
+        str(key).strip().lower() for key in (request.league_keys or []) if str(key).strip()
+    }
+    requested_leagues = normalized_league_keys or request.league_filter
+    leagues_slug = ",".join(sorted(requested_leagues or [])) or "all"
+    markets_slug = ",".join(sorted(request.markets or [])) or "all"
+    cache_key = f"tickets:stored:{date_filter or 'rolling'}:{window_slug}:{leagues_slug}:{markets_slug}:{request.selection_count or 'default'}"
 
     if not request.force_refresh:
         if cached := await cache.get(cache_key, TicketGenerateResponse):
@@ -224,10 +337,35 @@ async def generate_tickets(
             return cached
 
     all_matches, odds_map = await _read_stored_predictions(
-        session, date_filter, request.league_filter
+        session, date_filter, requested_leagues
     )
 
-    if not all_matches:
+    requested_markets = {market.upper() for market in (request.markets or [])}
+    all_predictions = _prediction_rows(all_matches, odds_map)
+    target_opportunities = request.selection_count or 1
+
+    # Horizon shifting is only activated for today's sparse catalog. It first
+    # checks +24h and then +48h, merging only rows that later pass the same
+    # positive-EV candidate filter.
+    if date_filter and date_filter.lower() == "today":
+        for horizon_hours in (24, 48):
+            if _positive_ev_count(all_predictions, requested_markets) >= target_opportunities:
+                break
+            shifted_matches, shifted_odds = await _read_stored_predictions(
+                session,
+                "all",
+                requested_leagues,
+                horizon_hours=horizon_hours,
+            )
+            all_matches, odds_map = _merge_prediction_sources(
+                all_matches,
+                odds_map,
+                shifted_matches,
+                shifted_odds,
+            )
+            all_predictions = _prediction_rows(all_matches, odds_map)
+
+    if not all_predictions:
         empty_response = TicketGenerateResponse(
             generated_at=datetime.now(COT).isoformat(),
             tickets=[],
@@ -238,35 +376,27 @@ async def generate_tickets(
         await cache.set(cache_key, empty_response, ttl=30)
         return empty_response
 
-    all_predictions = []
-
-    for match in all_matches:
-        try:
-            markets = _stored_market_rows(match, odds_map)
-
-            if markets:
-                all_predictions.append({
-                    "match_id": match.id,
-                    "home_team": match.home_team.name,
-                    "away_team": match.away_team.name,
-                    "league": match.league.name,
-                    "match_time_cot": _format_cot_time(match.match_date),
-                    "markets": markets,
-                })
-        except Exception:
-            logger.warning("Error processing prediction for match_id=%s", match.id, exc_info=True)
-            continue
-
-    total_ev = sum(
-        1 for pred in all_predictions
-        for mkt in pred["markets"]
-        if mkt["expected_value"] is not None and mkt["expected_value"] > 0.05
+    bridge_markets = _bridge_market_categories(requested_markets)
+    builder_markets = (
+        bridge_markets
+        if requested_markets
+        and _positive_ev_count(all_predictions, requested_markets) < target_opportunities
+        else requested_markets
     )
+
+    total_ev = _positive_ev_count(all_predictions, builder_markets)
 
     tickets = []
     used_match_ids: set[int] = set()
     for mode in request.modes:
-        ticket = build_ticket_for_mode(mode, all_predictions, exclude_match_ids=used_match_ids)
+        ticket = build_ticket_for_mode(
+            mode,
+            all_predictions,
+            exclude_match_ids=used_match_ids,
+            requested_count=request.selection_count,
+            league_keys=normalized_league_keys,
+            markets=builder_markets,
+        )
         if ticket:
             tickets.append(ticket)
             for leg in ticket.legs:

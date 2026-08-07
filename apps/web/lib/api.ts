@@ -1,5 +1,6 @@
 import type { Mode, Ticket, TicketLegData, Match, MatchStatus, TacticalFactor, Referee, MarketOdds } from './betmind'
 import { resolveLeague } from './league-metadata'
+import { formatEV } from './formatters'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 const API_TIMEOUT_MS = 12_000
@@ -13,6 +14,23 @@ export type ApiResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: ApiError }
 
+function getStoredAuthToken(): string | null {
+  if (typeof window === 'undefined') return null
+  const keys = Object.keys(window.localStorage).filter((key) => (
+    (key.startsWith('sb-') && key.endsWith('-auth-token'))
+    || key === 'betmind_access_token'
+  ))
+  for (const key of keys) {
+    try {
+      const value = JSON.parse(window.localStorage.getItem(key) ?? '') as { access_token?: unknown }
+      if (typeof value.access_token === 'string' && value.access_token) return value.access_token
+    } catch {
+      // Ignore unrelated or expired local storage entries.
+    }
+  }
+  return null
+}
+
 /** Single HTTP boundary: normalizes transport, timeout and API failures. */
 export async function apiFetch<T>(
   input: RequestInfo | URL,
@@ -22,7 +40,12 @@ export async function apiFetch<T>(
   const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
 
   try {
-    const response = await fetch(input, { ...init, signal: controller.signal })
+    const headers = new Headers(init.headers)
+    const token = getStoredAuthToken()
+    if (token && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${token}`)
+    }
+    const response = await fetch(input, { ...init, headers, signal: controller.signal })
     if (!response.ok) {
       let detail = `No se pudo completar la solicitud (${response.status}).`
       try {
@@ -54,93 +77,6 @@ export async function apiFetch<T>(
   }
 }
 
-export const COUNTRY_ISO: Record<string, string> = {
-  'England': 'GB-ENG',
-  'Spain': 'ES',
-  'Germany': 'DE',
-  'Italy': 'IT',
-  'France': 'FR',
-  'Colombia': 'CO',
-  'Brazil': 'BR',
-  'Argentina': 'AR',
-  'Mexico': 'MX',
-  'USA': 'US',
-  'Chile': 'CL',
-  'Ecuador': 'EC',
-  'Peru': 'PE',
-  'Sweden': 'SE',
-  'Denmark': 'DK',
-  'Switzerland': 'CH',
-  'Portugal': 'PT',
-}
-
-export function isoToFlagEmoji(code: string): string {
-  if (code === 'GB-ENG') return '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}'
-  return code
-    .toUpperCase()
-    .split('')
-    .map((c) => String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0)))
-    .join('')
-}
-
-/**
- * @deprecated Use `resolveLeague()` from `@/lib/league-metadata` instead.
- * Kept for backward compatibility with components not yet migrated.
- */
-export function flagForCountry(country: string | null | undefined, fallbackLeague?: string): string {
-  if (country && COUNTRY_ISO[country]) {
-    return isoToFlagEmoji(COUNTRY_ISO[country])
-  }
-  if (fallbackLeague) {
-    if (fallbackLeague.includes('Premier League') || fallbackLeague === 'England') return isoToFlagEmoji('GB-ENG')
-    if (fallbackLeague.includes('LaLiga') || fallbackLeague.includes('Spain')) return isoToFlagEmoji('ES')
-    if (fallbackLeague.includes('Bundesliga') || fallbackLeague.includes('Germany')) return isoToFlagEmoji('DE')
-    if (fallbackLeague.includes('Ligue 1') || fallbackLeague.includes('France')) return isoToFlagEmoji('FR')
-    if (fallbackLeague.includes('BetPlay') || fallbackLeague.includes('Colombia')) return isoToFlagEmoji('CO')
-    if (fallbackLeague.includes('Serie A') && fallbackLeague.includes('Brazil')) return isoToFlagEmoji('BR')
-    if (fallbackLeague.includes('Brazil') || fallbackLeague.includes('Brasileir')) return isoToFlagEmoji('BR')
-    if (fallbackLeague.includes('Profesional') || fallbackLeague.includes('Argentina')) return isoToFlagEmoji('AR')
-    if (fallbackLeague.includes('MX') || fallbackLeague.includes('Mexico')) return isoToFlagEmoji('MX')
-    if (fallbackLeague.includes('MLS') || fallbackLeague.includes('Major League Soccer') || fallbackLeague.includes('USA')) return isoToFlagEmoji('US')
-    if (fallbackLeague.includes('Serie A')) return isoToFlagEmoji('IT')
-  }
-  return '\u{1F3C1}'
-}
-
-/**
- * @deprecated Use `resolveLeague()` from `@/lib/league-metadata` instead.
- * Kept for backward compatibility with components not yet migrated.
- */
-export function formatCompositeLeagueName(name: string, country?: string | null): string {
-  if (country) {
-    if (name.toLowerCase().includes(country.toLowerCase())) {
-      return name
-    }
-    return `${name} · ${country}`
-  }
-  if (name === 'Serie A') return 'Serie A · Italia'
-  return name
-}
-
-export const LEAGUE_ID_MAP: Record<number, string> = {
-  39: 'epl',
-  140: 'laliga',
-  78: 'bundesliga',
-  135: 'seriea',
-  61: 'ligue1',
-  239: 'betplay',
-  71: 'brasileirao',
-  128: 'profesional',
-  262: 'ligamx',
-  253: 'mls',
-  274: 'primera_chile',
-  275: 'liga_pro_ecu',
-  294: 'liga_1_peru',
-  113: 'allsvenskan',
-  119: 'superliga_den',
-  207: 'super_league_sui',
-}
-
 const MODE_GLYPHS: Record<Mode, string> = {
   EDGE: '\u{2B21}',
   VALUE: '\u{25C8}',
@@ -160,6 +96,14 @@ interface BackendLeg {
   edge_percentage: number
   expected_value: number
   kelly_stake?: number
+  xg_home?: number | null
+  xg_away?: number | null
+  fair_prob?: number | null
+  bookmaker_prob?: number | null
+  edge?: number | null
+  variance_note?: string | null
+  reasoning?: string | null
+  confidence_score?: number
   match_time_cot: string
 }
 
@@ -175,6 +119,9 @@ interface BackendTicket {
   pros: string[]
   cons: string[]
   staking_suggestion: string
+  replacement_candidates?: BackendLeg[]
+  optimized_count?: boolean
+  original_requested?: number | null
 }
 
 interface BackendResponse {
@@ -186,13 +133,22 @@ interface BackendResponse {
 
 function mapLeg(leg: BackendLeg): TicketLegData {
   return {
-    flag: flagForCountry(null, leg.league),
+    flag: resolveLeague(null, leg.league).flag,
     match: `${leg.home_team} vs ${leg.away_team}`,
     market: leg.market_label,
     prob: leg.our_probability,
     odds: leg.bookmaker_odds,
     ev: leg.expected_value,
-    reason: 'Cuota real comparada contra el modelo Poisson',
+    reason: leg.reasoning ?? 'Cuota real comparada contra el modelo Poisson',
+    reasoning: leg.reasoning ?? undefined,
+    xgHome: leg.xg_home,
+    xgAway: leg.xg_away,
+    fairProb: leg.fair_prob ?? leg.our_probability,
+    bookmakerProb: leg.bookmaker_prob ?? leg.implied_probability,
+    edge: leg.edge ?? leg.edge_percentage / 100,
+    kellyStake: leg.kelly_stake ?? 0,
+    varianceNote: leg.variance_note ?? 'Estadísticamente consistente',
+    confidenceScore: leg.confidence_score,
   }
 }
 
@@ -215,12 +171,15 @@ function mapBackendTicket(raw: BackendTicket): Ticket {
     cons: raw.cons,
     rationale: [
       'Modelo Poisson calibrado',
-      `+${(raw.average_ev * 100).toFixed(1)}% EV medio`,
+      `${formatEV(raw.average_ev)} EV medio`,
       `${raw.confidence_score}% de confianza del modelo`,
       raw.correlation_validated
         ? 'Validación de correlación negativa superada'
         : 'Selecciones independientes, sin correlación detectada',
     ],
+    optimizedCount: raw.optimized_count,
+    originalRequested: raw.original_requested,
+    replacementCandidates: raw.replacement_candidates?.map(mapLeg) ?? [],
   }
 }
 
@@ -254,6 +213,19 @@ export async function saveTicket(ticket: Ticket): Promise<ApiResult<SavedTicketR
   })
 }
 
+export interface ClaimTicketsResponse {
+  claimed_count: number
+  message: string
+}
+
+export async function claimAnonymousTickets(ticketIds: number[]): Promise<ApiResult<ClaimTicketsResponse>> {
+  return apiFetch<ClaimTicketsResponse>(`${API_BASE}/api/v1/tickets/claim`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticket_ids: ticketIds }),
+  })
+}
+
 export async function fetchTicketHistory(): Promise<ApiResult<SavedTicketRecord[]>> {
   return apiFetch<SavedTicketRecord[]>(`${API_BASE}/api/v1/tickets/history`)
 }
@@ -271,8 +243,10 @@ export async function updateTicketStatus(
 
 export async function fetchTickets(
   modes: Mode[] = ['EDGE', 'VALUE', 'BOLD'],
-  leagueFilter?: string[],
+  leagueKeys?: string[],
   dateFilter?: string,
+  selectionCount?: number,
+  markets?: string[],
 ): Promise<ApiResult<TicketFetchResult>> {
   const url = new URL(`${API_BASE}/api/v1/tickets/generate`)
   if (dateFilter) {
@@ -282,9 +256,11 @@ export async function fetchTickets(
   const body: Record<string, unknown> = {
     modes: modes.map((m) => m.toLowerCase()),
   }
-  if (leagueFilter?.length) {
-    body.league_filter = leagueFilter
+  if (leagueKeys?.length) {
+    body.league_keys = leagueKeys
   }
+  if (selectionCount) body.selection_count = selectionCount
+  if (markets?.length) body.markets = markets
 
   const result = await apiFetch<BackendResponse>(url.toString(), {
     method: 'POST',
@@ -349,7 +325,7 @@ interface BackendMatchesResponse {
 }
 
 function mapBackendMatch(raw: BackendMatch): Match {
-  const leagueId = LEAGUE_ID_MAP[raw.league_external_id ?? raw.league_id] ?? 'other'
+  const leagueId = String(raw.league_external_id ?? raw.league_id ?? 'other')
   const leagueMeta = resolveLeague(raw.league_external_id, raw.league_name)
   const leagueName = leagueMeta.name
   const flag = leagueMeta.flag
@@ -426,7 +402,7 @@ function mapBackendMatch(raw: BackendMatch): Match {
     id: String(raw.id),
     leagueId,
     leagueExternalId: raw.league_external_id,
-    league: formatCompositeLeagueName(leagueName, raw.league_country),
+    league: leagueName,
     leagueCountry: raw.league_country,
     matchType: raw.match_type ?? 'LEAGUE',
     flag,
@@ -582,6 +558,8 @@ function dedupeMatches(matches: Match[]): Match[] {
 }
 
 export interface LeagueData {
+  key: string
+  group?: string
   id: number
   external_id: number
   name: string

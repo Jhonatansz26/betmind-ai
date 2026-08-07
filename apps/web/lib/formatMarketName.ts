@@ -1,3 +1,5 @@
+import { formatDecimal } from './formatters'
+
 const EXACT_NAMES: Record<string, string> = {
   double_1x: 'Doble Oportunidad 1X (Local/Empate)',
   double_x2: 'Doble Oportunidad X2 (Empate/Visitante)',
@@ -6,42 +8,71 @@ const EXACT_NAMES: Record<string, string> = {
   dnb_away: 'Empate No Válido: Visitante (DNB)',
   btts_yes: 'Ambos Anotan: Sí',
   btts_no: 'Ambos Anotan: No',
-  '1x2_home': 'Gana Local',
-  '1x2_draw': 'Empate',
-  '1x2_away': 'Gana Visitante',
+  '1x2_home': 'Ganador Local (1)',
+  home_win: 'Ganador Local (1)',
+  '1x2_draw': 'Empate (X)',
+  draw: 'Empate (X)',
+  '1x2_away': 'Ganador Visitante (2)',
+  away_win: 'Ganador Visitante (2)',
 }
 
-function prettifyLine(line: string, prefix: string) {
-  const value = line.replace(/_/g, '.').replace(/\s+/g, '')
-  return `${prefix} ${value} Goles`
+function decimal(value: string, fraction: string): string {
+  return formatDecimal(`${value}.${fraction}`, 1)
 }
 
-export function formatMarketName(raw: string): string {
-  const normalized = raw.trim().toLowerCase().replace(/\s+/g, '_')
-  if (EXACT_NAMES[normalized]) return EXACT_NAMES[normalized]
+function titleCase(value: string): string {
+  return value.replace(/(^|\s)\S/g, (character) => character.toUpperCase())
+}
 
-  const over = normalized.match(/^(?:over|más_de|mas_de)_(\d+)[_.](\d+)$/)
-  if (over) return prettifyLine(`${over[1]}_${over[2]}`, 'Más de')
+export function formatMarketName(rawMarket: string): string {
+  const raw = rawMarket.trim()
+  if (!raw) return ''
 
-  const under = normalized.match(/^(?:under|menos_de)_(\d+)[_.](\d+)$/)
-  if (under) return prettifyLine(`${under[1]}_${under[2]}`, 'Menos de')
+  const normalized = raw
+    .toLowerCase()
+    .replace(/[–—−]/g, '-')
+    .replace(/\s+/g, '_')
+  const exact = EXACT_NAMES[normalized]
+  if (exact) return exact
 
-  const teamGoals = normalized.match(/^(home|away)_over_(\d+)_(\d+)$/)
-  if (teamGoals) return `${teamGoals[1] === 'home' ? 'Local' : 'Visitante'} · Más de ${teamGoals[2]}.${teamGoals[3]} Goles`
+  const spanishLine = normalized.match(/^(más|mas|menos)_de_(\d+)[_.](\d+)_goles$/)
+  if (spanishLine) {
+    return `${spanishLine[1] === 'menos' ? 'Menos de' : 'Más de'} ${decimal(spanishLine[2], spanishLine[3])} Goles`
+  }
 
-  const corners = normalized.match(/^corners_(over|under)_(\d+)_(\d+)$/)
-  if (corners) return `Córneres · ${corners[1] === 'over' ? 'Más de' : 'Menos de'} ${corners[2]}.${corners[3]}`
+  const line = normalized.match(/^(?:o|over)_?(\d+)[_.](\d+)$/)
+  if (line) return `Más de ${decimal(line[1], line[2])} Goles`
 
-  const cards = normalized.match(/^cards_(over|under)_(\d+)_(\d+)$/)
-  if (cards) return `Tarjetas · ${cards[1] === 'over' ? 'Más de' : 'Menos de'} ${cards[2]}.${cards[3]}`
+  const under = normalized.match(/^(?:u|under)_?(\d+)[_.](\d+)$/)
+  if (under) return `Menos de ${decimal(under[1], under[2])} Goles`
 
-  const shots = normalized.match(/^shots_ot_(over|under)_(\d+)_(\d+)$/)
-  if (shots) return `Remates a puerta · ${shots[1] === 'over' ? 'Más de' : 'Menos de'} ${shots[2]}.${shots[3]}`
+  const corners = normalized.match(/^corners_(over|under)_(\d+)[_.](\d+)$/)
+  if (corners) {
+    return `${corners[1] === 'over' ? 'Más de' : 'Menos de'} ${decimal(corners[2], corners[3])} Córneres`
+  }
 
-  const words = normalized
-    .replace(/_/g, ' ')
-    .replace(/\b(ot|ot)\b/g, 'a puerta')
+  const cards = normalized.match(/^cards_(over|under)_(\d+)[_.](\d+)$/)
+  if (cards) {
+    return `${cards[1] === 'over' ? 'Más de' : 'Menos de'} ${decimal(cards[2], cards[3])} Tarjetas`
+  }
+
+  const shots = normalized.match(/^shots(?:_ot)?_(over|under)_(\d+)[_.](\d+)$/)
+  if (shots) {
+    return `${shots[1] === 'over' ? 'Más de' : 'Menos de'} ${decimal(shots[2], shots[3])} Remates al Arco`
+  }
+
+  // Covers future engine variants while keeping decimals and Spanish labels stable.
+  let fallback = normalized.replace(/(\d+)[_ ](\d+)/g, '$1.$2').replace(/_/g, ' ')
+  fallback = fallback
+    .replace(/\bover\b/gi, 'Más de')
+    .replace(/\bunder\b/gi, 'Menos de')
+    .replace(/\bcorners?\b/gi, 'Córneres')
+    .replace(/\bcards?\b/gi, 'Tarjetas')
+    .replace(/\bshots?(?: ot)?\b/gi, 'Remates al Arco')
+    .replace(/\bbtts yes\b/gi, 'Ambos Anotan: Sí')
+    .replace(/\bbtts no\b/gi, 'Ambos Anotan: No')
+    .replace(/\s+/g, ' ')
     .trim()
 
-  return words.replace(/(^|\s)\S/g, (character) => character.toUpperCase())
+  return titleCase(fallback)
 }

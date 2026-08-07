@@ -1,84 +1,77 @@
 'use client'
 
-import * as React from 'react'
+import { CalendarDays } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
-export type DateFilter = 'yesterday' | 'today' | 'tomorrow' | 'all'
-
-const OPTIONS: { value: DateFilter; label: string }[] = [
-  { value: 'yesterday', label: 'Ayer' },
-  { value: 'today', label: 'Hoy' },
-  { value: 'tomorrow', label: 'Mañana' },
-  { value: 'all', label: 'Todas' },
-]
+export type DateFilter = 'today' | 'tomorrow' | 'all'
 
 interface DateSelectorProps {
   value: DateFilter
   onChange: (value: DateFilter) => void
-  className?: string
 }
 
-export function DateSelector({ value, onChange, className }: DateSelectorProps) {
-  const dateInfo = formatDateTitle(value, new Date())
+const OPTIONS: Array<{ id: DateFilter; label: string }> = [
+  { id: 'today', label: 'Hoy' },
+  { id: 'tomorrow', label: 'Mañana' },
+  { id: 'all', label: 'Todas' },
+]
 
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Filtrar por fecha"
-      className={cn('flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-surface/30 p-1 text-xs', className)}
-    >
-      {OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          role="radio"
-          aria-checked={value === opt.value}
-          onClick={() => onChange(opt.value)}
-          className={cn(
-            'rounded-md px-3 py-1.5 text-xs transition-colors',
-            value === opt.value
-              ? 'border border-primary/30 bg-primary/15 font-semibold text-primary shadow-sm'
-              : 'text-muted-foreground hover:bg-surface/50 hover:text-foreground',
-          )}
-        >
-          {opt.label}
-        </button>
-      ))}
-      <span className="ml-auto hidden items-baseline gap-1.5 border-l border-border/50 pl-2 font-mono tabular-nums sm:flex">
-        <span className="text-xs font-bold text-foreground">{dateInfo.subtitle.split(' · ')[0]}</span>
-        <span className="text-[10px] text-muted-foreground">{dateInfo.subtitle.split(' · ')[1]}</span>
-      </span>
-    </div>
-  )
-}
-
-export function formatDateTitle(filter: DateFilter, today: Date): { title: string; subtitle: string } {
-  const fmt = new Intl.DateTimeFormat('es-CO', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
+function cotDate(date: Date) {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Bogota',
-  })
-
-  const date = new Date(today)
-  if (filter === 'yesterday') date.setDate(date.getDate() - 1)
-  if (filter === 'tomorrow') date.setDate(date.getDate() + 1)
-
-  const iso = new Intl.DateTimeFormat('en-CA', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-    timeZone: 'America/Bogota',
   }).format(date)
-
-  if (filter === 'all') return { title: 'Todos los Partidos', subtitle: `${iso} · ${fmt.format(today)}` }
-  const title = filter === 'yesterday' ? 'Ayer' : filter === 'tomorrow' ? 'Mañana' : 'Hoy'
-  return { title, subtitle: `${iso} · ${fmt.format(date)}` }
 }
 
-export function formatDateKey(filter: DateFilter, today: Date): string | undefined {
+export function formatDateKey(filter: DateFilter, date = new Date()) {
   if (filter === 'all') return undefined
-  return formatDateTitle(filter, today).subtitle.split(' · ')[0]
+  const next = new Date(date)
+  if (filter === 'tomorrow') next.setUTCDate(next.getUTCDate() + 1)
+  return cotDate(next)
+}
+
+export function formatDateTitle(filter: DateFilter, date = new Date()) {
+  if (filter === 'all') {
+    return { title: 'Todas las oportunidades', subtitle: 'Ventana completa de partidos disponibles' }
+  }
+
+  const target = new Date(date)
+  if (filter === 'tomorrow') target.setUTCDate(target.getUTCDate() + 1)
+
+  return {
+    title: filter === 'today' ? 'Hoy' : 'Mañana',
+    subtitle: new Intl.DateTimeFormat('es-CO', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      timeZone: 'America/Bogota',
+    }).format(target),
+  }
+}
+
+export function DateSelector({ value, onChange }: DateSelectorProps) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-surface/70 p-1" role="group" aria-label="Ventana temporal">
+      <CalendarDays className="ml-2 size-4 text-subtle" aria-hidden="true" />
+      {OPTIONS.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          aria-pressed={value === option.id}
+          onClick={() => onChange(option.id)}
+          className={cn(
+            'rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
+            value === option.id
+              ? 'bg-surface-raised text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
 }

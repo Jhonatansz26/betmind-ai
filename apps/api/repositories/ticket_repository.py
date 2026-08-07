@@ -14,34 +14,39 @@ class TicketRepository:
         total_odds: float,
         total_ev: float,
         status: str = "PENDING",
+        user_id: int | None = None,
     ) -> SavedTicket:
         ticket = SavedTicket(
             ticket_data=ticket_data,
             total_odds=total_odds,
             total_ev=total_ev,
             status=status,
+            user_id=user_id,
         )
         self._session.add(ticket)
         await self._session.flush()
         await self._session.refresh(ticket)
         return ticket
 
-    async def list_history(self, limit: int = 100) -> list[SavedTicket]:
+    async def list_history(self, user_id: int, limit: int = 100) -> list[SavedTicket]:
         result = await self._session.execute(
-            select(SavedTicket)
+            select(SavedTicket).where(SavedTicket.user_id == user_id)
             .order_by(SavedTicket.created_at.desc())
             .limit(limit)
         )
         return list(result.scalars().all())
 
-    async def get_by_id(self, ticket_id: int) -> SavedTicket | None:
+    async def get_by_id(self, ticket_id: int, user_id: int | None = None) -> SavedTicket | None:
+        conditions = [SavedTicket.id == ticket_id]
+        if user_id is not None:
+            conditions.append(SavedTicket.user_id == user_id)
         result = await self._session.execute(
-            select(SavedTicket).where(SavedTicket.id == ticket_id)
+            select(SavedTicket).where(*conditions)
         )
         return result.scalar_one_or_none()
 
-    async def update_status(self, ticket_id: int, status: str) -> SavedTicket | None:
-        ticket = await self.get_by_id(ticket_id)
+    async def update_status(self, ticket_id: int, status: str, user_id: int) -> SavedTicket | None:
+        ticket = await self.get_by_id(ticket_id, user_id)
         if ticket is None:
             return None
         ticket.status = status
@@ -60,5 +65,4 @@ class TicketRepository:
             )
             .values(user_id=user_id)
         )
-        await self._session.commit()
         return result.rowcount or 0

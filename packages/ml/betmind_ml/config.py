@@ -77,7 +77,7 @@ FORM_WEIGHT = 0.25
 # ── Umbrales de EV ────────────────────────────────────────────────────────────
 
 # EV mínimo para clasificar como POSITIVE_EV (5% de margen conservador)
-EV_POSITIVE_THRESHOLD = 0.05
+EV_POSITIVE_THRESHOLD = 0.005
 
 # EV por debajo del cual clasificamos como AVOID
 EV_AVOID_THRESHOLD = -0.10

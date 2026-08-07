@@ -43,9 +43,14 @@ import {
 import { fetchMatchH2H, fetchMatchPrediction, type EnrichedMatch, type MatchH2HData } from '@/lib/api'
 import { resolveLeague } from '@/lib/league-metadata'
 import { formatMarketName } from '@/lib/formatMarketName'
+import { formatEV, formatOdds, formatPercent, formatxG } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 import { TeamLogo } from '@/components/ui/team-logo'
+import { LeagueLogo } from '@/components/betmind/league-logo'
 import { MatchTabBar, type MatchTab } from '@/components/betmind/match-tab-bar'
+import { MarketTable } from '@/components/betmind/market-table'
+import { BetBuilderCards } from '@/components/betmind/bet-builder-cards'
+import { TacticalPanel } from '@/components/betmind/tactical-panel'
 
 /* ------------------------------------------------------------------ */
 /* Local types                                                         */
@@ -342,7 +347,7 @@ function MatchHero({ match, leagueMeta, model }: {
   return (
     <div className="bg-card border border-border rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-4">
-        <span className="text-base">{leagueMeta.flag}</span>
+        <LeagueLogo logoUrl={leagueMeta.logoUrl} flag={leagueMeta.flag} label={leagueMeta.shortName} size="sm" />
         <span className="text-xs font-semibold text-subtle">{leagueMeta.name}</span>
         <span className="text-muted-foreground text-xs">·</span>
          <span className="font-mono text-xs text-subtle tabular-nums">{match.time}</span>
@@ -387,15 +392,15 @@ function MatchHero({ match, leagueMeta, model }: {
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
               <p className="text-[10px] font-semibold text-subtle uppercase tracking-wider mb-1.5">Local</p>
-               <p className="font-mono text-lg font-black tabular-nums text-primary">{(model.home * 100).toFixed(1)}%</p>
+               <p className="font-mono text-lg font-black tabular-nums text-primary">{formatPercent(model.home)}</p>
             </div>
             <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
               <p className="text-[10px] font-semibold text-subtle uppercase tracking-wider mb-1.5">Empate</p>
-               <p className="font-mono text-lg font-black tabular-nums text-foreground">{(model.draw * 100).toFixed(1)}%</p>
+               <p className="font-mono text-lg font-black tabular-nums text-foreground">{formatPercent(model.draw)}</p>
             </div>
             <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
               <p className="text-[10px] font-semibold text-subtle uppercase tracking-wider mb-1.5">Visitante</p>
-               <p className="font-mono text-lg font-black tabular-nums text-warning">{(model.away * 100).toFixed(1)}%</p>
+               <p className="font-mono text-lg font-black tabular-nums text-warning">{formatPercent(model.away)}</p>
             </div>
           </div>
 
@@ -424,7 +429,7 @@ function ConfidenceBar({ detail, model }: { detail: MatchDetailData; model: Matc
         <span className="text-[11px] font-bold text-subtle uppercase tracking-wider shrink-0">Confianza IA</span>
         <div className="flex-1 h-2 bg-surface rounded-full overflow-hidden">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-primary to-primary/70 transition-all"
+            className="h-full rounded-full bg-gradient-to-r from-primary to-primary/70 transition-[width]"
             style={{ width: `${detail.confidenceScore}%` }}
           />
         </div>
@@ -475,7 +480,7 @@ function CapitalProtectionPanel({ match, detail }: { match: Match; detail: Match
        <div className="rounded-2xl border border-warning/25 bg-[#11151B] p-5">
        <div className="rounded-xl border border-warning/20 bg-warning/[0.06] p-4"><p className="text-sm font-semibold text-warning">Veredicto BetMind: Protege tu Capital</p><p className="mt-2 text-sm leading-6 text-foreground/80">Las cuotas 1X2 están perfectamente ajustadas por el mercado (0% EV). Explora los mercados secundarios a continuación.</p></div>
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1fr]">
-        <div><p className="text-[10px] tracking-[0.14em] text-subtle">Radar táctico · xG</p><div className="mt-3 flex items-end justify-between"><span className="font-mono text-lg font-bold text-primary">{detail.homeExpectedGoals.toFixed(2)}</span><span className="text-xs text-subtle">Goles esperados</span><span className="font-mono text-lg font-bold text-warning">{detail.awayExpectedGoals.toFixed(2)}</span></div><div className="mt-2 flex h-3 overflow-hidden rounded-full bg-[#252C35]"><div className="bg-primary" style={{ width: `${homeWidth}%` }} /><div className="bg-warning" style={{ width: `${100 - homeWidth}%` }} /></div><div className="mt-2 flex justify-between text-[10px] text-subtle"><span>{match.home}</span><span>{match.away}</span></div></div>
+        <div><p className="terminal-label">Radar táctico · xG</p><div className="mt-3 flex items-end justify-between"><span className="font-mono text-lg font-bold tabular-nums text-primary">{formatxG(detail.homeExpectedGoals)}</span><span className="text-xs text-subtle">Goles esperados</span><span className="font-mono text-lg font-bold tabular-nums text-warning">{formatxG(detail.awayExpectedGoals)}</span></div><div className="mt-2 flex h-3 overflow-hidden rounded-full bg-[#252C35]"><div className="bg-primary" style={{ width: `${homeWidth}%` }} /><div className="bg-warning" style={{ width: `${100 - homeWidth}%` }} /></div><div className="mt-2 flex justify-between text-xs text-subtle"><span>{match.home}</span><span>{match.away}</span></div></div>
         <div className="grid grid-cols-2 gap-2"><div className="rounded-lg border border-[#252C35] bg-[#182029]/60 p-3"><p className="text-[10px] text-subtle">Córneres</p><p className="mt-1 text-sm font-semibold text-foreground">{detail.cornersLine} · {detail.cornersProb}%</p></div><div className="rounded-lg border border-[#252C35] bg-[#182029]/60 p-3"><p className="text-[10px] text-subtle">Fricción</p><p className="mt-1 text-sm font-semibold text-foreground">{detail.cardsFriction}</p></div><div className="col-span-2 rounded-lg border border-[#252C35] bg-[#182029]/60 p-3"><p className="text-[10px] text-subtle">Perfil del árbitro</p><p className="mt-1 text-sm font-semibold text-foreground">{match.refereeProfile?.name ?? 'Pendiente de confirmación'}</p></div></div>
       </div>
     </div>
@@ -511,10 +516,10 @@ function MarketAccordion({ label, markets, defaultOpen = false }: { label: strin
               <div key={market.market} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 rounded-lg px-3 py-3 even:bg-[#182029]/50 sm:grid-cols-[minmax(0,1fr)_minmax(120px,0.8fr)_90px_110px] sm:gap-3">
                 <span className="min-w-0 truncate font-sans text-sm text-foreground">{formatMarketName(market.market)}</span>
                 <div className="flex min-w-[112px] flex-col gap-1">
-                  <span className="font-mono text-right text-sm font-semibold text-foreground sm:text-left">{probability.toFixed(1)}%</span>
+                  <span className="font-mono text-right text-sm font-semibold tabular-nums text-foreground sm:text-left">{formatPercent(market.probability)}</span>
                   <div className="h-1.5 overflow-hidden rounded-full bg-[#252C35]"><div className={cn('h-full rounded-full', market.ev > 0 ? 'bg-[#3DE3A5]' : 'bg-[#8577FF]')} style={{ width: `${Math.max(4, Math.min(100, probability))}%` }} /></div>
                 </div>
-                <span className={cn('font-mono text-right text-sm font-semibold', market.ev > 0 ? 'text-[#3DE3A5]' : 'text-subtle')}>{market.ev > 0 ? `+${(market.ev * 100).toFixed(1)}% EV` : `${(market.ev * 100).toFixed(1)}%`}</span>
+                <span className={cn('font-mono text-right text-sm font-semibold tabular-nums', market.ev > 0 ? 'text-positive' : 'text-subtle')}>{formatEV(market.ev)} EV</span>
                 <span className={cn('col-span-2 justify-self-end text-[10px] font-semibold sm:col-span-1 sm:justify-self-start', reliable && 'rounded-md border border-[#3DE3A5]/25 bg-[#3DE3A5]/10 px-2 py-1 text-[#3DE3A5]', risky && 'rounded-md border border-negative/25 bg-negative/10 px-2 py-1 text-negative', !reliable && !risky && 'text-subtle')}>
                   {reliable ? '● +EV' : risky ? '● Riesgo Alto' : 'Neutro'}
                 </span>
@@ -528,17 +533,57 @@ function MarketAccordion({ label, markets, defaultOpen = false }: { label: strin
 }
 
 function SignalCard({ market }: { market: QuantMarket }) {
-  const probability = market.probability * 100
   const fairOdds = market.probability > 0 ? 1 / market.probability : 0
   const positiveValue = market.ev > 0
-  return <div className="rounded-xl border border-[#252C35] bg-[#11151B] p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-sans text-sm font-semibold text-foreground">{formatMarketName(market.market)}</p><div className="mt-3 flex items-center gap-3"><div className="h-1.5 w-24 overflow-hidden rounded-full bg-[#252C35]"><div className={cn('h-full rounded-full', positiveValue ? 'bg-[#3DE3A5]' : 'bg-[#8577FF]')} style={{ width: `${Math.max(4, Math.min(100, probability))}%` }} /></div><span className="font-mono text-sm font-semibold text-foreground">{probability.toFixed(1)}%</span></div></div><span className={cn('rounded-md border px-2 py-1 font-mono text-xs font-bold', positiveValue ? 'border-[#3DE3A5]/25 bg-[#3DE3A5]/10 text-[#3DE3A5]' : 'border-[#8577FF]/25 bg-[#8577FF]/10 text-[#8577FF]')}>{positiveValue ? `+${(market.ev * 100).toFixed(1)}% EV` : 'Alta probabilidad'}</span></div><div className="mt-4 flex items-end justify-between gap-3 border-t border-[#252C35] pt-3"><div className="flex gap-5 text-xs"><div><p className="text-subtle">Cuota casa</p><p className="mt-1 font-mono font-semibold text-foreground">{market.odds > 1 ? market.odds.toFixed(2) : '—'}</p></div><div><p className="text-subtle">Cuota justa IA</p><p className="mt-1 font-mono font-semibold text-foreground">{fairOdds ? fairOdds.toFixed(2) : '—'}</p></div></div><button type="button" onClick={() => toast.success('Selección lista para añadir al boleto', { description: formatMarketName(market.market) })} className="inline-flex min-h-11 items-center rounded-lg bg-[#8577FF] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#7568EF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8577FF]">Añadir al boleto</button></div></div>
+  return (
+    <article className="rounded-xl border border-border bg-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-foreground">{formatMarketName(market.market)}</p>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-border">
+              <div className={cn('h-full rounded-full', positiveValue ? 'bg-positive' : 'bg-primary')} style={{ width: `${Math.max(4, Math.min(100, market.probability * 100))}%` }} />
+            </div>
+            <span className="font-mono text-sm font-semibold tabular-nums text-foreground">{formatPercent(market.probability)}</span>
+          </div>
+        </div>
+        <span className={cn(
+          'rounded-md border px-2 py-1 font-mono text-xs font-bold tabular-nums',
+          positiveValue ? 'border-positive/30 bg-positive/10 text-positive' : 'border-border text-subtle',
+        )}>
+          {positiveValue ? `${formatEV(market.ev)} EV` : 'Alta probabilidad'}
+        </span>
+      </div>
+      <div className="mt-4 flex items-end justify-between gap-3 border-t border-border/60 pt-3">
+        <div className="flex gap-5 text-xs">
+          <div>
+            <p className="text-subtle">Cuota casa</p>
+            <p className="mt-1 font-mono font-semibold tabular-nums text-foreground">{market.odds > 1 ? formatOdds(market.odds) : '—'}</p>
+          </div>
+          <div>
+            <p className="text-subtle">Cuota justa IA</p>
+            <p className="mt-1 font-mono font-semibold tabular-nums text-foreground">{fairOdds ? formatOdds(fairOdds) : '—'}</p>
+          </div>
+        </div>
+        <button type="button" onClick={() => toast.success('Selección lista para añadir al boleto', { description: formatMarketName(market.market) })} className="inline-flex min-h-11 items-center rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60">Añadir al boleto</button>
+      </div>
+    </article>
+  )
+}
+
+function SignalScannerCard({ market }: { market: QuantMarket }) {
+  const modelPct = Math.max(0, Math.min(100, market.probability * 100))
+  const impliedPct = market.odds > 1 ? Math.min(100, (1 / market.odds) * 100) : null
+  const positiveValue = market.ev > 0
+  const verdict = market.verdict === 'NO_ODDS_AVAILABLE' ? 'SIN CUOTAS' : positiveValue ? 'POSITIVE_EV' : market.probability >= 0.65 ? 'NO_VALUE' : 'AVOID'
+  return <article className={cn('rounded-xl border bg-card p-4 transition-[border-color,background-color,transform] duration-200 ease-out hover:-translate-y-0.5 hover:bg-surface/50', positiveValue ? 'border-positive/30' : 'border-border')}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-foreground">{formatMarketName(market.market)}</p><p className="mt-1 font-mono text-[10px] text-muted-foreground">56M · {market.odds > 1 ? `Cuota ${formatOdds(market.odds)}` : 'Cuota no publicada'}</p></div><span className={cn('rounded border px-2 py-1 font-mono text-[10px] font-bold', positiveValue ? 'border-positive/30 bg-positive/10 text-positive' : verdict === 'AVOID' ? 'border-negative/25 bg-negative/10 text-negative' : 'border-border/60 bg-surface text-muted-foreground')}>{verdict}</span></div><div className="mt-4 grid gap-2 font-mono text-[9px] text-muted-foreground"><div className="flex items-center gap-2"><span className="w-12 shrink-0">MODELO</span><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-inset"><div className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out" style={{ width: `${modelPct}%` }} /></div><span className="w-10 text-right tabular-nums text-foreground">{modelPct.toFixed(1)}%</span></div><div className="flex items-center gap-2"><span className="w-12 shrink-0">CASA</span><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-inset"><div className="h-full rounded-full bg-muted-foreground/60" style={{ width: `${impliedPct ?? 0}%` }} /></div><span className="w-10 text-right tabular-nums text-foreground">{impliedPct != null ? `${impliedPct.toFixed(1)}%` : 'N/D'}</span></div></div><div className="mt-4 flex items-end justify-between gap-3 border-t border-border/60 pt-3"><div><p className="text-[10px] text-muted-foreground">Edge / EV</p><p className={cn('mt-1 font-mono text-lg font-bold tabular-nums', positiveValue ? 'text-positive' : 'text-foreground')}>{market.edge >= 0 ? '+' : ''}{(market.edge * 100).toFixed(1)}% <span className="text-xs">· {market.ev >= 0 ? '+' : ''}{(market.ev * 100).toFixed(1)}% EV</span></p></div><button type="button" disabled={!positiveValue} onClick={() => toast.success('Selección guardada en el Ledger', { description: formatMarketName(market.market) })} className="inline-flex min-h-10 items-center rounded-lg border border-primary/30 bg-primary/10 px-3 text-[10px] font-semibold text-primary transition-[background-color,transform] duration-160 ease-out hover:bg-primary/20 disabled:cursor-not-allowed disabled:border-border disabled:bg-surface disabled:text-muted-foreground">Guardar en Ledger Cuantitativo</button></div></article>
 }
 
 function QuantMarkets({ enriched }: { enriched: EnrichedMatch | null }) {
   const markets = enriched?.evAnalysis ?? []
   const [showAll, setShowAll] = React.useState(false)
   const signals = [...markets].filter((market) => market.ev > 0 || market.probability > 0.65).sort((a, b) => (b.ev - a.ev) || (b.probability - a.probability)).slice(0, 5)
-  return <div className="flex flex-col gap-4"><div className="flex items-end justify-between"><div><p className="text-[10px] tracking-[0.14em] text-subtle">Señales filtradas · 80/20</p><h2 className="mt-1 text-lg font-semibold text-foreground">Lo que merece atención</h2></div><span className="font-mono text-xs text-primary">{markets.length}/56 mercados</span></div>{signals.length > 0 ? <div className="grid gap-3 lg:grid-cols-2">{signals.map((market) => <SignalCard key={market.market} market={market} />)}</div> : <div className="rounded-xl border border-dashed border-[#252C35] bg-[#11151B] px-5 py-8 text-center text-sm text-subtle">No hay señales destacadas en este partido. El mercado está ajustado.</div>}<button type="button" onClick={() => setShowAll((value) => !value)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#252C35] bg-[#11151B] px-4 text-sm font-semibold text-subtle transition-colors hover:border-[#8577FF]/50 hover:text-foreground">{showAll ? 'Ocultar catálogo completo' : 'Explorar los 56 mercados completos (Modo Analista)'}</button>{showAll && <div className="flex flex-col gap-3 pt-2">{MARKET_GROUPS.map((group, index) => <MarketAccordion key={group.id} label={group.label} markets={markets.filter((market) => group.match(market.market))} defaultOpen={index === 0} />)}</div>}<p className="text-xs leading-5 text-subtle">Las señales priorizan valor o probabilidad relevante. Abre el catálogo completo cuando necesites investigar el detalle.</p></div>
+  return <div className="flex flex-col gap-4"><div className="flex items-end justify-between"><div><p className="text-[10px] tracking-[0.14em] text-subtle">Señales filtradas · 80/20</p><h2 className="mt-1 text-lg font-semibold text-foreground">Escáner de margen +EV</h2></div><span className="font-mono text-xs text-primary">{markets.length}/56 mercados</span></div>{signals.length > 0 ? <div className="grid gap-3 lg:grid-cols-2">{signals.map((market) => <SignalScannerCard key={market.market} market={market} />)}</div> : <div className="rounded-xl border border-dashed border-[#252C35] bg-[#11151B] px-5 py-8 text-center text-sm text-subtle">No hay señales destacadas en este partido. El mercado está ajustado.</div>}<button type="button" onClick={() => setShowAll((value) => !value)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#252C35] bg-[#11151B] px-4 text-sm font-semibold text-subtle transition-colors hover:border-primary/50 hover:text-foreground">{showAll ? 'Ocultar catálogo completo' : 'Explorar los 56 mercados completos · Modo Analista'}</button>{showAll && <div className="flex flex-col gap-3 pt-2">{MARKET_GROUPS.map((group, index) => <MarketAccordion key={group.id} label={group.label} markets={markets.filter((market) => group.match(market.market))} defaultOpen={index === 0} />)}</div>}<p className="text-xs leading-5 text-subtle">Las señales priorizan valor o probabilidad relevante. Las cuotas no publicadas se muestran como N/D, nunca como una oportunidad inventada.</p></div>
 }
 
 function ScouterStats({ match }: { match: Match }) {
@@ -586,7 +631,7 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
             <button
               onClick={() => setSaved(s => !s)}
               className={cn(
-                'shrink-0 flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg border transition-all',
+                'shrink-0 flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg border transition-colors',
                 saved
                   ? 'bg-warning/15 border-warning/30 text-warning'
                   : 'bg-surface border-border text-foreground hover:border-primary/50 hover:text-foreground'
@@ -619,7 +664,11 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
       </div>
 
       {/* Table */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="flex flex-col gap-3">
+        <div className="flex items-end justify-between gap-3"><div><p className="text-[10px] font-bold tracking-[0.14em] text-subtle">ESCÁNER DE MARGEN</p><h2 className="mt-1 text-lg font-semibold text-foreground">Probabilidad modelo vs. casa</h2></div><span className="hidden font-mono text-[10px] text-muted-foreground sm:block">56M · 1X2 / goles / BTTS</span></div>
+        <MarketTable rows={rows} selectedKey={selectedMarket} onSelect={setSelectedMarket} />
+      </div>
+      <div className="hidden bg-card border border-border rounded-xl overflow-hidden">
         <div className="px-4 pt-4 pb-2">
           {sectionLabel({ children: 'Análisis de Valor Esperado (+EV)' })}
         </div>
@@ -694,7 +743,7 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
                 key={m}
                 onClick={() => setMode(m)}
                 className={cn(
-                  'flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all',
+                  'flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors',
                   mode === m
                     ? cn(meta.bg, meta.border, meta.accent)
                     : 'bg-surface/60 border-border text-subtle hover:text-foreground'
@@ -727,7 +776,7 @@ function EVTable({ rows, match, best }: { rows: MarketRow[]; match: Match; best:
 
 function PrimaryRecommendation({ match, best }: { match: Match; best: MarketRow | null }) {
   if (!best) return <div className="rounded-xl border border-dashed border-[#252C35] bg-[#11151B] p-5"><p className="text-[10px] tracking-[0.14em] text-subtle">Pronóstico principal</p><p className="mt-3 text-sm text-subtle">No hay una ventaja suficiente para recomendar una selección.</p></div>
-  return <div className="rounded-xl border border-[#3DE3A5]/25 bg-[#11151B] p-5"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] tracking-[0.14em] text-[#3DE3A5]">Pronóstico principal · +EV máximo</p><h2 className="mt-2 text-xl font-semibold text-foreground">{best.label}</h2><p className="mt-1 text-sm text-subtle">Ventaja detectada sobre la probabilidad implícita del mercado.</p></div><span className="rounded-lg border border-[#3DE3A5]/25 bg-[#3DE3A5]/10 px-2.5 py-1 font-mono text-sm font-bold text-[#3DE3A5]">+{(best.edge * 100).toFixed(1)}%</span></div><div className="mt-5 flex items-end justify-between border-t border-[#252C35] pt-4"><div><p className="text-[10px] tracking-[0.12em] text-subtle">Cuota disponible</p><p className="mt-1 font-mono text-2xl font-bold text-foreground">{best.odds.toFixed(2)}</p></div><button type="button" onClick={() => toast.success('Selección lista para añadir al boleto', { description: `${best.label} · ${match.home} vs ${match.away}` })} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#8577FF] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#7568ef] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8577FF]"><Zap size={15} aria-hidden="true" /> Añadir al boleto</button></div></div>
+  return <div className="rounded-xl border border-positive/25 bg-card p-5"><div className="flex items-start justify-between gap-4"><div><p className="terminal-label text-positive">Pronóstico principal · +EV máximo</p><h2 className="mt-2 text-xl font-semibold text-foreground">{best.label}</h2><p className="mt-1 text-sm text-subtle">Ventaja detectada sobre la probabilidad implícita del mercado.</p></div><span className="rounded-lg border border-positive/30 bg-positive/10 px-2.5 py-1 font-mono text-sm font-bold tabular-nums text-positive">{formatEV(best.edge)}</span></div><div className="mt-5 flex items-end justify-between border-t border-border/60 pt-4"><div><p className="terminal-label">Cuota disponible</p><p className="mt-1 font-mono text-2xl font-bold tabular-nums text-foreground">{formatOdds(best.odds)}</p></div><button type="button" onClick={() => toast.success('Selección lista para añadir al boleto', { description: `${best.label} · ${match.home} vs ${match.away}` })} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"><Zap size={15} aria-hidden="true" /> Añadir al boleto</button></div></div>
 }
 
 /* ------------------------------------------------------------------ */
@@ -820,7 +869,7 @@ function TopScorers({ topScores }: { topScores: MatchModel['topScores'] }) {
               </div>
               <div className="flex-1 h-1.5 bg-surface rounded-full overflow-hidden">
                 <div
-                  className={cn('h-full rounded-full transition-all', i === 0 ? 'bg-positive' : 'bg-primary/60')}
+                  className={cn('h-full rounded-full transition-[width]', i === 0 ? 'bg-positive' : 'bg-primary/60')}
                   style={{ width: `${barWidth}%` }}
                 />
               </div>
@@ -1005,9 +1054,11 @@ function mapProfile(profile: string): string {
   return 'moderado'
 }
 
-function BetBuilder({ detail }: { detail: MatchDetailData }) {
+function BetBuilder({ detail, match }: { detail: MatchDetailData; match: Match }) {
   const profiles = detail.betBuilder
   if (!profiles || profiles.length === 0) return null
+
+  return <BetBuilderCards profiles={profiles} homeTeam={match.home} awayTeam={match.away} />
 
   return (
     <div>
@@ -1048,7 +1099,7 @@ function BetBuilder({ detail }: { detail: MatchDetailData }) {
               </div>
               <div className="flex items-center justify-between pt-1">
                 <span className="text-[10px] text-subtle">Prob. comb. <span className="text-subtle font-semibold">{(bb.combined_probability * 100).toFixed(0)}%</span></span>
-                <button className={cn('flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all', cfg.btn)}>
+                <button className={cn('flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-colors', cfg.btn)}>
                   <Copy size={9} />
                    Copiar al boleto
                 </button>
@@ -1087,6 +1138,16 @@ function PreviaTab({
   const mainEdge = Math.max(...rows.filter((row) => row.key === 'home' || row.key === 'draw' || row.key === 'away').map((row) => row.edge), 0)
   return (
     <div className="flex flex-col gap-5">
+      <TacticalPanel
+        match={match}
+        analysis={{
+          confidence_score: enriched?.confidenceScore ?? detail.confidenceScore,
+          risk_level: enriched?.riskLevel ?? detail.riskLevel,
+          llm_model_used: enriched?.llmModelUsed,
+          match_preview_headline: enriched?.tacticalHeadline || detail.aiSummaryPill,
+          data_completeness_score: enriched?.tacticalAnalysis?.data_completeness_score,
+        }}
+      />
        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
         {/* Left */}
          <div className="flex flex-col gap-5 min-w-0">
@@ -1134,6 +1195,14 @@ function TacticalRadar({ match, detail, h2h }: { match: Match; detail: MatchDeta
   const home = [Math.min(100, match.lambdaHome / 2.5 * 100), Math.max(0, 100 - match.lambdaAway / 2.5 * 100), Math.min(100, refereeCards * 15), Math.min(100, cornersHome * 10), formValue(h2h?.home_form ?? [])]
   const away = [Math.min(100, match.lambdaAway / 2.5 * 100), Math.max(0, 100 - match.lambdaHome / 2.5 * 100), Math.min(100, refereeCards * 15), Math.min(100, cornersAway * 10), formValue(h2h?.away_form ?? [])]
   return <div className="rounded-xl border border-[#252C35] bg-[#11151B] p-4"><div className="mb-2"><p className="text-[10px] tracking-[0.14em] text-subtle">Lectura táctica</p><h3 className="mt-1 text-base font-semibold text-foreground">Radar de forma y amenaza</h3></div><RadarChart home={home} away={away} /></div>
+}
+
+function H2HReferencePanel({ match, detail, h2h }: { match: Match; detail: MatchDetailData; h2h: MatchH2HData | null }) {
+  const metrics = [
+    { label: 'xG del modelo', home: detail.homeExpectedGoals, away: detail.awayExpectedGoals },
+    { label: 'Córneres', home: match.advancedStats?.home_corners ?? null, away: match.advancedStats?.away_corners ?? null },
+  ]
+  return <div className="rounded-xl border border-border bg-card p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-bold tracking-[0.14em] text-subtle">MATRIZ DE DOMINIO</p><h3 className="mt-1 text-base font-semibold text-foreground">Referencia bilateral</h3></div>{h2h?.total ? <span className="font-mono text-[10px] text-primary">{h2h.total} H2H verificados</span> : <span className="rounded border border-warning/25 bg-warning/10 px-2 py-1 text-[10px] font-mono text-warning">H2H DIRECTO NO DISPONIBLE</span>}</div>{!h2h?.total && <p className="mt-3 rounded-lg border border-border/60 bg-surface/50 px-3 py-2 text-xs leading-5 text-muted-foreground">La muestra directa aún no está persistida. Se muestra la referencia del modelo actual y la forma reciente como degradación trazable, sin inventar promedios históricos.</p>}<div className="mt-4 flex flex-col gap-3">{metrics.map((metric) => { const total = (metric.home ?? 0) + (metric.away ?? 0); const homePct = total > 0 ? ((metric.home ?? 0) / total) * 100 : 50; return <div key={metric.label} className="grid gap-1.5"><div className="flex items-center justify-between gap-3 text-[10px] font-mono uppercase tracking-wider text-muted-foreground"><span className="text-primary">{metric.home != null ? metric.home.toFixed(2) : 'N/D'}</span><span>{metric.label}</span><span className="text-warning">{metric.away != null ? metric.away.toFixed(2) : 'N/D'}</span></div><div className="flex h-2 gap-1 overflow-hidden"><div className="flex-1 rounded-l-full bg-surface-inset"><div className="ml-auto h-full rounded-l-full bg-primary transition-[width] duration-300 ease-out" style={{ width: `${metric.home != null ? homePct : 0}%` }} /></div><div className="flex-1 rounded-r-full bg-surface-inset"><div className="h-full rounded-r-full bg-warning transition-[width] duration-300 ease-out" style={{ width: `${metric.away != null ? 100 - homePct : 0}%` }} /></div></div></div> })}</div><div className="mt-4 grid grid-cols-2 gap-2 text-[10px] text-muted-foreground"><div className="rounded-lg border border-primary/15 bg-primary/[0.05] p-2"><span className="block uppercase tracking-wider text-primary">Local</span><span className="mt-1 block truncate">{match.home}</span></div><div className="rounded-lg border border-warning/15 bg-warning/[0.05] p-2 text-right"><span className="block uppercase tracking-wider text-warning">Visitante</span><span className="mt-1 block truncate">{match.away}</span></div></div></div>
 }
 
 function H2HTab({
@@ -1268,6 +1337,8 @@ function H2HTab({
         </div>
       </div>
 
+      <H2HReferencePanel match={match} detail={detail} h2h={h2h} />
+
       <TacticalRadar match={match} detail={detail} h2h={h2h} />
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -1341,7 +1412,7 @@ function ArbitroTab({ match, detail }: { match: Match; detail: MatchDetailData }
               <button
                 onClick={() => setNotified(s => !s)}
                 className={cn(
-                  'flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-lg border transition-all',
+                  'flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-lg border transition-colors',
                   notified
                     ? 'bg-primary/15 border-primary/30 text-primary'
                     : 'bg-surface border-border text-foreground hover:border-primary/40 hover:text-foreground'
@@ -1430,7 +1501,7 @@ function MatchDetailContent({ match, enriched, h2h }: { match: Match; enriched?:
       {activeTab === 'markets' && <QuantMarkets enriched={enriched ?? null} />}
       {activeTab === 'builder' && (
         <div className="rounded-xl border border-border bg-card p-4">
-          <BetBuilder detail={detail} />
+          <BetBuilder detail={detail} match={match} />
         </div>
       )}
       {activeTab === 'h2h' && (

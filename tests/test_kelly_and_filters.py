@@ -4,6 +4,8 @@ from apps.api.engine.kelly import (
     calculate_quarter_kelly,
     calculate_kelly_percentage,
     get_staking_suggestion,
+    MAX_KELLY_STAKE,
+    MIN_KELLY_STAKE,
 )
 from apps.api.engine.ticket_builder import (
     _is_high_variance_league,
@@ -11,14 +13,36 @@ from apps.api.engine.ticket_builder import (
     _calculate_combined_kelly,
 )
 from apps.api.schemas.ticket import TicketLegSchema
+from betmind_ml.config import EV_POSITIVE_THRESHOLD
+from betmind_ml.ev.ev_calculator import _compute_fair_probability
+from betmind_ml.ev.ev_calculator import calculate_ev_metrics, enrich_market_with_ev
+from betmind_ml.schemas.prediction_output import MarketProbability, PredictionVerdict
 
 
 class TestQuarterKelly:
+    def test_stake_is_bounded_by_institutional_limits(self):
+        assert calculate_quarter_kelly(0.90, 8.0) == MAX_KELLY_STAKE
+        assert calculate_quarter_kelly(0.501, 2.01) >= MIN_KELLY_STAKE
+        assert calculate_quarter_kelly(0.90, 8.0) <= 0.02
+
+    def test_ev_threshold_is_single_half_percent_contract(self):
+        assert EV_POSITIVE_THRESHOLD == 0.005
+
+    def test_fair_probability_never_falls_back_to_raw_implied_probability(self):
+        assert _compute_fair_probability("BTTS_YES", 1.80, {}) is None
+        assert calculate_ev_metrics(0.60, 1.80, {}, "BTTS_YES") == (None, None, None)
+
+    def test_ev_threshold_accepts_exact_half_percent(self):
+        market = MarketProbability(market_name="OVER_2_5", our_probability=0.5025)
+        enriched = enrich_market_with_ev(market, 2.0, fair_implied_prob=0.5)
+        assert enriched.expected_value == EV_POSITIVE_THRESHOLD
+        assert enriched.verdict is PredictionVerdict.POSITIVE_EV
+
     def test_positive_ev_returns_positive_stake(self):
-        # p=0.60, odds=2.00: q=0.40, b=1.00, f*=(0.60*1-0.40)/1=0.20, QK=0.25*0.20=0.05
+        # Raw Quarter-Kelly is 5%, then institutional clamp limits it to 2%.
         stake = calculate_quarter_kelly(0.60, 2.00)
         assert stake > 0
-        assert stake == 0.05
+        assert stake == 0.02
 
     def test_negative_ev_returns_zero(self):
         stake = calculate_quarter_kelly(0.30, 2.00)
@@ -39,7 +63,7 @@ class TestQuarterKelly:
 
     def test_kelly_percentage(self):
         pct = calculate_kelly_percentage(0.60, 2.00)
-        assert pct == 5.0
+        assert pct == 2.0
 
     def test_staking_suggestion_no_value(self):
         assert "No apostar" in get_staking_suggestion(0.0)
@@ -105,7 +129,7 @@ class TestAntiCascaraFilter:
         legs[0].kelly_stake = 0.10
         legs[1].kelly_stake = 0.05
         combined = _calculate_combined_kelly(legs)
-        assert combined == 0.05
+        assert combined == 0.02
 
     def test_combined_kelly_empty_returns_zero(self):
         assert _calculate_combined_kelly([]) == 0.0

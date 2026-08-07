@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
 
     SECRET_KEY: str = "change-me-in-production"
+    SUPABASE_JWT_SECRET: str | None = None
+    SUPABASE_JWT_AUDIENCE: str = "authenticated"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     ADMIN_API_KEY: str = ""

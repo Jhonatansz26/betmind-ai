@@ -1,11 +1,17 @@
 from typing import AsyncGenerator
 
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db.database import get_async_session as _get_async_session
 from apps.api.services.cache_service import CacheService, get_redis_pool, close_redis_pool
 from apps.api.config import settings
+from apps.api.models.user import User
+
+_bearer = HTTPBearer(auto_error=False)
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
@@ -42,3 +48,44 @@ async def require_admin_key(
             detail="Invalid admin key",
         )
     return x_admin_key
+
+
+async def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    session: AsyncSession = Depends(get_async_session),
+) -> int:
+    """Resolve the local user from the Supabase Auth ``sub``/``auth.uid()``."""
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    secret = settings.SUPABASE_JWT_SECRET or settings.SECRET_KEY
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            secret,
+            algorithms=["HS256"],
+            audience=settings.SUPABASE_JWT_AUDIENCE,
+        )
+        auth_uid = payload.get("sub")
+        if not isinstance(auth_uid, str) or not auth_uid:
+            raise JWTError("Missing Supabase subject")
+    except JWTError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token") from exc
+
+    result = await session.execute(
+        select(User.id).where(User.auth_uid == auth_uid, User.is_active.is_(True))
+    )
+    user_id = result.scalar_one_or_none()
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authenticated user is not provisioned")
+    return int(user_id)
+
+
+async def get_optional_user_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    session: AsyncSession = Depends(get_async_session),
+) -> int | None:
+    """Allow anonymous ticket creation while validating supplied credentials."""
+    if credentials is None:
+        return None
+    return await get_current_user_id(credentials=credentials, session=session)

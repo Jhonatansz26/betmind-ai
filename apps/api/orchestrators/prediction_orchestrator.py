@@ -16,14 +16,15 @@ from apps.api.schemas.prediction import OddsInput, PredictionResponse, TacticalA
 from apps.api.services.cache_service import CacheService
 from apps.api.services.llm_cascade import LLMCascadeService, LLMCascadeResult
 
-from betmind_ml.pipeline.full_analysis_pipeline import run_full_analysis
 from betmind_ml.schemas.match_context import MatchContext, MatchImportance
 from betmind_ml.schemas.referee import RefereeProfile
 from betmind_ml.schemas.prediction_output import MatchPredictionOutput, PredictionVerdict
 from betmind_ml.schemas.tactical_analysis import TacticalAnalysis
+from betmind_ml.config import EV_POSITIVE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 _CACHE_TTL_SECONDS = 60 * 60 * 6  # 6 horas
+_TACTICAL_CACHE_TTL_SECONDS = 21600
 _TACTICAL_CACHE_HOURS = 6  # Cache de análisis táctico en DB
 
 # Single source of truth: every featured external league ID gets its ML key.
@@ -66,6 +67,14 @@ class PredictionOrchestrator:
         logger.info("Cache MISS para match_id=%s — consultando DB", match_id)
         match = await self._match_repo.get_by_id(match_id)
 
+        # Redis/DB tactical cache is checked before loading historical context.
+        # A hit never invokes the LLM cascade.
+        tactical_from_cache = (
+            await self._get_cached_tactical_analysis(match_id)
+            if include_tactical_analysis
+            else None
+        )
+
         # 3. Cargar forma reciente y H2H
         home_form = await self._match_repo.get_recent_form(match.home_team_id, last_n=10)
         away_form = await self._match_repo.get_recent_form(match.away_team_id, last_n=10)
@@ -83,9 +92,6 @@ class PredictionOrchestrator:
 
         # 6. Ejecutar pipeline cuantitativo (siempre primero, independiente del LLM)
         if include_tactical_analysis:
-            # 6a. Verificar cache de analisis tactico en DB
-            tactical_from_cache = await self._get_cached_tactical_analysis(match_id)
-
             if tactical_from_cache:
                 logger.info("TacticalAnalysis cache HIT para match_id=%s (DB)", match_id)
                 try:
@@ -334,6 +340,17 @@ class PredictionOrchestrator:
                 generation_tokens_used=tactical.generation_tokens_used,
                 data_completeness_score=tactical.data_completeness_score,
             )
+            model_version = tactical.model_version or "unknown"
+            await self._cache.set(
+                f"tactical_analysis:{match_id}:{model_version}",
+                tactical,
+                ttl=_TACTICAL_CACHE_TTL_SECONDS,
+            )
+            await self._cache.set(
+                f"tactical_analysis:{match_id}:latest",
+                model_version,
+                ttl=_TACTICAL_CACHE_TTL_SECONDS,
+            )
             logger.info("Análisis táctico persistido para match_id=%s", match_id)
         except Exception as e:
             logger.warning(
@@ -399,6 +416,18 @@ class PredictionOrchestrator:
         Retorna TacticalAnalysis si existe y es reciente, None en caso contrario.
         """
         try:
+            latest_version = await self._cache.get(
+                f"tactical_analysis:{match_id}:latest"
+            )
+            if latest_version:
+                cached = await self._cache.get(
+                    f"tactical_analysis:{match_id}:{latest_version}",
+                    TacticalAnalysis,
+                )
+                if cached is not None:
+                    logger.info("TacticalAnalysis Redis HIT para match_id=%s", match_id)
+                    return cached
+
             tactical_orm = await self._tactical_repo.get_by_match_id(match_id)
             
             if not tactical_orm:
@@ -410,7 +439,19 @@ class PredictionOrchestrator:
                 return None
             
             # Convertir ORM a Pydantic
-            return self._convert_orm_to_pydantic(tactical_orm)
+            tactical = self._convert_orm_to_pydantic(tactical_orm)
+            model_version = tactical.model_version or "unknown"
+            await self._cache.set(
+                f"tactical_analysis:{match_id}:{model_version}",
+                tactical,
+                ttl=_TACTICAL_CACHE_TTL_SECONDS,
+            )
+            await self._cache.set(
+                f"tactical_analysis:{match_id}:latest",
+                model_version,
+                ttl=_TACTICAL_CACHE_TTL_SECONDS,
+            )
+            return tactical
             
         except Exception as e:
             logger.warning("Error consultando análisis táctico en caché para match_id=%s: %s", match_id, e)
@@ -530,58 +571,27 @@ class PredictionOrchestrator:
         Capa 2: Groq → Gemini → Capa 1 (sintético)
         Capa 1: La prediccion cuantitativa (Poisson + EV) nunca se pierde.
         """
-        context = self._build_match_context(match)
-
+        # Flujo activo: Groq -> Gemini -> síntesis determinística.
+        quant_output = await self._run_quantitative_analysis(match, odds)
+        prompt_data = self._build_gemini_prompt(match, quant_output)
         try:
-            quant_output, tactical_output = await asyncio.wait_for(
-                run_full_analysis(
-                    match_id=match.id,
-                    home_team_id=match.home_team_id,
-                    home_team_name=match.home_team.name,
-                    away_team_id=match.away_team_id,
-                    away_team_name=match.away_team.name,
-                    league_id=match.league_id,
-                    league_key=self._get_league_key(match.league),
-                    league_name=match.league.name,
-                    season=match.match_date.year,
-                    match_date=str(match.match_date.date()),
-                    home_matches=home_matches,
-                    away_matches=away_matches,
-                    all_league_matches=all_league_matches,
-                    h2h_matches=h2h_matches,
-                    context=context,
-                    groq_api_keys=settings.get_groq_api_keys(),
-                    bookmaker_odds=bookmaker_odds,
+            cascade = LLMCascadeService()
+            result = await asyncio.wait_for(
+                cascade.generate_tactical_json(
+                    system_prompt=prompt_data["system"],
+                    user_prompt=prompt_data["user"],
                 ),
                 timeout=settings.GROQ_TIMEOUT_SECONDS,
             )
-
-            if tactical_output.llm_model_used == "none":
-                logger.info(
-                    "Groq falló para match_id=%s (llm_model_used=none). "
-                    "Intentando Gemini como Capa 2...", match.id,
-                )
-                gemini_tactical = await self._try_gemini_analysis(match, quant_output)
-                if gemini_tactical is not None:
-                    return quant_output, gemini_tactical
-
-            return quant_output, tactical_output
-
+            if result.content is not None:
+                return quant_output, self._gemini_result_to_tactical(match, quant_output, result)
+            return quant_output, self._build_minimal_tactical_analysis(match, quant_output)
         except asyncio.TimeoutError:
-            logger.warning(
-                "LLM tactical analysis TIMEOUT after %.1fs for match_id=%s. "
-                "Intentando Gemini (Capa 2)...",
-                settings.GROQ_TIMEOUT_SECONDS, match.id,
-            )
-            return await self._fallback_quant_with_gemini(match, odds)
-
-        except Exception as e:
-            logger.warning(
-                "LLM tactical analysis failed for match_id=%s: %s. "
-                "Intentando Gemini (Capa 2)...",
-                match.id, e,
-            )
-            return await self._fallback_quant_with_gemini(match, odds)
+            logger.warning("Cascada LLM agotó el timeout para match_id=%s; usando síntesis", match.id)
+            return quant_output, self._build_minimal_tactical_analysis(match, quant_output)
+        except Exception as exc:
+            logger.warning("Cascada LLM falló para match_id=%s: %s; usando síntesis", match.id, exc)
+            return quant_output, self._build_minimal_tactical_analysis(match, quant_output)
 
     async def _fallback_quant_with_gemini(
         self, match: Match, odds: OddsInput | None,
@@ -630,8 +640,8 @@ class PredictionOrchestrator:
 
         lambda_home = getattr(quant, "lambda_home", 0) or 0
         lambda_away = getattr(quant, "lambda_away", 0) or 0
-        score_line = getattr(quant, "most_likely_score", None)
-        score_str = f"{getattr(score_line, 'home', '?')}-{getattr(score_line, 'away', '?')}" if score_line else "?"
+        score_str = quant.score_matrix.most_likely_score or "?"
+        over_ev = f"{over_25.expected_value:+.3f}" if over_25 and over_25.expected_value is not None else "N/D"
 
         system = (
             "Eres un analista de fútbol profesional. Genera análisis táctico en JSON estricto. "
@@ -643,7 +653,8 @@ class PredictionOrchestrator:
             f"Analiza: {match.home_team.name} vs {match.away_team.name} ({match.league.name}).\n"
             f"xG local={lambda_home:.2f}, xG visitante={lambda_away:.2f}.\n"
             f"Probabilidades: Local={p_home}, Empate={p_draw}, Visitante={p_away}, Over2.5={p_over}.\n"
-            f"Marcador más probable: {score_str}. Confianza modelo: {quant.confidence_score}/100.\n"
+            f"EV Over2.5={over_ev}. Marcador más probable: {score_str}. "
+            f"Confianza modelo: {quant.confidence_score}/100.\n"
             f"Responde SOLO JSON: {{\"resumen_tactico\": \"...\", \"puntos_clave\": [\"...\"], \"nivel_riesgo\": \"...\"}}"
         )
         return {"system": system, "user": user}
@@ -652,10 +663,15 @@ class PredictionOrchestrator:
         self, match: Match, quant: MatchPredictionOutput, result: LLMCascadeResult,
     ) -> TacticalAnalysis:
         """Convierte el resultado JSON del LLM cascade a TacticalAnalysis."""
+        from apps.api.services.providers.ai_agent.schemas.tactical_analysis import TacticalAnalysisOutput
         from betmind_ml.schemas.tactical_analysis import MarketNarrative, ProConPoint, SignalStrength
         from betmind_ml.schemas.tactical_analysis import TacticalAnalysis as TA
 
-        content = result.content or {}
+        try:
+            content = TacticalAnalysisOutput.model_validate(result.content or {}).model_dump()
+        except Exception as exc:
+            logger.warning("Se rechazó output tÃ¡ctico antes de frontend: %s", str(exc)[:160])
+            return self._build_minimal_tactical_analysis(match, quant)
         summary = content.get("resumen_tactico", "")
         puntos = content.get("puntos_clave", [])
         riesgo = content.get("nivel_riesgo", "MODERADO")
@@ -735,7 +751,7 @@ class PredictionOrchestrator:
 
                 if market.verdict == PredictionVerdict.INSUFFICIENT:
                     api_verdict = Verdict.INSUFFICIENT_DATA
-                elif market.expected_value and market.expected_value > 0.05:
+                elif market.expected_value is not None and market.expected_value >= EV_POSITIVE_THRESHOLD:
                     if market.bookmaker_odds < 1.20:
                         api_verdict = Verdict.NO_VALUE
                     else:

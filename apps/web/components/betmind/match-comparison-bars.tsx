@@ -84,7 +84,7 @@ export function MatchComparisonBars({
                 </span>
                 <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted/50">
                   <div
-                    className="absolute right-0 h-full rounded-full bg-primary transition-all duration-500"
+                    className="absolute right-0 h-full rounded-full bg-primary transition-[width] duration-500"
                     style={{ width: `${homeBarPct}%` }}
                     aria-hidden
                   />
@@ -100,7 +100,7 @@ export function MatchComparisonBars({
               <div className="flex items-center gap-2">
                 <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted/50">
                   <div
-                    className="absolute left-0 h-full rounded-full bg-warning transition-all duration-500"
+                    className="absolute left-0 h-full rounded-full bg-warning transition-[width] duration-500"
                     style={{ width: `${awayBarPct}%` }}
                     aria-hidden
                   />

@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 from apps.api.config import settings
+from apps.api.services.providers.ai_agent.schemas.tactical_analysis import TacticalAnalysisOutput
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +93,26 @@ class LLMCascadeService:
             (el caller debe usar Capa 1: narrativa sintética).
         """
 
-        result = await self._try_groq(system_prompt, user_prompt)
+        try:
+            result = await asyncio.wait_for(
+                self._try_groq(system_prompt, user_prompt),
+                timeout=settings.GROQ_SINGLE_CALL_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Groq superó el timeout de una llamada; conmutando a Gemini")
+            result = None
         if result is not None:
             return result
 
         logger.warning("Groq falló. Conmutando a Gemini...")
-        result = await self._try_gemini(system_prompt, user_prompt)
+        try:
+            result = await asyncio.wait_for(
+                self._try_gemini(system_prompt, user_prompt),
+                timeout=settings.GROQ_SINGLE_CALL_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Gemini superó el timeout de una llamada; usando síntesis")
+            result = None
         if result is not None:
             return result
 
@@ -131,7 +146,10 @@ class LLMCascadeService:
             )
 
             content_str = response.choices[0].message.content or "{}"
-            parsed = _safe_parse_json(content_str)
+            parsed = _validate_tactical_output(_safe_parse_json(content_str))
+            if parsed is None:
+                logger.warning("Groq devolviÃ³ JSON fuera del contrato TacticalAnalysisOutput")
+                return None
             tokens = response.usage.total_tokens if response.usage else 0
 
             logger.info("Groq generó análisis (%d tokens)", tokens)
@@ -166,7 +184,10 @@ class LLMCascadeService:
             )
 
             content_str = response.text or "{}"
-            parsed = _safe_parse_json(content_str)
+            parsed = _validate_tactical_output(_safe_parse_json(content_str))
+            if parsed is None:
+                logger.warning("Gemini devolviÃ³ JSON fuera del contrato TacticalAnalysisOutput")
+                return None
             tokens = response.usage_metadata.total_token_count if hasattr(response, "usage_metadata") and response.usage_metadata else 0
 
             logger.info("Gemini generó análisis (%d tokens)", tokens)
@@ -202,3 +223,11 @@ def _safe_parse_json(raw: str) -> dict[str, Any]:
         except json.JSONDecodeError:
             pass
         return {}
+
+
+def _validate_tactical_output(payload: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        return TacticalAnalysisOutput.model_validate(payload).model_dump()
+    except Exception as exc:
+        logger.warning("Respuesta tÃ¡ctica invÃ¡lida: %s", str(exc)[:160])
+        return None

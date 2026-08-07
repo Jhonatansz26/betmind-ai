@@ -9,8 +9,8 @@ FUNDAMENTO MATEMÁTICO:
     Edge = P_real - P_implicita
          = P_real - (1 / cuota)
 
-    Si EV > 0.05 (5% de margen) → apuesta con valor real
-    Si EV > 0 pero < 0.05 → zona gris (ruido estadístico)
+    Si EV >= 0.005 (0.5% de margen) → apuesta con valor real
+    Si EV > 0 pero < 0.005 → zona gris
     Si EV < -0.10 → evitar activamente
 
 NOTA SOBRE EL MARGEN DEL BOOKMAKER (overround):
@@ -32,7 +32,7 @@ def calculate_ev_metrics(
     bookmaker_odds: float,
     odds_dict: dict[str, float] | None = None,
     market_name: str = "market",
-) -> tuple[float, float, float]:
+) -> tuple[float | None, float | None, float | None]:
     """Return implied probability, edge and EV for real bookmaker odds."""
     if bookmaker_odds <= 1.0:
         raise ValueError("bookmaker_odds must be greater than 1.0")
@@ -40,8 +40,10 @@ def calculate_ev_metrics(
     implied_probability = _compute_fair_probability(
         market_name, bookmaker_odds, odds_dict
     )
+    if implied_probability is None:
+        return None, None, None
     edge = probability - implied_probability
-    expected_value = (probability * (bookmaker_odds - 1.0)) - (1.0 - probability)
+    expected_value = (probability * bookmaker_odds) - 1.0
     return (
         round(implied_probability, 4),
         round(edge * 100, 2),
@@ -53,7 +55,7 @@ def _compute_fair_probability(
     market_name: str,
     odds: float,
     odds_dict: dict[str, float],
-) -> float:
+) -> float | None:
     """
     Elimina el overround (margen del bookmaker) para obtener una probabilidad
     implicita justa y comparable con la probabilidad real del modelo.
@@ -62,7 +64,8 @@ def _compute_fair_probability(
         overround = (1/odds_a) + (1/odds_b)
         fair_prob = (1/odds) / overround
 
-    Si no se encuentra el lado opuesto, se retorna la probabilidad implicita cruda.
+    Si no se encuentra el lado opuesto, retorna None y el mercado queda
+    INSUFFICIENT: no se certifica EV con una probabilidad bruta.
     """
     _1X2_GROUP = ("1X2_HOME", "1X2_DRAW", "1X2_AWAY")
 
@@ -92,7 +95,7 @@ def _compute_fair_probability(
             if overround > 0:
                 return (1.0 / odds) / overround
 
-    return 1.0 / odds if odds > 0 else 0.0
+    return None
 
 
 def enrich_market_with_ev(
@@ -109,7 +112,7 @@ def enrich_market_with_ev(
         bookmaker_odds: Cuota decimal del bookmaker (ej: 1.85, 2.10, 3.40).
                         Debe ser > 1.0 siempre.
         fair_implied_prob: Probabilidad implicita desmarginada (opcional).
-                           Si no se provee, se usa la probabilidad implicita cruda 1/odds.
+                           Si no se provee, el mercado queda INSUFFICIENT.
     """
     if bookmaker_odds <= 1.0:
         logger.warning("Cuota invalida recibida: %.2f para %s", bookmaker_odds, market.market_name)
@@ -119,14 +122,27 @@ def enrich_market_with_ev(
         logger.warning("Probabilidad invalida: %.4f para %s", market.our_probability, market.market_name)
         return market
 
-    implied_prob = fair_implied_prob if fair_implied_prob is not None else (1.0 / bookmaker_odds)
+    if fair_implied_prob is None:
+        market.bookmaker_odds = bookmaker_odds
+        market.implied_probability = None
+        market.edge = None
+        market.expected_value = None
+        market.verdict = PredictionVerdict.INSUFFICIENT
+        logger.info("EV omitido: mercado %s sin datos suficientes para desmarquinizar", market.market_name)
+        return market
+
+    implied_prob = fair_implied_prob
     edge = market.our_probability - implied_prob
 
-    ev = (market.our_probability * (bookmaker_odds - 1.0)) - (1.0 - market.our_probability)
+    ev = (market.our_probability * bookmaker_odds) - 1.0
+    # Normalize the binary floating-point result before classifying the edge.
+    # This keeps the inclusive 0.5% boundary stable for values such as
+    # ``0.5025 * 2.0 - 1.0`` that can evaluate just below 0.005 in Python.
+    ev_for_verdict = round(ev, 6)
 
-    if ev >= EV_POSITIVE_THRESHOLD:
+    if ev_for_verdict >= EV_POSITIVE_THRESHOLD:
         verdict = PredictionVerdict.POSITIVE_EV
-    elif ev <= EV_AVOID_THRESHOLD:
+    elif ev_for_verdict <= EV_AVOID_THRESHOLD:
         verdict = PredictionVerdict.AVOID
     else:
         verdict = PredictionVerdict.NO_VALUE

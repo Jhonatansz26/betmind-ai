@@ -8,35 +8,35 @@ import {
   Minus,
   Plus,
   Zap,
-  Check,
   AlertCircle,
-  Target,
-  Flag,
-  Square,
-  Globe,
+  Search,
+  ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { type Match, type Ticket, MODE_META } from '@/lib/betmind'
-import { fetchTickets } from '@/lib/api'
+import { fetchTickets, type LeagueData } from '@/lib/api'
 import { formatMarketName } from '@/lib/formatMarketName'
-import { resolveLeague } from '@/lib/league-metadata'
+import { formatEV, formatOdds } from '@/lib/formatters'
+import { shareOrDownloadTicket } from '@/lib/ticket-export'
 import { cn } from '@/lib/utils'
 import { addToTracking } from './tracking-panel'
+import { TicketLeg } from './ticket-leg'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
 
 type RiskProfile = 'conservative' | 'balanced' | 'aggressive'
-type MarketCategory = 'all' | 'goals' | 'corners' | 'cards' | 'shots'
+type MarketKey = 'GOALS' | 'CORNERS' | '1X2' | 'CARDS' | 'SHOTS'
 
 interface GeneratorConfig {
   selectionCount: number
   riskProfile: RiskProfile
   oddsMin: number
   oddsMax: number
-  marketCategory: MarketCategory
+  selectedMarkets: MarketKey[]
+  selectedLeagues: string[]
 }
 
 /* ------------------------------------------------------------------ */
@@ -76,17 +76,24 @@ const RISK_MODE_MAP: Record<RiskProfile, 'EDGE' | 'VALUE' | 'BOLD'> = {
 }
 
 const MARKET_CATEGORIES: Array<{
-  key: MarketCategory
+  key: MarketKey
   label: string
-  icon: React.ElementType
   keywords: string[]
 }> = [
-  { key: 'all', label: 'Todos', icon: Globe, keywords: [] },
-  { key: 'goals', label: 'Goles', icon: Target, keywords: ['OVER_', 'UNDER_', 'BTTS', '1X2'] },
-  { key: 'corners', label: 'Córneres', icon: Flag, keywords: ['CORNERS_'] },
-  { key: 'cards', label: 'Tarjetas', icon: Square, keywords: ['CARDS_'] },
-  { key: 'shots', label: 'Remates', icon: Target, keywords: ['SHOTS_'] },
+  { key: 'GOALS', label: 'Goles', keywords: ['OVER_', 'UNDER_', 'BTTS'] },
+  { key: 'CORNERS', label: 'Córneres', keywords: ['CORNERS_'] },
+  { key: '1X2', label: '1X2', keywords: ['1X2'] },
+  { key: 'CARDS', label: 'Tarjetas', keywords: ['CARDS_'] },
+  { key: 'SHOTS', label: 'Remates', keywords: ['SHOTS_'] },
 ]
+
+const DISPLAY_MARKET_KEYWORDS: Record<MarketKey, string[]> = {
+  GOALS: ['OVER', 'UNDER', 'BTTS', 'GOL', 'AMBOS', 'GANA'],
+  CORNERS: ['CORNER', 'CÓRNER'],
+  '1X2': ['GANA', 'EMPATE', 'LOCAL', 'VISITANTE', '1X2'],
+  CARDS: ['TARJETA', 'CARD'],
+  SHOTS: ['REMATE', 'TIRO', 'SHOT'],
+}
 
 const ODDS_PRESETS = [
   { label: '1.5 – 3.0', min: 1.5, max: 3.0 },
@@ -100,10 +107,10 @@ const ODDS_PRESETS = [
 
 function filterLegsByCategory(
   legs: Ticket['legs'],
-  category: MarketCategory,
+  categories: MarketKey[],
 ): Ticket['legs'] {
-  if (category === 'all') return legs
-  const keywords = MARKET_CATEGORIES.find((c) => c.key === category)?.keywords ?? []
+  if (!categories.length || categories.length === MARKET_CATEGORIES.length) return legs
+  const keywords = categories.flatMap((category) => DISPLAY_MARKET_KEYWORDS[category] ?? [])
   return legs.filter((leg) =>
     keywords.some((kw) => leg.market.toUpperCase().includes(kw)),
   )
@@ -157,9 +164,9 @@ function GeneratorLeg({
             ? 'border-positive/20 bg-positive/10 text-positive'
             : 'border-negative/20 bg-negative/10 text-negative',
         )}>
-          {evPositive ? '+' : ''}{(leg.ev * 100).toFixed(1)}% EV
+          {formatEV(leg.ev)} EV
         </span>
-        <span className="font-mono text-sm font-bold tabular-nums text-foreground">@{leg.odds.toFixed(2)}</span>
+        <span className="font-mono text-sm font-bold tabular-nums text-foreground">@{formatOdds(leg.odds)}</span>
       </div>
     </li>
   )
@@ -171,9 +178,11 @@ function GeneratorLeg({
 
 export function TicketGenerator({
   matches,
+  leagues = [],
   onTrack,
 }: {
   matches: Match[]
+  leagues?: LeagueData[]
   onTrack?: () => void
 }) {
   /* ── Config state ── */
@@ -182,7 +191,8 @@ export function TicketGenerator({
     riskProfile: 'balanced',
     oddsMin: 1.80,
     oddsMax: 10.00,
-    marketCategory: 'all',
+    selectedMarkets: MARKET_CATEGORIES.map((category) => category.key),
+    selectedLeagues: [],
   })
 
   /* ── Result state ── */
@@ -190,14 +200,39 @@ export function TicketGenerator({
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState(false)
   const [generationKey, setGenerationKey] = React.useState(0)
-  const [copied, setCopied] = React.useState(false)
+
+  const activeLeagues = React.useMemo(
+    () => leagues
+      .filter((league) => league.active_matches > 0)
+      .map((league) => ({
+        ...league,
+        label: league.name,
+        activeMatches: league.active_matches,
+        group: league.group ?? 'OTRAS LIGAS ACTIVAS',
+      })),
+    [leagues],
+  )
+  const activeLeagueKeys: string[] = activeLeagues.map((league) => league.key)
+  const activeLeagueKeySet = new Set<string>(activeLeagueKeys)
+
+  React.useEffect(() => {
+    if (!leagues.length) return
+    setConfig((previous) => {
+      const next = previous.selectedLeagues.length === 0
+        ? activeLeagueKeys
+        : previous.selectedLeagues.filter((key) => activeLeagueKeySet.has(key))
+      return next.length === previous.selectedLeagues.length
+        ? previous
+        : { ...previous, selectedLeagues: next }
+    })
+  }, [leagues, activeLeagueKeys.join(',')])
 
   /* ── Derived: filter legs by market category client-side ── */
   const displayedLegs = React.useMemo(() => {
     if (!ticket) return []
-    const filtered = filterLegsByCategory(ticket.legs, config.marketCategory)
-    return filtered.slice(0, config.selectionCount)
-  }, [ticket, config.marketCategory, config.selectionCount])
+    // The API applies the technical market filter; do not re-filter display labels here.
+    return ticket.legs.slice(0, config.selectionCount)
+  }, [ticket, config.selectionCount])
 
   const combinedOddsDisplay = React.useMemo(
     () => displayedLegs.reduce((acc, l) => acc * l.odds, 1),
@@ -212,12 +247,23 @@ export function TicketGenerator({
     let cancelled = false
 
     async function generate() {
+      if (leagues.length > 0 && (activeLeagueKeys.length === 0 || config.selectedLeagues.length === 0)) {
+        setTicket(null)
+        setLoading(false)
+        return
+      }
       setLoading(true)
       setError(false)
 
       try {
         const mode = RISK_MODE_MAP[config.riskProfile]
-        const result = await fetchTickets([mode])
+        const result = await fetchTickets(
+          [mode],
+          config.selectedLeagues.length === activeLeagueKeys.length ? undefined : config.selectedLeagues,
+          undefined,
+          config.selectionCount,
+          config.selectedMarkets.length === MARKET_CATEGORIES.length ? undefined : config.selectedMarkets,
+        )
 
         if (cancelled) return
 
@@ -237,7 +283,7 @@ export function TicketGenerator({
       cancelled = true
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.riskProfile, generationKey])
+  }, [config.riskProfile, config.selectedLeagues, config.selectedMarkets, config.selectionCount, generationKey, activeLeagueKeys.join(',')])
 
   /* ── Helpers ── */
   function updateCount(delta: number) {
@@ -251,24 +297,22 @@ export function TicketGenerator({
     if (!displayedLegs.length) return
     const riskMeta = RISK_PROFILES.find((r) => r.key === config.riskProfile)!
     const lines = [
-      `🎯 BetMind AI — Boleto ${riskMeta.label}`,
-      `📊 Cuota Combinada: ${combinedOddsDisplay.toFixed(2)}`,
-      ticket ? `💡 +EV Promedio: ${(ticket.evAverage * 100).toFixed(1)}%` : '',
-      ticket ? `✅ Confianza IA: ${ticket.confidence}%` : '',
+      `BETMIND AI — BOLETO ${riskMeta.label}`,
+      `CUOTA COMBINADA: ${formatOdds(combinedOddsDisplay)}`,
+      ticket ? `EV PROMEDIO: ${formatEV(displayedLegs.reduce((sum, leg) => sum + leg.ev, 0) / displayedLegs.length)}` : '',
+      ticket ? `CONFIANZA IA: ${ticket.confidence}%` : '',
       '',
       ...displayedLegs.map(
         (l, i) =>
-          `${i + 1}. ${l.match}\n   ${formatMarketName(l.market)} @ ${l.odds.toFixed(2)}`,
+          `${i + 1}. ${l.match}\n   ${formatMarketName(l.market)} @ ${formatOdds(l.odds)}`,
       ),
       '',
-      `⚡ Generado por BetMind AI`,
+      `Generado por BetMind AI`,
     ].filter(Boolean)
     navigator.clipboard.writeText(lines.join('\n')).then(() => {
-      setCopied(true)
       toast('Boleto copiado al portapapeles', {
         description: `${displayedLegs.length} selecciones listas.`,
       })
-      setTimeout(() => setCopied(false), 2200)
     })
   }
 
@@ -281,52 +325,129 @@ export function TicketGenerator({
     })
   }
 
+  async function handleShare() {
+    if (!ticket) return
+    const result = await shareOrDownloadTicket(ticket)
+    if (result === 'shared') toast('Boleto compartido')
+    if (result === 'downloaded') toast('Imagen descargada')
+  }
+
   const activeProfile = RISK_PROFILES.find((r) => r.key === config.riskProfile)!
   const modeMeta = MODE_META[activeProfile.mode]
+  const [leaguePopoverOpen, setLeaguePopoverOpen] = React.useState(false)
+  const [leagueSearch, setLeagueSearch] = React.useState('')
+  const selectedLeagueCount = config.selectedLeagues.filter((key) => activeLeagueKeySet.has(key)).length
+  const filteredLeagues = activeLeagues.filter((league) =>
+    `${league.label} ${league.key} ${league.group}`.toLowerCase().includes(leagueSearch.toLowerCase()),
+  )
+  const activeCountForGroup = (group?: string) => activeLeagues
+    .filter((league) => !group || league.group === group)
+    .reduce((total, league) => total + league.activeMatches, 0)
+  const leaguePresets = [
+    { label: 'Todas', group: undefined },
+    { label: 'Big 5 Europa', group: 'Big 5 Europa' },
+    { label: 'Sudamérica', group: 'Sudamérica' },
+    { label: 'Copas UEFA', group: 'Copas UEFA' },
+  ].map((preset) => ({ ...preset, count: activeCountForGroup(preset.group) }))
+  const totalActive = activeCountForGroup()
+
+  function toggleMarket(market: MarketKey) {
+    setConfig((prev) => ({
+      ...prev,
+      selectedMarkets: prev.selectedMarkets.includes(market)
+        ? prev.selectedMarkets.filter((item) => item !== market)
+        : [...prev.selectedMarkets, market],
+    }))
+  }
+
+  function toggleLeague(league: string) {
+    setConfig((prev) => ({
+      ...prev,
+      selectedLeagues: prev.selectedLeagues.includes(league)
+        ? prev.selectedLeagues.filter((item) => item !== league)
+        : [...prev.selectedLeagues, league],
+    }))
+  }
+
+  function applyLeaguePreset(group?: string) {
+    setConfig((prev) => ({
+      ...prev,
+      selectedLeagues: group
+        ? activeLeagues.filter((league) => league.group === group).map((league) => league.key)
+        : activeLeagues.map((league) => league.key),
+    }))
+  }
+
+  function swapLeg(index: number) {
+    if (!ticket?.replacementCandidates?.length) return
+    const usedMatches = new Set(ticket.legs.map((leg, legIndex) => legIndex === index ? '' : leg.match))
+    const replacement = ticket.replacementCandidates.find((candidate) => !usedMatches.has(candidate.match))
+    if (!replacement) return
+    setTicket((current) => current ? {
+      ...current,
+      legs: current.legs.map((leg, legIndex) => legIndex === index ? replacement : leg),
+      replacementCandidates: current.replacementCandidates?.filter((candidate) => candidate !== replacement),
+    } : current)
+  }
 
   /* ── empty-state reason ── */
   const emptyReason = React.useMemo(() => {
+    if (leagues.length > 0 && (activeLeagues.length === 0 || selectedLeagueCount === 0)) {
+      return 'No hay encuentros disponibles para este mercado hoy'
+    }
     if (!ticket) return null
-    if (config.marketCategory !== 'all' && filterLegsByCategory(ticket.legs, config.marketCategory).length === 0) {
-      const catLabel = MARKET_CATEGORIES.find((c) => c.key === config.marketCategory)?.label ?? 'este filtro'
-      return `No hay selecciones de ${catLabel} disponibles hoy. El modelo no detectó oportunidades +EV en este mercado para los partidos activos. Prueba con "Todos" o cambia el perfil de riesgo.`
+    if (ticket.legs.length === 0) {
+      return 'No hay selecciones para los mercados y ligas actuales. Amplía los filtros o cambia el perfil de riesgo.'
     }
     return null
-  }, [ticket, config.marketCategory])
+  }, [ticket, leagues.length, activeLeagues.length, selectedLeagueCount])
 
   /* ------------------------------------------------------------------ */
   /* Render                                                               */
   /* ------------------------------------------------------------------ */
   return (
     <div className="flex flex-col gap-4">
-      {/* ── TOP: Market Category Pills ── */}
-      <div
-        role="group"
-        aria-label="Filtro de mercado"
-        className="flex flex-wrap gap-1.5"
-      >
-        {MARKET_CATEGORIES.map((cat) => {
-          const Icon = cat.icon
-          const active = config.marketCategory === cat.key
-          return (
-            <button
-              key={cat.key}
-              type="button"
-              id={`market-cat-${cat.key}`}
-              aria-pressed={active}
-              onClick={() => setConfig((prev) => ({ ...prev, marketCategory: cat.key }))}
-              className={cn(
-                'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all duration-200',
-                active
-                  ? 'border-primary/50 bg-primary/15 text-primary shadow-sm shadow-primary/10'
-                  : 'border-border bg-surface/40 text-muted-foreground hover:border-border hover:bg-surface hover:text-foreground',
-              )}
-            >
-              <Icon size={11} aria-hidden />
-              {cat.label}
-            </button>
-          )
-        })}
+      <div className="flex flex-col gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-subtle">Mercados permitidos</span>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Mercados permitidos">
+          {MARKET_CATEGORIES.map((market) => {
+            const active = config.selectedMarkets.includes(market.key)
+            return (
+              <button key={market.key} type="button" aria-pressed={active} onClick={() => toggleMarket(market.key)} className={cn('cursor-pointer rounded-md border px-2.5 py-1 text-xs transition-colors', active ? 'border-primary/30 bg-primary/15 font-semibold text-primary' : 'border-border/50 bg-surface/40 text-muted-foreground hover:bg-surface')}>
+                {market.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="relative flex flex-wrap items-center gap-1.5" aria-label="Presets y selección de ligas">
+        {leaguePresets.filter((preset) => preset.label === 'Todas' || preset.count > 0).map((preset) => (
+          <button key={preset.label} type="button" onClick={() => applyLeaguePreset(preset.group)} className="cursor-pointer rounded-md border border-border/50 bg-surface/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface hover:text-foreground">
+            {preset.label} ({preset.count})
+          </button>
+        ))}
+        <button type="button" disabled={totalActive === 0} onClick={() => setLeaguePopoverOpen((open) => !open)} aria-expanded={leaguePopoverOpen} aria-label="Personalizar ligas activas" className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/60 bg-surface/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:pointer-events-none disabled:opacity-50">
+          <Search size={12} aria-hidden /> Personalizar ligas ({selectedLeagueCount}) <ChevronDown size={12} aria-hidden />
+        </button>
+        {leaguePopoverOpen && (
+          <div className="absolute left-0 top-full z-30 mt-2 w-full max-w-sm rounded-lg border border-border bg-card p-3 shadow-md">
+            <div className="flex items-center gap-2 rounded-md border border-border/60 bg-surface/40 px-2 py-1.5">
+              <Search size={13} className="text-muted-foreground" aria-hidden />
+              <input aria-label="Buscar liga o país" name="league-search" autoComplete="off" value={leagueSearch} onChange={(event) => setLeagueSearch(event.target.value)} placeholder="Buscar liga o país" className="min-w-0 flex-1 bg-transparent text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 placeholder:text-muted-foreground" />
+            </div>
+            <div className="mt-2 max-h-60 space-y-1 overflow-y-auto">
+              {filteredLeagues.length === 0 ? (
+                <p className="p-2 font-mono text-xs text-muted-foreground">No hay encuentros disponibles para este mercado hoy</p>
+              ) : filteredLeagues.map((league) => (
+                <label key={league.key} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-surface hover:text-foreground">
+                  <input type="checkbox" checked={config.selectedLeagues.includes(league.key)} onChange={() => toggleLeague(league.key)} className="accent-primary" />
+                  <span>{league.label} <span className="font-mono text-[11px] tabular-nums text-muted-foreground">[{league.activeMatches}]</span></span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── MAIN: 2-col layout ── */}
@@ -419,47 +540,7 @@ export function TicketGenerator({
               Rango de Cuota Combinada
             </legend>
 
-            <div className="grid grid-cols-2 gap-2">
-              {/* Min */}
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-subtle">Mínimo</span>
-                <div className="flex items-center overflow-hidden rounded-md border border-border bg-surface-inset focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/25">
-                  <input
-                    type="number"
-                    value={config.oddsMin}
-                    min={1.01}
-                    max={config.oddsMax - 0.5}
-                    step={0.10}
-                    onChange={(e) => {
-                      const v = parseFloat(parseFloat(e.target.value).toFixed(2))
-                      if (!isNaN(v)) setConfig((prev) => ({ ...prev, oddsMin: v }))
-                    }}
-                    className="w-full bg-transparent px-2.5 py-2 text-sm font-mono text-foreground outline-none tabular-nums"
-                  />
-                </div>
-              </div>
-              {/* Max */}
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-subtle">Máximo</span>
-                <div className="flex items-center overflow-hidden rounded-md border border-border bg-surface-inset focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/25">
-                  <input
-                    type="number"
-                    value={config.oddsMax}
-                    min={config.oddsMin + 0.5}
-                    max={100}
-                    step={0.50}
-                    onChange={(e) => {
-                      const v = parseFloat(parseFloat(e.target.value).toFixed(2))
-                      if (!isNaN(v)) setConfig((prev) => ({ ...prev, oddsMax: v }))
-                    }}
-                    className="w-full bg-transparent px-2.5 py-2 text-sm font-mono text-foreground outline-none tabular-nums"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Presets */}
-            <div className="flex gap-1.5">
+            <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-surface/50 p-1">
               {ODDS_PRESETS.map((preset) => {
                 const active = config.oddsMin === preset.min && config.oddsMax === preset.max
                 return (
@@ -474,7 +555,7 @@ export function TicketGenerator({
                       }))
                     }
                     className={cn(
-                      'flex-1 rounded-md border py-1.5 text-[10px] font-bold transition-colors',
+                      'flex-1 rounded-md border py-2 text-[10px] font-bold transition-colors',
                       active
                         ? 'border-primary/40 bg-primary/12 text-primary'
                         : 'border-border bg-transparent text-subtle hover:text-foreground',
@@ -521,12 +602,13 @@ export function TicketGenerator({
                     modeMeta.text,
                   )}
                 >
-                  <span aria-hidden>{modeMeta.glyph}</span>
-                  {modeMeta.label}
+                    {modeMeta.label}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {config.selectionCount} selecciones ·{' '}
-                  {MARKET_CATEGORIES.find((c) => c.key === config.marketCategory)?.label}
+                  {config.selectedMarkets.length === MARKET_CATEGORIES.length
+                    ? 'Todos los mercados'
+                    : config.selectedMarkets.map((key) => MARKET_CATEGORIES.find((market) => market.key === key)?.label).join(', ')}
                 </span>
               </div>
 
@@ -539,11 +621,14 @@ export function TicketGenerator({
                       combinedOddsInRange ? 'text-positive' : 'text-warning',
                     )}
                   >
-                    {combinedOddsDisplay.toFixed(2)}
+                    {formatOdds(combinedOddsDisplay)}
                   </span>
-                  <span className="mt-0.5 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
-                    Cuota Combinada
-                  </span>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Cuota Combinada</span>
+                    <button type="button" onClick={handleCopy} title="Copiar texto del boleto" aria-label="Copiar texto del boleto" className="flex size-6 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-surface hover:text-foreground" disabled={!displayedLegs.length || loading}>
+                      <Copy size={13} aria-hidden />
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-end gap-1">
@@ -570,7 +655,7 @@ export function TicketGenerator({
                     +EV Promedio
                   </span>
                   <span className="font-mono font-bold tabular-nums text-positive">
-                    +{(ticket.evAverage * 100).toFixed(1)}%
+                     {formatEV(displayedLegs.reduce((total, leg) => total + leg.ev, 0) / Math.max(displayedLegs.length, 1))}
                   </span>
                 </div>
                 <div className="flex flex-col gap-0.5 pl-3">
@@ -624,12 +709,13 @@ export function TicketGenerator({
                 </p>
               </div>
             ) : displayedLegs.length > 0 ? (
-              <ul className="flex flex-col gap-2.5" key={`${generationKey}-${config.marketCategory}-${config.selectionCount}`}>
+               <ul className="flex flex-col gap-2.5" key={`${generationKey}-${config.selectedMarkets.join('-')}-${config.selectionCount}`}>
                 {displayedLegs.map((leg, i) => (
-                  <GeneratorLeg
+                  <TicketLeg
                     key={`${leg.match}-${leg.market}-${i}`}
                     leg={leg}
                     index={i}
+                    onSwap={() => swapLeg(i)}
                   />
                 ))}
               </ul>
@@ -646,7 +732,13 @@ export function TicketGenerator({
             )}
           </div>
 
-          {/* Analysis snippet — only when data available */}
+           {ticket?.optimizedCount && !loading && displayedLegs.length > 0 && (
+             <div className="my-2 flex items-center gap-2 rounded-md border border-border/60 bg-surface/40 px-3.5 py-2 font-mono text-xs text-muted-foreground">
+               Optimizado algorítmicamente: Reducimos tu boleto de {ticket.originalRequested} a {displayedLegs.length} selecciones para proteger tu Bankroll y mantener +EV real.
+             </div>
+           )}
+
+           {/* Analysis snippet — only when data available */}
           {ticket?.analysis && !loading && displayedLegs.length > 0 && (
             <div className="border-t border-border/40 bg-surface/20 px-5 py-3">
               <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
@@ -677,33 +769,16 @@ export function TicketGenerator({
             <div className="flex flex-col">
               <button
                 type="button"
-                id="generator-copy-ticket"
-                onClick={handleCopy}
-                disabled={!displayedLegs.length || loading}
-                className={cn(
-                  'flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold transition-opacity hover:opacity-90 disabled:opacity-35',
-                  copied
-                    ? 'bg-positive text-white'
-                    : 'bg-primary text-primary-foreground',
-                )}
-              >
-                {copied ? (
-                  <Check size={13} aria-hidden />
-                ) : (
-                  <Copy size={13} aria-hidden />
-                )}
-                {copied ? '¡Boleto Copiado!' : 'Copiar Boleto'}
-              </button>
-
-              <button
-                type="button"
                 id="generator-save-ticket"
                 onClick={handleSave}
                 disabled={!ticket || loading}
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-transparent py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-35"
+                className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-primary py-3 text-xs font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:opacity-35"
               >
                 <Star size={13} aria-hidden />
-                Guardar en Seguimiento
+                Guardar en Ledger Cuantitativo
+              </button>
+              <button type="button" disabled={!ticket} onClick={handleShare} className="mt-2 w-full rounded-lg border border-border bg-transparent py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:pointer-events-none disabled:opacity-50">
+                Compartir / Descargar Imagen
               </button>
             </div>
             <p className="mt-2.5 text-center text-[9px] font-medium text-subtle tracking-wide">

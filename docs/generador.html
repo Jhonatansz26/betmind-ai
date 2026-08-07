@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BetMind AI - Generador de Boletos Premium</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        .glow-green {
+            box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.3);
+        }
+
+        .glow-border {
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+    </style>
+</head>
+
+<body class="bg-slate-950 text-slate-100 min-h-screen pb-12">
+
+    <!-- HEADER -->
+    <header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <span
+                    class="bg-emerald-500 text-slate-950 font-extrabold px-2.5 py-1 rounded-lg text-sm tracking-wider">AI
+                    PRO</span>
+                <h1 class="font-extrabold text-xl tracking-tight">BETMIND <span
+                        class="text-emerald-400">GENERATOR</span></h1>
+            </div>
+            <span
+                class="text-xs font-semibold text-slate-400 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
+                ⚽ Motor Estadístico Poisson v3.4
+            </span>
+        </div>
+    </header>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="max-w-6xl mx-auto px-4 mt-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+        <!-- PANEL DE CONTROL (5 COLUMNAS) -->
+        <div class="lg:col-span-5 space-y-6 bg-slate-900/80 p-6 rounded-2xl border border-slate-800 h-fit">
+            <div>
+                <h2 class="font-bold text-lg text-white">1. Configura tu Estrategia</h2>
+                <p class="text-xs text-slate-400">El algoritmo filtrará miles de datos históricos en segundos.</p>
+            </div>
+
+            <!-- Ligas -->
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Ligas
+                    Activas</label>
+                <div class="grid grid-cols-2 gap-2 text-sm">
+                    <label
+                        class="flex items-center gap-2 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/50 cursor-pointer hover:border-slate-600">
+                        <input type="checkbox" checked class="accent-emerald-500 rounded"> 🇦🇷 Liga Argentina
+                    </label>
+                    <label
+                        class="flex items-center gap-2 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/50 cursor-pointer hover:border-slate-600">
+                        <input type="checkbox" checked class="accent-emerald-500 rounded"> 🇧🇷 Copa do Brasil
+                    </label>
+                    <label
+                        class="flex items-center gap-2 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/50 cursor-pointer hover:border-slate-600">
+                        <input type="checkbox" checked class="accent-emerald-500 rounded"> 🇨🇴 Liga BetPlay
+                    </label>
+                    <label
+                        class="flex items-center gap-2 bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/50 cursor-pointer hover:border-slate-600">
+                        <input type="checkbox" class="accent-emerald-500 rounded"> 🇪🇺 Copas Europa
+                    </label>
+                </div>
+            </div>
+
+            <!-- Mercados -->
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Mercado
+                    Principal</label>
+                <div class="flex flex-wrap gap-2" id="market-chips">
+                    <button onclick="selectMarket('remates')" id="m-remates"
+                        class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">🔥
+                        Remates Totales</button>
+                    <button onclick="selectMarket('corners')" id="m-corners"
+                        class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700">🚩
+                        Córners</button>
+                    <button onclick="selectMarket('mixto')" id="m-mixto"
+                        class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700">⚡
+                        Mixto / Bet Builder</button>
+                </div>
+            </div>
+
+            <!-- Número de Jugadas -->
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Número de Jugadas
+                        (Patas)</label>
+                    <span class="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded font-bold"
+                        id="legs-val">4 Jugadas (Óptimo)</span>
+                </div>
+                <input type="range" min="3" max="7" value="4" class="w-full accent-emerald-500 cursor-pointer"
+                    id="legs-slider" oninput="updateSlider(this.value)">
+            </div>
+
+            <!-- Nivel de Riesgo -->
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Perfil de
+                    Riesgo</label>
+                <div class="grid grid-cols-3 gap-2" id="risk-selector">
+                    <button onclick="setRisk('seguro')"
+                        class="p-3 rounded-xl border border-emerald-500/50 bg-emerald-500/10 text-center text-xs font-bold text-emerald-400">🛡️
+                        Seguro<br><span class="text-[10px] text-slate-400 font-normal">Conf. >80%</span></button>
+                    <button onclick="setRisk('ev')"
+                        class="p-3 rounded-xl border border-slate-700 bg-slate-800 text-center text-xs font-bold text-slate-300 hover:border-slate-600">⚖️
+                        Valor EV+<br><span class="text-[10px] text-slate-400 font-normal">Conf. 70-79%</span></button>
+                    <button onclick="setRisk('bomba')"
+                        class="p-3 rounded-xl border border-slate-700 bg-slate-800 text-center text-xs font-bold text-slate-300 hover:border-slate-600">🚀
+                        Bomba<br><span class="text-[10px] text-slate-400 font-normal">Alta Cuota</span></button>
+                </div>
+            </div>
+
+            <!-- BOTÓN GENERAR -->
+            <button onclick="generateSlip()"
+                class="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-extrabold py-4 rounded-xl shadow-lg transition duration-200 flex justify-center items-center gap-2">
+                <span>✨ GENERAR BOLETO CON IA</span>
+            </button>
+        </div>
+
+        <!-- VISTA DEL BOLETO GENERADO (7 COLUMNAS) -->
+        <div class="lg:col-span-7 flex flex-col justify-between space-y-6">
+
+            <!-- BANNER SMART FALLBACK (Oculto por defecto, se activa si pides >5 patas) -->
+            <div id="fallback-banner"
+                class="hidden bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-start gap-3">
+                <span class="text-amber-400 text-lg">💡</span>
+                <div class="text-xs text-amber-200/90 leading-relaxed">
+                    <span class="font-bold text-amber-400">Optimización Automática de Mercado:</span> Para no bajar del
+                    80% de confianza estadística en un boleto largo, autocompletamos 1 jugada con nuestro mercado
+                    hermano de <span class="font-bold underline">Córners</span>.
+                </div>
+            </div>
+
+            <!-- TARJETA DEL BOLETO -->
+            <div
+                class="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden glow-green flex-1 flex flex-col justify-between">
+
+                <!-- Header del Boleto -->
+                <div
+                    class="bg-slate-800/50 p-5 border-b border-slate-800 flex flex-wrap justify-between items-center gap-4">
+                    <div>
+                        <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider">Combinada
+                            Recomendada</span>
+                        <div class="flex items-baseline gap-2 mt-0.5">
+                            <span class="text-3xl font-extrabold text-white" id="total-odds">8.75</span>
+                            <span class="text-xs text-slate-400 font-medium">Cuota Total</span>
+                        </div>
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="text-right">
+                            <span class="text-[10px] uppercase font-bold text-slate-400 block">Confianza del
+                                Modelo</span>
+                            <span
+                                class="text-sm font-extrabold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 block mt-0.5"
+                                id="ai-conf">83.4%</span>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-[10px] uppercase font-bold text-slate-400 block">Valor EV+</span>
+                            <span
+                                class="text-sm font-extrabold text-amber-400 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20 block mt-0.5">+14.2%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Lista de Jugadas (Se inyecta con JS) -->
+                <div class="p-5 space-y-3 divide-y divide-slate-800/80" id="picks-container">
+                    <!-- Jugadas precargadas -->
+                </div>
+
+                <!-- Footer del Boleto -->
+                <div class="p-4 bg-slate-950/60 border-t border-slate-800 flex justify-between items-center">
+                    <span class="text-xs text-slate-500">Garantía Anti-Correlación activa 🛡️</span>
+                    <div class="flex gap-2">
+                        <button onclick="alert('✅ Código de boleto copiado: BET-99482')"
+                            class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition">
+                            📋 Copiar Apuesta
+                        </button>
+                        <button onclick="alert('📸 Generando imagen para historias de Instagram...')"
+                            class="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-xs font-bold text-slate-950 transition">
+                            🔥 Compartir Boleto
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+    <script>
+        // BASE DE DATOS DEMO (Estadísticas reales que conversamos)
+        const database = [
+            {
+                id: 1,
+                match: "Boca Juniors vs Estudiantes",
+                league: "🇦🇷 Liga Profesional",
+                market: "Remates Totales",
+                pick: "Más de 21.5 Remates",
+                odds: 1.50,
+                conf: "84%",
+                reason: "Boca en La Bombonera promedia 16.4 remates jugando de local. En la ida hicieron 23 remates totales. Obligados por el global, el volumen de tiros lejanos será muy alto."
+            },
+            {
+                id: 2,
+                match: "Cruzeiro vs Chapecoense",
+                league: "🇧🇷 Copa do Brasil",
+                market: "Remates Totales",
+                pick: "Más de 24.5 Remates",
+                odds: 1.42,
+                conf: "88%",
+                reason: "En el partido de ida registraron 26 remates tras el 0-0. Cruzeiro en el Mineirão genera un promedio de 18 disparos en solitario ante rivales de menor categoría."
+            },
+            {
+                id: 3,
+                match: "Grêmio vs Mirassol",
+                league: "🇧🇷 Copa do Brasil",
+                market: "Remates Totales",
+                pick: "Más de 22.5 Remates",
+                odds: 1.40,
+                conf: "82%",
+                reason: "El partido anterior cerró con 24 disparos. Grêmio juega hipervertical en Porto Alegre y Mirassol concede espacios en retroceso para el tiro de media distancia."
+            },
+            {
+                id: 4,
+                match: "Fortaleza vs Palmeiras",
+                league: "🇧🇷 Copa do Brasil",
+                market: "Remates Totales",
+                pick: "Más de 25.5 Remates",
+                odds: 1.47,
+                conf: "85%",
+                reason: "El enfrentamiento de ida fue una aplanadora de 35 remates. Fortaleza abajo en el global 3-0 saldrá a disparar desde cualquier ángulo y Palmeiras de contra liquida."
+            },
+            {
+                id: 5,
+                match: "Once Caldas vs América de Cali",
+                league: "🇨🇴 Liga BetPlay",
+                market: "Córners Totales",
+                pick: "Más de 7.5 Córners",
+                odds: 1.55,
+                conf: "81%",
+                reason: "América de visitante juega por bandas con extremos rápidos (promedia 5 córners solo). En Manizales los últimos 4 duelos directos promediaron 10.2 tiros de esquina."
+            },
+            {
+                id: 6,
+                match: "Unión de Santa Fe vs Lanús",
+                league: "🇦🇷 Liga Profesional",
+                market: "Remates Totales",
+                pick: "Más de 23.5 Remates",
+                odds: 1.45,
+                conf: "79%",
+                reason: "En la ida se generaron 30 remates. Bajamos la línea en 3 disparos como margen de seguridad ante una posible segunda mitad disputada en mediocampo."
+            }
+        ];
+
+        let currentLegs = 4;
+
+        function updateSlider(val) {
+            currentLegs = parseInt(val);
+            const text = val == 4 || val == 5 ? `${val} Jugadas (Óptimo)` : `${val} Jugadas`;
+            document.getElementById('legs-val').innerText = text;
+        }
+
+        function toggleReason(id) {
+            const el = document.getElementById(`reason-${id}`);
+            el.classList.toggle('hidden');
+        }
+
+        function swapPick(btn, id) {
+            btn.innerText = "⏳ Cambiando...";
+            setTimeout(() => {
+                alert("✨ IA: Hemos sustituido este partido por 'Santa Fe > 6.5 Córners' manteniendo una confianza superior al 80%.");
+                generateSlip();
+            }, 500);
+        }
+
+        function generateSlip() {
+            const container = document.getElementById('picks-container');
+            const fallback = document.getElementById('fallback-banner');
+            container.innerHTML = "";
+
+            // Si pide > 5 jugadas, mostramos el Smart Fallback (¡efecto WOW!)
+            if (currentLegs > 5) {
+                fallback.classList.remove('hidden');
+            } else {
+                fallback.classList.add('hidden');
+            }
+
+            let totalOdds = 1.0;
+            const selectedPicks = database.slice(0, currentLegs);
+
+            selectedPicks.forEach((item, index) => {
+                totalOdds = totalOdds * item.odds;
+
+                const html = `
+          <div class="pt-3 first:pt-0">
+            <div class="flex justify-between items-start gap-3">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">${item.league}</span>
+                  <span class="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded font-bold">Confianza: ${item.conf}</span>
+                </div>
+                <h3 class="font-bold text-white text-base">${item.match}</h3>
+                <p class="text-sm font-semibold text-emerald-400">
+                  ⚡ ${item.pick} <span class="text-slate-400 font-normal">(${item.market})</span>
+                </p>
+              </div>
+              
+              <div class="text-right flex flex-col items-end gap-2">
+                <span class="text-lg font-black text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700">
+                  @${item.odds.toFixed(2)}
+                </span>
+                <div class="flex gap-2">
+                  <button onclick="toggleReason(${index})" class="text-[11px] text-slate-400 hover:text-white underline font-semibold">
+                    ¿Por qué? ℹ️
+                  </button>
+                  <button onclick="swapPick(this, ${index})" title="Cambiar pick por otro del mismo valor" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold">
+                    🔄 Cambiar
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- EXPLICACIÓN TÁCTICA DEL MODELO (Oculta hasta hacer clic en ¿Por qué?) -->
+            <div id="reason-${index}" class="hidden mt-3 bg-slate-950/80 border-l-2 border-emerald-500 p-3 rounded-r-lg text-xs text-slate-300">
+              <span class="font-bold text-emerald-400 block mb-0.5">🧠 Análisis Táctico de BetMind AI:</span>
+              ${item.reason}
+            </div>
+          </div>
+        `;
+                container.insertAdjacentHTML('beforeend', html);
+            });
+
+            // Actualizar Cuotas
+            document.getElementById('total-odds').innerText = totalOdds.toFixed(2);
+            document.getElementById('ai-conf').innerText = currentLegs > 5 ? "80.2%" : "84.5%";
+        }
+
+        // Funciones cosméticas de los botones de filtro
+        function selectMarket(market) {
+            document.querySelectorAll('#market-chips button').forEach(b => {
+                b.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700";
+            });
+            const active = document.getElementById(`m-${market}`);
+            active.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40";
+            generateSlip();
+        }
+
+        function setRisk(risk) {
+            generateSlip();
+        }
+
+        // Inicializar al cargar
+        generateSlip();
+    </script>
+</body>
+
+</html>

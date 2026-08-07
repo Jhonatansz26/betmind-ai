@@ -64,7 +64,7 @@ def calculate_lambdas(
 
     lambda_home = (
         home.attack_index
-        * away.defense_index       # Nota: defense_index > 1 = buena defensa = penaliza al atacante
+        / _defensive_strength_factor(away.defense_index)
         * league_avg_goals
         * home_advantage
         * form_multiplier_home
@@ -73,7 +73,7 @@ def calculate_lambdas(
 
     lambda_away = (
         away.attack_index
-        * home.defense_index
+        / _defensive_strength_factor(home.defense_index)
         * league_avg_goals
         * form_multiplier_away
         * h2h_adj_away
@@ -98,6 +98,15 @@ def calculate_lambdas(
     )
 
     return round(lambda_home, 4), round(lambda_away, 4)
+
+
+def _defensive_strength_factor(defense_index: float) -> float:
+    """Return a safe denominator for the defensive strength index.
+
+    Values above 1 mean that the team concedes fewer goals than league
+    average, so they must reduce the opponent's expected-goals lambda.
+    """
+    return max(float(defense_index), 0.01)
 
 
 def estimate_lambdas_from_odds(

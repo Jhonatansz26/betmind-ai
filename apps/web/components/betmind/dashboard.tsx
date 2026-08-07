@@ -370,7 +370,12 @@ export function Dashboard() {
 
   return (
     <div className="min-h-svh bg-background pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
-      <TopNav active={tab} onChange={setTab} onToggleSidebar={() => setSidebarOpen((v) => !v)} />
+      <TopNav
+        active={tab}
+        onChange={setTab}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        activeLeagueCount={leagues.filter((league) => league.active_matches > 0).length}
+      />
 
       <div className="mx-auto flex w-full max-w-[1600px] gap-6 px-4 py-6">
         {/* Sidebar — only shown on Partidos tab on mobile, always on desktop */}
@@ -412,7 +417,7 @@ export function Dashboard() {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                     {ticketViewMode === 'ia' && (
                       <DateSelector value={dateFilter} onChange={setDateFilter} />
                     )}
@@ -428,7 +433,7 @@ export function Dashboard() {
                         aria-pressed={ticketViewMode === 'ia'}
                         onClick={() => setTicketViewMode('ia')}
                         className={cn(
-                          'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all duration-200',
+                          'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-200',
                           ticketViewMode === 'ia'
                             ? 'bg-primary text-primary-foreground shadow-sm'
                             : 'text-muted-foreground hover:text-foreground',
@@ -443,7 +448,7 @@ export function Dashboard() {
                         aria-pressed={ticketViewMode === 'generator'}
                         onClick={() => setTicketViewMode('generator')}
                         className={cn(
-                          'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all duration-200',
+                          'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-200',
                           ticketViewMode === 'generator'
                             ? 'bg-primary text-primary-foreground shadow-sm'
                             : 'text-muted-foreground hover:text-foreground',
@@ -488,6 +493,7 @@ export function Dashboard() {
                 {ticketViewMode === 'generator' && (
                   <TicketGenerator
                     matches={matches}
+                    leagues={leagues}
                     onTrack={() => setTrackRefreshKey((k) => k + 1)}
                   />
                 )}
@@ -540,8 +546,8 @@ export function Dashboard() {
                 <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto">
                   {([
                     { id: 'all', label: 'Todos' },
-                    { id: 'high_confidence', label: '⚡ Alta Confianza (>75%)' },
-                    { id: 'best_value', label: '🔥 Mejor Valor (EV+)' },
+                    { id: 'high_confidence', label: 'ALTA CONFIANZA (>75%)' },
+                    { id: 'best_value', label: '+EV MEJOR VALOR' },
                   ] as const).map((f) => (
                     <button
                       key={f.id}
@@ -550,7 +556,7 @@ export function Dashboard() {
                       onClick={() => setCardFilter(f.id)}
                       aria-pressed={cardFilter === f.id}
                       className={cn(
-                        'whitespace-nowrap rounded-full border px-3 py-1 text-[11px] font-semibold transition-all duration-150',
+                        'whitespace-nowrap rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors duration-150',
                         cardFilter === f.id
                           ? f.id === 'best_value'
                             ? 'border-positive/40 bg-positive/15 text-positive shadow-[0_0_10px_-4px_var(--positive)]'

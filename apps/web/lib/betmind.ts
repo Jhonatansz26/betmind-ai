@@ -1,5 +1,7 @@
 // BetMind AI — Poisson model helpers and mock intelligence data.
 
+import { formatEV, formatPercent } from './formatters'
+
 export type Mode = 'EDGE' | 'VALUE' | 'BOLD'
 export type MatchStatus = 'SCHEDULED' | 'IN_PLAY' | 'PAUSED' | 'FINISHED' | 'UPCOMING' | 'LIVE' | 'FT'
 export type Impact = 'HIGH' | 'MEDIUM' | 'LOW'
@@ -96,6 +98,15 @@ export interface TicketLegData {
   odds: number
   ev: number
   reason?: string
+  reasoning?: string
+  xgHome?: number | null
+  xgAway?: number | null
+  fairProb?: number | null
+  bookmakerProb?: number | null
+  edge?: number | null
+  kellyStake?: number
+  varianceNote?: string
+  confidenceScore?: number
 }
 
 export interface Ticket {
@@ -111,6 +122,9 @@ export interface Ticket {
   pros: string[]
   cons: string[]
   rationale: string[]
+  optimizedCount?: boolean
+  originalRequested?: number | null
+  replacementCandidates?: TicketLegData[]
 }
 
 /* ------------------------------------------------------------------ */
@@ -207,11 +221,11 @@ export function impliedProbability(odds: number): number {
 }
 
 export function pct(value: number, digits = 1): string {
-  return `${(value * 100).toFixed(digits)}%`
+  return formatPercent(value, digits)
 }
 
 export function signed(value: number, digits = 1): string {
-  return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(digits)}%`
+  return digits === 1 ? formatEV(value) : `${value >= 0 ? '+' : ''}${(value * 100).toFixed(digits)}%`
 }
 
 export interface MarketRow {

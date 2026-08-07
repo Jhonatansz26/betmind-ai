@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from apps.api.schemas.ticket import TicketMode, TicketLegSchema, GeneratedTicket
-from apps.api.engine.kelly import calculate_quarter_kelly
+from apps.api.engine.kelly import calculate_quarter_kelly, MAX_KELLY_STAKE
+from betmind_ml.config import EV_POSITIVE_THRESHOLD
 
 HIGH_VARIANCE_LEAGUES = {
     "liga_betplay", "liga_profesional_arg", "liga_mx",
@@ -10,8 +11,9 @@ HIGH_VARIANCE_LEAGUES = {
 
 MODE_CONFIG = {
     TicketMode.EDGE: {
-        "min_ev":              0.005,
+        "min_ev":              EV_POSITIVE_THRESHOLD,
         "max_selections":      2,
+        "max_ticket_exposure": 0.020,
         "min_our_probability": 0.40,
         "target_odds_min":     1.50,
         "target_odds_max":     3.50,
@@ -27,8 +29,9 @@ MODE_CONFIG = {
         "staking": "1-2% of bankroll — conservative, high-frequency play",
     },
     TicketMode.VALUE: {
-        "min_ev":              0.005,
+        "min_ev":              EV_POSITIVE_THRESHOLD,
         "max_selections":      3,
+        "max_ticket_exposure": 0.015,
         "min_our_probability": 0.30,
         "target_odds_min":     2.50,
         "target_odds_max":     12.00,
@@ -44,8 +47,9 @@ MODE_CONFIG = {
         "staking": "0.5-1% of bankroll — medium frequency, higher EV target",
     },
     TicketMode.BOLD: {
-        "min_ev":              0.005,
+        "min_ev":              EV_POSITIVE_THRESHOLD,
         "max_selections":      4,
+        "max_ticket_exposure": 0.010,
         "min_our_probability": 0.22,
         "target_odds_min":     8.00,
         "target_odds_max":     30.00,
@@ -123,6 +127,27 @@ def calculate_average_ev(legs: list[TicketLegSchema]) -> float:
     return round(sum(leg.expected_value for leg in legs) / len(legs), 4)
 
 
+def swap_ticket_leg(ticket: GeneratedTicket, leg_index: int) -> GeneratedTicket:
+    """Replace one leg from the prevalidated pool and recalculate ticket metrics."""
+    if not 0 <= leg_index < len(ticket.legs) or not ticket.replacement_candidates:
+        return ticket
+    current_matches = {leg.match_id for index, leg in enumerate(ticket.legs) if index != leg_index}
+    replacement = next(
+        (candidate for candidate in ticket.replacement_candidates if candidate.match_id not in current_matches),
+        None,
+    )
+    if replacement is None:
+        return ticket
+    legs = [replacement if index == leg_index else leg for index, leg in enumerate(ticket.legs)]
+    return ticket.model_copy(update={
+        "legs": legs,
+        "combined_odds": calculate_combined_odds(legs),
+        "average_ev": calculate_average_ev(legs),
+        "kelly_stake": _calculate_combined_kelly(legs),
+        "replacement_candidates": [candidate for candidate in ticket.replacement_candidates if candidate is not replacement],
+    })
+
+
 def _build_mode_label(mode: TicketMode) -> str:
     return {
         TicketMode.EDGE:  "EDGE MODE",
@@ -169,28 +194,78 @@ def _passes_anti_cascara_filter(leg: TicketLegSchema) -> bool:
     return True
 
 
-def _calculate_combined_kelly(legs: list[TicketLegSchema]) -> float:
+def _calculate_combined_kelly(
+    legs: list[TicketLegSchema],
+    max_exposure: float = MAX_KELLY_STAKE,
+) -> float:
     """
     Calculate combined Kelly for a multi-leg ticket.
     Uses the minimum Kelly across all legs (conservative approach for parlays).
     """
     if not legs:
         return 0.0
-    min_kelly = min(leg.kelly_stake for leg in legs)
-    return round(min_kelly, 4)
+    total_exposure = sum(max(0.0, leg.kelly_stake) for leg in legs)
+    return round(min(total_exposure, max_exposure), 4)
+
+
+MARKET_CATEGORY_MAP: dict[str, tuple[str, ...]] = {
+    "GOALS": (
+        "1X2", "1X2_", "OVER_", "UNDER_", "BTTS_", "O1.5", "O2.5", "O3.5",
+        "BTTS_YES", "BTTS_NO",
+    ),
+    "CORNERS": (
+        "CORNERS_OVER_7_5", "CORNERS_OVER_8_5", "CORNERS_OVER_9_5", "CORNERS_UNDER_10_5",
+    ),
+    "CARDS": ("CARDS_OVER_3_5", "CARDS_OVER_4_5", "CARDS_UNDER_5_5"),
+    "SHOTS": ("SHOTS_OT_OVER_6_5", "SHOTS_OT_OVER_7_5", "SHOTS_OT_OVER_8_5"),
+    "1X2": ("1X2", "1X2_"),
+}
+
+
+def _market_matches_categories(market_name: str, categories: set[str]) -> bool:
+    """Translate UI categories to persisted market names and legacy aliases."""
+    normalized = market_name.upper()
+    return any(
+        normalized == market or normalized.startswith(market)
+        for category in categories
+        for market in MARKET_CATEGORY_MAP.get(category.upper(), ())
+    )
+
+
+def _build_quantitative_reasoning(
+    market_name: str,
+    xg_home: float | None,
+    xg_away: float | None,
+    fair_prob: float,
+    bookmaker_prob: float,
+    expected_value: float,
+) -> str:
+    metrics = [
+        f"Probabilidad modelo: {fair_prob * 100:.1f}%",
+        f"Probabilidad de mercado desmarquinizada: {bookmaker_prob * 100:.1f}%",
+        f"EV: {expected_value * 100:+.2f}%",
+    ]
+    if xg_home is not None and xg_away is not None:
+        metrics.insert(0, f"xG local/visitante: {xg_home:.2f}/{xg_away:.2f}")
+    return ". ".join(metrics) + "."
 
 
 def build_ticket_for_mode(
     mode: TicketMode,
     available_predictions: list[dict],
     exclude_match_ids: set[int] | None = None,
+    requested_count: int | None = None,
+    league_keys: set[str] | None = None,
+    markets: set[str] | None = None,
 ) -> GeneratedTicket | None:
     exclude = exclude_match_ids or set()
+    league_keys = {key.strip().lower() for key in (league_keys or set()) if key.strip()}
+    markets = {market.strip().upper() for market in (markets or set()) if market.strip()}
     config = MODE_CONFIG[mode]
     allowed = config.get("allowed_markets")
-    min_ev = config["min_ev"]
+    min_ev = EV_POSITIVE_THRESHOLD
     min_prob = config["min_our_probability"]
-    max_legs = config["max_selections"]
+    max_legs = min(config["max_selections"], requested_count or config["max_selections"])
     target_min = config["target_odds_min"]
     target_max = config["target_odds_max"]
     max_individual_odds = config.get("max_individual_odds", 999)
@@ -200,9 +275,14 @@ def build_ticket_for_mode(
     for pred in available_predictions:
         if pred["match_id"] in exclude:
             continue
+        if league_keys and pred.get("league_key") not in league_keys:
+            continue
 
         for mkt in pred.get("markets", []):
             mkt_name = mkt["market_name"]
+
+            if markets and not _market_matches_categories(mkt_name, markets):
+                continue
 
             if allowed and mkt_name not in allowed:
                 continue
@@ -229,6 +309,13 @@ def build_ticket_for_mode(
 
             edge_pct = round((prob - implied) * 100, 2) if implied else 0
             kelly = calculate_quarter_kelly(prob, bm_odds)
+            xg_home = mkt.get("xg_home", pred.get("xg_home"))
+            xg_away = mkt.get("xg_away", pred.get("xg_away"))
+            confidence = min(100.0, max(0.0, prob * 70 + ev * 100))
+            quantitative_reasoning = _build_quantitative_reasoning(
+                mkt_name, xg_home, xg_away, prob, implied,
+                ev,
+            )
 
             leg = TicketLegSchema(
                 match_id=pred["match_id"],
@@ -243,6 +330,14 @@ def build_ticket_for_mode(
                 edge_percentage=edge_pct,
                 expected_value=ev,
                 kelly_stake=kelly,
+                xg_home=xg_home,
+                xg_away=xg_away,
+                fair_prob=prob,
+                bookmaker_prob=implied,
+                edge=round(prob - implied, 4),
+                variance_note=quantitative_reasoning,
+                reasoning=quantitative_reasoning,
+                confidence_score=round(confidence, 2),
                 match_time_cot=pred["match_time_cot"],
             )
 
@@ -251,10 +346,10 @@ def build_ticket_for_mode(
 
             candidates.append(leg)
 
-    if len(candidates) < 2:
+    if not candidates:
         return None
 
-    candidates.sort(key=lambda c: c.expected_value, reverse=True)
+    candidates.sort(key=lambda c: c.confidence_score, reverse=True)
 
     selected: list[TicketLegSchema] = []
     selected_match_ids: set[int] = set()
@@ -280,7 +375,7 @@ def build_ticket_for_mode(
         selected_fixtures.add(fixture_key)
         selected_market_names.append(candidate.market_name)
 
-    if len(selected) < 2:
+    if not selected or (not requested_count and len(selected) < 2):
         return None
 
     combined = calculate_combined_odds(selected)
@@ -314,12 +409,12 @@ def build_ticket_for_mode(
                 combined = trial_combined
                 break
 
-    if not (target_min <= combined <= target_max):
+    if len(selected) > 1 and not (target_min <= combined <= target_max):
         return None
 
     avg_ev = calculate_average_ev(selected)
     corr_bonus = get_correlation_bonus(selected_market_names)
-    combined_kelly = _calculate_combined_kelly(selected)
+    combined_kelly = _calculate_combined_kelly(selected, config["max_ticket_exposure"])
     base_confidence = min(
         round(avg_ev * 400 + corr_bonus * 20 + len(selected) * 5), 95
     )
@@ -348,4 +443,15 @@ def build_ticket_for_mode(
         pros=_build_pros(mode, selected, avg_ev, combined),
         cons=_build_cons(selected, avg_ev, combined),
         staking_suggestion=staking,
+        replacement_candidates=[
+            candidate for candidate in candidates
+            if candidate not in selected
+            and all(candidate.match_id != leg.match_id for leg in selected)
+            and _can_add_candidate(selected, candidate)
+            and check_forbidden_combination(
+                selected_market_names + [candidate.market_name]
+            )[0]
+        ],
+        optimized_count=bool(requested_count and len(selected) < requested_count),
+        original_requested=requested_count,
     )

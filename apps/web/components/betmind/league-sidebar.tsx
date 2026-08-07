@@ -15,29 +15,47 @@ interface LeagueSidebarProps {
   leagues?: LeagueData[]
 }
 
+type CatalogGroup = 'BIG 5 EUROPA' | 'SUDAMÉRICA' | 'TORNEOS UEFA' | 'OTRAS LIGAS ACTIVAS'
+
+interface SidebarLeague {
+  leagueId: string
+  name: string
+  activeMatches: number
+  flag: string
+  logoUrl: string | null
+  matchType: string
+  group: CatalogGroup
+}
+
+const BIG_FIVE = new Set(['Premier League', 'LaLiga EA Sports', 'Bundesliga', 'Serie A', "Ligue 1 McDonald's"])
+
+function getGroup(league: SidebarLeague): CatalogGroup {
+  if (BIG_FIVE.has(league.name)) return 'BIG 5 EUROPA'
+  if (league.name.toLowerCase().includes('uefa')) return 'TORNEOS UEFA'
+  const lowerName = league.name.toLowerCase()
+  if (/(argentina|brasil|colombia|chile|ecuador|perú|peru|uruguay|paraguay|bolivia|libertadores|sudamericana)/.test(lowerName)) return 'SUDAMÉRICA'
+  return 'OTRAS LIGAS ACTIVAS'
+}
+
 function LeagueGroup({
-  region,
+  label,
   items,
   active,
   onSelect,
 }: {
-  region: 'EUROPE' | 'AMERICAS'
-  items: {
-    leagueId: string
-    name: string
-    active_matches: number
-    flag: string
-    logoUrl: string | null
-    region: string
-    matchType: string
-  }[]
+  label: CatalogGroup
+  items: SidebarLeague[]
   active: string
   onSelect: (id: string) => void
 }) {
-  const regionLabel = region === 'EUROPE' ? 'EUROPA' : 'AMERICA'
+  if (items.length === 0) return null
+
   return (
-    <div className="flex flex-col gap-1">
-       <p className="px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground">{regionLabel}</p>
+    <section aria-labelledby={`league-group-${label}`} className="flex flex-col gap-1">
+      <div className="flex items-center justify-between px-2 pb-1 pt-2">
+        <h2 id={`league-group-${label}`} className="terminal-label">{label}</h2>
+        <span className="font-mono text-xs tabular-nums text-subtle">{items.length}</span>
+      </div>
       {items.map((item) => {
         const selected = active === item.leagueId
         return (
@@ -45,133 +63,125 @@ function LeagueGroup({
             key={item.leagueId}
             type="button"
             onClick={() => onSelect(item.leagueId)}
-            aria-current={selected}
+            aria-current={selected ? 'page' : undefined}
             className={cn(
-               'group flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-xs transition-colors',
-               selected
-                 ? 'bg-primary/10 font-semibold text-primary'
-                 : 'text-foreground hover:bg-surface/50',
+              'group flex min-h-10 w-full items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
+              selected
+                ? 'border-positive/30 bg-positive/10 text-foreground'
+                : 'border-transparent text-muted-foreground hover:border-border/60 hover:bg-surface-raised hover:text-foreground',
             )}
           >
-            <div className="flex items-center gap-2 min-w-0">
-              <LeagueLogo logoUrl={item.logoUrl} flag={item.flag} size="sm" />
-              <span className="flex min-w-0 items-center truncate text-xs font-medium text-foreground">
-                <span className="max-w-[170px] truncate">{item.name}</span>
-                {item.matchType === 'KNOCKOUT_CUP' && (
-                  <span className="ml-1.5 rounded border border-warning/30 bg-warning/10 px-1 py-0.2 text-[9px] font-mono text-warning">
-                    COPA
-                  </span>
-                )}
-              </span>
-            </div>
-            <span
-              className={cn(
-                'shrink-0 rounded border border-border/60 bg-surface-inset px-1.5 py-0.5 font-mono text-[11px] font-bold tabular-nums text-foreground',
-                item.active_matches === 0 && 'text-subtle opacity-50',
-              )}
-            >
-              {item.active_matches}
+            <span className="flex min-w-0 items-center gap-2.5">
+              <LeagueLogo logoUrl={item.logoUrl} flag={item.flag} label={item.name} size="sm" />
+              <span className="min-w-0 truncate font-medium">{item.name}</span>
+            </span>
+            <span className={cn(
+              'shrink-0 rounded border border-border/60 bg-surface-inset px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-foreground',
+              selected && 'border-positive/30 text-positive',
+            )}>
+              {item.activeMatches}
             </span>
           </button>
         )
       })}
-    </div>
+    </section>
   )
 }
 
 export function LeagueSidebar({ active, onSelect, matches, leagues = [] }: LeagueSidebarProps) {
-  const sidebarLeagues = React.useMemo(() => {
+  const sidebarLeagues = React.useMemo<SidebarLeague[]>(() => {
     const matchTypeMap = new Map(
       matches.map((match) => [String(match.leagueExternalId ?? 'other'), match.matchType]),
     )
 
     if (leagues.length > 0) {
       return leagues
+        .filter((league) => league.active_matches > 0)
         .map((league) => {
           const meta = resolveLeague(league.external_id, league.name)
-          return {
+          const item: SidebarLeague = {
             leagueId: String(league.external_id),
             name: meta.shortName,
-            active_matches: league.active_matches,
+            activeMatches: league.active_matches,
             flag: meta.flag,
             logoUrl: league.logo_url || meta.logoUrl,
-            region: meta.region,
             matchType: matchTypeMap.get(String(league.external_id)) ?? 'LEAGUE',
+            group: 'OTRAS LIGAS ACTIVAS',
           }
+          item.group = getGroup(item)
+          return item
         })
-        .sort((a, b) => b.active_matches - a.active_matches)
+        .sort((a, b) => b.activeMatches - a.activeMatches)
     }
 
-    const countMap = new Map<string, {
-      leagueId: string
-      name: string
-      active_matches: number
-      flag: string
-      logoUrl: string | null
-      region: string
-      matchType: string
-    }>()
-
-    for (const m of matches) {
-      const lid = String(m.leagueExternalId ?? 'other')
-      if (!countMap.has(lid)) {
-        const meta = resolveLeague(m.leagueExternalId, m.league)
-        countMap.set(lid, {
-          leagueId: lid,
-          name: meta.shortName,
-          active_matches: 0,
-          flag: meta.flag,
-          logoUrl: m.leagueLogoUrl || meta.logoUrl,
-          region: meta.region,
-          matchType: m.matchType,
-        })
+    const countMap = new Map<string, SidebarLeague>()
+    for (const match of matches) {
+      const leagueId = String(match.leagueExternalId ?? 'other')
+      const existing = countMap.get(leagueId)
+      if (existing) {
+        existing.activeMatches += 1
+        continue
       }
-      countMap.get(lid)!.active_matches++
+
+      const meta = resolveLeague(match.leagueExternalId, match.league)
+      const item: SidebarLeague = {
+        leagueId,
+        name: meta.shortName,
+        activeMatches: 1,
+        flag: meta.flag,
+        logoUrl: match.leagueLogoUrl || meta.logoUrl,
+        matchType: match.matchType,
+        group: 'OTRAS LIGAS ACTIVAS',
+      }
+      item.group = getGroup(item)
+      countMap.set(leagueId, item)
     }
 
-    return Array.from(countMap.values())
-      .filter((l) => l.active_matches > 0)
-      .sort((a, b) => b.active_matches - a.active_matches)
+    return Array.from(countMap.values()).sort((a, b) => b.activeMatches - a.activeMatches)
   }, [leagues, matches])
 
-  const europeLeagues = sidebarLeagues.filter((l) => l.region === 'EUROPE')
-  const americasLeagues = sidebarLeagues.filter((l) => l.region === 'AMERICAS')
-
-  const totalMatches = leagues.length > 0
-    ? sidebarLeagues.reduce((total, league) => total + league.active_matches, 0)
-    : matches.length
+  const totalMatches = sidebarLeagues.reduce((total, league) => total + league.activeMatches, 0)
+  const groups: CatalogGroup[] = ['BIG 5 EUROPA', 'SUDAMÉRICA', 'TORNEOS UEFA', 'OTRAS LIGAS ACTIVAS']
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <p className="px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-widest text-muted-foreground">CATÁLOGO DE LIGAS (26)</p>
+        <div className="flex items-end justify-between px-2">
+          <div>
+            <p className="terminal-label">Market watch</p>
+            <p className="mt-1 text-xs text-subtle">Competiciones activas</p>
+          </div>
+          <span className="font-mono text-xs tabular-nums text-positive">{sidebarLeagues.length}/26</span>
+        </div>
         <button
           type="button"
           onClick={() => onSelect('all')}
-          aria-current={active === 'all'}
+          aria-current={active === 'all' ? 'page' : undefined}
           className={cn(
-            'flex w-full items-center justify-between rounded-lg border border-border/40 bg-surface/30 px-3 py-2 text-xs font-semibold transition-colors hover:bg-surface/60',
+            'flex min-h-11 w-full items-center justify-between rounded-lg border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
             active === 'all'
-              ? 'border-primary/30 bg-primary/10 text-primary'
-              : 'text-foreground',
+              ? 'border-positive/30 bg-positive/10 text-positive'
+              : 'border-border/60 bg-surface/40 text-foreground hover:border-border hover:bg-surface-raised',
           )}
         >
-          <span>Todas las Ligas</span>
-          <span className="rounded border border-border/60 bg-surface-inset px-1.5 py-0.5 font-mono text-[11px] font-bold tabular-nums text-foreground">
+          <span>Todas las ligas</span>
+          <span className="rounded border border-border/60 bg-surface-inset px-1.5 py-0.5 font-mono text-xs font-bold tabular-nums text-foreground">
             {totalMatches}
           </span>
         </button>
       </div>
 
-      <div className="flex flex-col gap-4">
-        {europeLeagues.length > 0 && (
-          <LeagueGroup region="EUROPE" items={europeLeagues} active={active} onSelect={onSelect} />
-        )}
-        {americasLeagues.length > 0 && (
-          <LeagueGroup region="AMERICAS" items={americasLeagues} active={active} onSelect={onSelect} />
-        )}
+      <div className="flex flex-col gap-3">
+        {groups.map((group) => (
+          <LeagueGroup
+            key={group}
+            label={group}
+            items={sidebarLeagues.filter((league) => league.group === group)}
+            active={active}
+            onSelect={onSelect}
+          />
+        ))}
       </div>
-
     </div>
   )
 }

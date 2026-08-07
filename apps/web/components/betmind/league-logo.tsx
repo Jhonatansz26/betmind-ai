@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 interface LeagueLogoProps {
   logoUrl: string | null
   flag: string
+  label?: string
   className?: string
   size?: 'sm' | 'md' | 'lg'
 }
@@ -22,15 +23,14 @@ const containerSizeMap = {
   lg: 'size-8',
 }
 
-export function LeagueLogo({ logoUrl, flag, className, size = 'md' }: LeagueLogoProps) {
+export function LeagueLogo({ logoUrl, flag: _flag, label, className, size = 'md' }: LeagueLogoProps) {
   const [imgError, setImgError] = React.useState(false)
+  const fallbackLabel = label
+    ? label.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
+    : 'LG'
 
   if (!logoUrl || imgError) {
-    return (
-      <span aria-hidden className={cn('inline-flex shrink-0 items-center justify-center text-sm leading-none', sizeMap[size], className)}>
-        {flag}
-      </span>
-    )
+    return <span aria-hidden className={cn('inline-flex shrink-0 items-center justify-center rounded border border-border/60 bg-surface-raised font-mono text-xs font-semibold text-subtle', sizeMap[size], className)}>{fallbackLabel}</span>
   }
 
   return (

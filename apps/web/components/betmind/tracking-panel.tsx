@@ -7,11 +7,13 @@ import { toast } from 'sonner'
 import { type Mode, type Ticket } from '@/lib/betmind'
 import {
   fetchTicketHistory,
+  claimAnonymousTickets,
   saveTicket,
   updateTicketStatus,
   type SavedTicketStatus,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { formatEV, formatOdds, formatCOTDate } from '@/lib/formatters'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -56,9 +58,37 @@ function saveTracked(tickets: TrackedTicket[]) {
   }
 }
 
+export async function claimPendingTickets(): Promise<number> {
+  const pending = loadTracked().filter((ticket) => ticket.remote && /^\d+$/.test(ticket.id))
+  const ticketIds = pending.map((ticket) => Number(ticket.id))
+  if (!ticketIds.length) return 0
+
+  const result = await claimAnonymousTickets(ticketIds)
+  if (!result.ok || result.data.claimed_count <= 0) return 0
+
+  const pendingIds = new Set(ticketIds.map(String))
+  saveTracked(loadTracked().filter((ticket) => !pendingIds.has(ticket.id)))
+  return result.data.claimed_count
+}
+
 export async function addToTracking(ticket: Ticket): Promise<void> {
   const remoteResult = await saveTicket(ticket)
-  if (remoteResult.ok) return
+  if (remoteResult.ok) {
+    const existing = loadTracked()
+    const entry: TrackedTicket = {
+      id: String(remoteResult.data.id),
+      mode: ticket.mode,
+      combinedOdds: remoteResult.data.total_odds,
+      evAverage: remoteResult.data.total_ev,
+      confidence: ticket.confidence,
+      legsCount: ticket.legs.length,
+      trackedAt: remoteResult.data.created_at,
+      status: remoteResult.data.status,
+      remote: true,
+    }
+    saveTracked([entry, ...existing.filter((item) => item.id !== entry.id)].slice(0, 10))
+    return
+  }
 
   const existing = loadTracked()
   const entryId = `${ticket.mode}-${Date.now()}`
@@ -117,12 +147,7 @@ function TrackRow({
   onRemove: (id: string) => void
 }) {
   const statusCfg = STATUS_CONFIG[entry.status]
-  const date = new Date(entry.trackedAt).toLocaleDateString('es-CO', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'America/Bogota',
-  })
+  const date = formatCOTDate(entry.trackedAt)
 
   const nextStatus: Record<TrackStatus, TrackStatus> = {
     PENDING: 'WON',
@@ -143,15 +168,15 @@ function TrackRow({
 
       <div className="flex shrink-0 items-center gap-4">
         <div className="text-right">
-          <p className="font-mono text-sm font-bold tabular-nums text-foreground">{entry.combinedOdds.toFixed(2)}</p>
-          <p className="font-mono text-xs font-semibold tabular-nums text-positive">+{(entry.evAverage * 100).toFixed(1)}% EV</p>
+          <p className="font-mono text-sm font-bold tabular-nums text-foreground">{formatOdds(entry.combinedOdds)}</p>
+          <p className="font-mono text-xs font-semibold tabular-nums text-positive">{formatEV(entry.evAverage)} EV</p>
         </div>
         <button
           type="button"
           title="Cambiar estado"
           onClick={() => onStatusChange(entry.id, nextStatus[entry.status])}
           className={cn(
-            'inline-flex shrink-0 cursor-pointer rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tabular-nums transition-all hover:opacity-80',
+            'inline-flex shrink-0 cursor-pointer rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tabular-nums transition-opacity hover:opacity-80',
             statusCfg.className,
           )}
         >
@@ -181,6 +206,7 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
   React.useEffect(() => {
     let cancelled = false
     async function loadHistory() {
+      await claimPendingTickets()
       const result = await fetchTicketHistory()
       if (cancelled) return
       if (result.ok) {
@@ -203,7 +229,18 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
       }
     }
     void loadHistory()
-    return () => { cancelled = true }
+    const resync = () => { void loadHistory() }
+    window.addEventListener('storage', resync)
+    window.addEventListener('betmind:auth-changed', resync)
+    document.addEventListener('visibilitychange', resync)
+    const interval = window.setInterval(resync, 30_000)
+    return () => {
+      cancelled = true
+      window.removeEventListener('storage', resync)
+      window.removeEventListener('betmind:auth-changed', resync)
+      document.removeEventListener('visibilitychange', resync)
+      window.clearInterval(interval)
+    }
   }, [refreshKey])
 
   async function handleStatusChange(id: string, status: TrackStatus) {
@@ -239,8 +276,8 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
       <div className="grid grid-cols-2 divide-x divide-y divide-border/50 rounded-lg border border-border/60 bg-surface/30 px-4 py-3 text-xs sm:grid-cols-4 sm:divide-y-0">
         <div className="pr-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Boletos guardados</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{entries.length}</span></div>
-        <div className="px-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Cuota promedio</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{averageOdds.toFixed(2)}</span></div>
-        <div className="px-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">+EV medio</span><span className="font-mono text-sm font-bold tabular-nums text-positive">+{(averageEv * 100).toFixed(1)}%</span></div>
+        <div className="px-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Cuota promedio</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{formatOdds(averageOdds)}</span></div>
+        <div className="px-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">+EV medio</span><span className="font-mono text-sm font-bold tabular-nums text-positive">{formatEV(averageEv)}</span></div>
         <div className="pl-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">En seguimiento</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{pending}</span></div>
       </div>
 

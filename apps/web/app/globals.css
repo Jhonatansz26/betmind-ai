@@ -54,46 +54,46 @@
 :root {
   color-scheme: dark;
 
-  --background: #080a0d;
-  --foreground: #f8fafc;
+  --background: #070a0d;
+  --foreground: #eef4f1;
 
-  --surface: #11151b;
-  --surface-raised: #182029;
-  --surface-inset: #0b0f13;
-  --subtle: #84909e;
-  --border-subtle: #1a2129;
+  --surface: #0d1318;
+  --surface-raised: #121b21;
+  --surface-inset: #070c10;
+  --subtle: #84968f;
+  --border-subtle: #18242a;
 
-  --card: #11151b;
-  --card-foreground: #f8fafc;
-  --popover: #111113;
-  --popover-foreground: #f8fafc;
+  --card: #0d1318;
+  --card-foreground: #eef4f1;
+  --popover: #10181d;
+  --popover-foreground: #eef4f1;
 
-  --primary: #8577ff;
-  --primary-foreground: #f8fafc;
+  --primary: #9be6b0;
+  --primary-foreground: #07100b;
 
-  --secondary: #182029;
-  --secondary-foreground: #f8fafc;
+  --secondary: #17231f;
+  --secondary-foreground: #eef4f1;
 
-  --muted: #151b22;
-  --muted-foreground: #a5afbb;
+  --muted: #111a1f;
+  --muted-foreground: #a8b7b0;
 
-  --accent: #1b2330;
-  --accent-foreground: #f8fafc;
+  --accent: #17251f;
+  --accent-foreground: #eef4f1;
 
-  --positive: #3de3a5;
-  --warning: #f59e0b;
-  --negative: #ef4444;
-  --destructive: #ef4444;
+  --positive: #74d99a;
+  --warning: #d8b36b;
+  --negative: #ee7b7b;
+  --destructive: #ee7b7b;
 
-  --border: #252c35;
-  --input: #252c35;
-  --ring: #8577ff;
+  --border: #26343a;
+  --input: #26343a;
+  --ring: #9be6b0;
 
-  --chart-1: #8577ff;
-  --chart-2: #f59e0b;
-  --chart-3: #10b981;
-  --chart-4: #ef4444;
-  --chart-5: #a1a1aa;
+  --chart-1: #9be6b0;
+  --chart-2: #d8b36b;
+  --chart-3: #74d99a;
+  --chart-4: #ee7b7b;
+  --chart-5: #a8b7b0;
 
   --radius: 0.75rem;
 }
@@ -105,6 +105,12 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: 'cv11', 'ss01';
+    background-image:
+      linear-gradient(rgba(155, 230, 176, 0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(155, 230, 176, 0.018) 1px, transparent 1px),
+      radial-gradient(circle at 50% -20%, rgba(116, 217, 154, 0.08), transparent 42%);
+    background-size: 40px 40px, 40px 40px, 100% 100%;
+    background-attachment: fixed;
   }
   .tabular {
     font-variant-numeric: tabular-nums;
@@ -119,6 +125,43 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   font-family: var(--font-mono);
+}
+
+.terminal-frame {
+  border: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.terminal-kicker {
+  color: var(--subtle);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.terminal-label {
+  color: var(--subtle);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.terminal-metric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.terminal-divider {
+  background: color-mix(in oklab, var(--border) 72%, transparent);
+  height: 1px;
 }
 
 /* ── Live pulse dot ── */
@@ -138,7 +181,7 @@
 }
 
 .ev-glow {
-  animation: ev-glow 3s ease-in-out infinite;
+  box-shadow: 0 0 16px -10px var(--positive);
 }
 
 /* ── Stagger list entry ── */

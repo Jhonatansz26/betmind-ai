@@ -28,7 +28,7 @@ export function LeagueAccordion({
   const logoUrl = matches[0]?.leagueLogoUrl || meta.logoUrl
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card/80 transition-all">
+    <div className="overflow-hidden rounded-xl border border-border bg-card/80 transition-colors">
       <button
         type="button"
         onClick={onToggle}

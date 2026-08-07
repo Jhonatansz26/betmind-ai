@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { formatOdds } from '@/lib/formatters'
 
 interface OddsPillProps {
   value: number
@@ -20,7 +21,7 @@ export function OddsPill({ value, size = 'sm', className }: OddsPillProps) {
         className,
       )}
     >
-      {value.toFixed(2)}
+      {formatOdds(value)}
     </span>
   )
 }

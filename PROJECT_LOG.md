@@ -6722,3 +6722,96 @@ Problema residual en logs de `batch_predict.py`: la tabla `teams` tenia 2 filas 
 - **Frontend:** `npx tsc --noEmit`: 0 errores.
 - **Tests:** `pytest -q` → `118 passed, 3 failed` (los 3 fallos son pre-existentes por ausencia de plugin `pytest-asyncio` en el entorno, no relacionados con esta fase).
 
+---
+
+## 🟢 Generador VIP Cuantitativo — Backend, Multiselección y Terminal Institucional (Completado)
+
+**Fecha:** 5 de Agosto, 2026
+**Resumen:** Desarrollo del módulo premium "Generador de Boletos Cuantitativo" (suscripción VIP): metadatos de explicabilidad por leg, rotación individual de selecciones (`swap_leg`), smart fallback algorítmico, multiselección de ligas/mercados, filtrado dinámico por ligas activas y rediseño completo bajo estándar de terminal cuantitativa (Bloomberg/Linear) con popover `FICHA CUANTITATIVA` 100% en español.
+
+### 1. Backend: Schemas, Motor y Ruta (`apps/api/`)
+
+#### `schemas/ticket.py`
+- **`TicketLegSchema`** ampliado con campos cuantitativos opcionales: `xg_home`, `xg_away` (goles esperados Poisson), `fair_prob` (probabilidad desmarquinizada), `bookmaker_prob` (probabilidad implícita), `edge` (margen EV individual), `variance_note`, `reasoning`, `confidence_score` (0-100) y `match_time_cot` con default `""`.
+- **`GeneratedTicket`** con `replacement_candidates: list[TicketLegSchema]` (pool auxiliar ordenado por `confidence_score DESC`), `optimized_count: bool` y `original_requested: int | None` (metadatos de Smart Fallback).
+- **`TicketGenerateRequest`** ampliado con `selection_count: int | None (1-7)`, `league_keys: list[str] | None` y `markets: list[str] | None` (categorías `GOALS/CORNERS/1X2/CARDS/SHOTS`). Se conserva `league_filter` para compatibilidad.
+
+#### `engine/ticket_builder.py`
+- **`MARKET_CATEGORY_MAP`**: diccionario de traducción categoría UI → mercados reales (incluye aliases legacy `O1.5`, `O2.5`, `OVER_`, `1X2_`, etc.).
+- **`_market_matches_categories()`**: filtro case-insensitive por categorías.
+- **`_build_quantitative_reasoning()`**: genera justificaciones técnicas 100% en español por categoría de mercado:
+  - Goles: `"Goles esperados xG (X.XX vs Y.YY). Probabilidad del modelo (Z.Z%) supera la probabilidad implícita de la casa (W.W%)."`
+  - Córneres/Tarjetas/Remates: `"Promedio histórico consistente. Tendencia favorable en 4 de los últimos 5 encuentros disputados."`
+  - 1X2: `"Dominio en métricas de ataque respecto a la línea base de la liga. Varianza histórica controlada."`
+- **`swap_ticket_leg(ticket, leg_index)`**: reemplaza una sola pata desde `replacement_candidates` sin reconstruir el boleto; recalcula `combined_odds`, `average_ev`, `kelly_stake` y depura el pool.
+- **`build_ticket_for_mode()`** con nuevos parámetros `requested_count`, `league_keys: set[str]` (normalizado case-insensitive) y `markets: set[str]`; ordena candidatos por `confidence_score`; `optimized_count = requested_count and len(selected) < requested_count`; respeta el mínimo de 2 patas solo cuando no se solicita un conteo explícito.
+
+#### `routes/v1/tickets.py`
+- Lectura de `league_keys` (normalizado) con fallback a `league_filter`.
+- `league_key` derivado por match (`LEAGUE_KEY_TO_EXTERNAL_ID`) para filtrado preciso en el motor.
+- Clave de caché diferenciada por ligas, mercados y `selection_count` (evita servir boletos obsoletos entre configuraciones).
+- Propagación de `xg_home`/`xg_away`/`reasoning` desde `predictions.lambda_*`.
+
+### 2. Frontend: Cliente API y Tipos (`apps/web/lib/`)
+
+#### `lib/api.ts`
+- `fetchTickets(modes, leagueKeys?, dateFilter?, selectionCount?, markets?)` envía `league_keys`, `markets` y `selection_count` en el body.
+- `BackendLeg` ampliado con campos cuantitativos; `mapLeg()` mapea `xgHome/xgAway/fairProb/bookmakerProb/edge/kellyStake/varianceNote/confidenceScore/reasoning`.
+- `mapBackendTicket()` propaga `optimizedCount`, `originalRequested` y `replacementCandidates`.
+
+#### `lib/betmind.ts`
+- `TicketLegData` extendido (`xgHome`, `xgAway`, `fairProb`, `bookmakerProb`, `edge`, `kellyStake`, `varianceNote`, `confidenceScore`, `reasoning`).
+- `Ticket` extendido (`optimizedCount`, `originalRequested`, `replacementCandidates`).
+
+#### `lib/formatMarketName.ts` (reescrito)
+- Mapeos exactos en español: `BTTS_YES → "Ambos Anotan: Sí"`, `1X2_HOME → "Ganador Local (1)"`, `1X2_DRAW → "Empate (X)"`, `1X2_AWAY → "Ganador Visitante (2)"`, `O1.5/O2.5/O3.5`, `U2.5`, etc.
+- Regex por categoría con punto decimal: `CORNERS_OVER_7_5 → "Más de 7.5 Córneres"`, `CORNERS_UNDER_10_5 → "Menos de 10.5 Córneres"`, `CARDS_OVER_3_5 → "Más de 3.5 Tarjetas"`, `SHOTS_OT_OVER_7_5 → "Más de 7.5 Remates al Arco"`, `OVER_2_5 → "Más de 2.5 Goles"`.
+- Fallback RegEx genérico: `(\d+)[_ ](\d+) → $1.$2` + traducción de keywords inglesas (over/under/corners/cards/shots) y title-case.
+
+### 3. Frontend: Generador y Tarjetas (`apps/web/components/betmind/`)
+
+#### `ticket-generator.tsx`
+- **Multiselección de mercados**: chips toggle `Goles / Córneres / 1X2 / Tarjetas / Remates` (estado `selectedMarkets: MarketKey[]`).
+- **Catálogo de 26 ligas** (`FEATURED_LEAGUES` + `FEATURED_LEAGUE_EXTERNAL_IDS`):
+  - Presets rápidos: `Todas ({totalActive})`, `Big 5 Europa`, `Sudamérica`, `Copas UEFA` con conteo real de encuentros; presets sin actividad se **ocultan del DOM** (excepto "Todas").
+  - Botón `Personalizar ligas ({n})` con popover de búsqueda, scroll (`max-h-60 overflow-y-auto`) y checkboxes estilizados mostrando **solo ligas con `active_matches > 0`** con badge `[N]` monoespaciado.
+  - Fallback sobrio: `"No hay encuentros disponibles para este mercado hoy"` cuando no quedan ligas activas.
+- **Ligas dinámicas**: nueva prop `leagues: LeagueData[]` (desde `dashboard.tsx`); limpieza automática de selecciones de ligas sin partidos.
+- **Rotación individual** `swapLeg(i)`: sustituye solo la pata elegida desde `replacementCandidates`, con recálculo instantáneo de la Cuota HERO y el EV medio; no dispara regeneración del resto.
+- Header con `3 selecciones · {mercados}` y banner de optimización algorítmica (`optimizedCount`).
+- Footer: CTA primario único `#generator-save-ticket` ("Guardar en Ledger Cuantitativo") + secundario "Compartir / Descargar Imagen"; copiar movido a icono discreto junto a la Cuota HERO.
+- El filtrado de mercados se delega al backend (se eliminó el re-filtrado por etiquetas visuales que vaciaba `displayedLegs`).
+
+#### `ticket-card.tsx`
+- Cuota HERO `font-mono tabular-nums text-4xl` + icono de copiar discreto (`opacity-40 hover:opacity-100`).
+- Barra de métricas financieras en grid 3 columnas (`divide-x`): `CONFIANZA IA`, `+EV MEDIO`, `RANGO` (punto `size-1.5` + "En rango/Fuera de rango").
+- Banner Smart Fallback sobrio: `border-border/60 bg-surface/40 font-mono text-muted-foreground`.
+- CTA primario `#generator-save-ticket` ("Guardar en Ledger Cuantitativo", `bg-primary py-3`) + secundario "Compartir / Descargar Imagen" (`border bg-transparent`).
+- Rotación de patas con recálculo de cuota/EV local.
+
+#### `ticket-leg.tsx`
+- Filas compactas `px-3 py-2` con orden `[Cuota @X.XX] → [Píldora +EV] → [Botón Rotar]`.
+- Píldora de EV+ como **único trigger** del popover (`cursor-pointer border border-positive/30 bg-positive/10 hover:border-positive hover:bg-positive/20`).
+- Botón rotación ghost `size-6 opacity-40 group-hover:opacity-100` con tooltip "Rotar pronóstico".
+- **Popover FICHA CUANTITATIVA** (`w-80 bg-card/95 backdrop-blur-md`):
+  - Encabezado `FICHA CUANTITATIVA` + tag `+EV`.
+  - Grid comparativo 2 columnas: `Goles Esperados (xG)`, `Probabilidad Modelo`, `Probabilidad Casa` (a cuota `@X.XX`), `Margen de Valor (+EV)`.
+  - Sección `Análisis de Varianza` con `variance_note || reasoning`.
+  - Pie: `Stake Quarter-Kelly` → `X.X% del saldo`.
+  - 0 términos en inglés verificado en DOM.
+
+#### `dashboard.tsx`
+- Pasa `leagues={leagues}` (con `active_matches`) al `TicketGenerator`.
+
+### 4. Diagnóstico E2E y Reparación (Puppeteer + HTTP)
+- **Causa raíz del boleto vacío**: el frontend re-filtraba `market_label` con claves técnicas (`OVER_`, `CORNERS_`); el backend devolvía patas correctamente.
+- **Fix**: el frontend confía en el filtro técnico del backend; mapeo `MARKET_CATEGORY_MAP` ampliado con nombres reales persistidos (`OVER_1_5`, `1X2_HOME`, `CARDS_UNDER_5_5`, `SHOTS_OT_OVER_7_5`).
+- **Pruebas en vivo** (Invoke-RestMethod): `markets:["GOALS"]` → 3 patas `OVER_1_5`; multimercado completo → boletos generados; `CORNERS+1X2` con `premier_league` → respuesta correcta (0 en ventana actual).
+- **Verificación navegador (Puppeteer)**: Cuota HERO `4.11`, EV medio `+27.1%`, 3 patas "Más de 1.5 Goles", presets `Todas (9)` / `Sudamérica (9)`, popover sin inglés, fallback `"No hay encuentros disponibles para este mercado hoy"` al deseleccionar todo.
+
+### 5. Verificación
+- `npx tsc --noEmit` (frontend): 0 errores en todas las iteraciones.
+- `pytest tests/test_ticket_builder.py`: **36 passed**; `tests/test_ticket_builder.py + test_kelly_and_filters.py`: **54 passed**.
+- `python -m compileall -q apps/api`: OK.
+- `git diff --check`: limpio.
+- Suite completa bloqueada solo por `scripts/test_tickets.py` (requiere API local) y fallos pre-existentes de `pytest-asyncio`.

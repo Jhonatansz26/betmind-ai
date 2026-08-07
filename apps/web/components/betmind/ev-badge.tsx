@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { formatEV } from '@/lib/formatters'
 
 interface EVBadgeProps {
   /** Expected value as a decimal fraction, e.g. 0.071 for +7.1% */
@@ -28,7 +29,7 @@ export function EVBadge({ value, size = 'sm', label, className }: EVBadgeProps) 
       )}
     >
       {label ? <span className="text-[10px] tracking-wide opacity-70">{label}</span> : null}
-      {`${positive ? '+' : ''}${(value * 100).toFixed(1)}%`}
+      {formatEV(value)}
     </span>
   )
 }
