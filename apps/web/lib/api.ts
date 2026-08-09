@@ -46,6 +46,13 @@ export async function apiFetch<T>(
     if (token && !headers.has('Authorization')) {
       headers.set('Authorization', `Bearer ${token}`)
     }
+    if (
+      typeof window !== 'undefined'
+      && !token
+      && window.localStorage.getItem('betmind_dev_is_pro') === 'true'
+    ) {
+      headers.set('X-Betmind-Dev-Pro', '1')
+    }
     const response = await fetch(input, { ...init, headers, signal: controller.signal })
     if (!response.ok) {
       let detail = `No se pudo completar la solicitud (${response.status}).`

@@ -3,7 +3,7 @@
 SRP: Este archivo solo define contratos HTTP y delega al orquestador.
 Las rutas deben ser tan delgadas que casi no haya lógica aquí.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +13,8 @@ from apps.api.core.exceptions import (
 )
 from apps.api.dependencies import get_async_session, get_cache_service, get_optional_user_id
 from apps.api.models.user import User
-from apps.api.services.subscription_service import effective_pro
+from apps.api.config import settings
+from apps.api.services.subscription_service import effective_pro, is_effectively_pro
 from apps.api.orchestrators.prediction_orchestrator import PredictionOrchestrator
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.tactical_analysis_repository import TacticalAnalysisRepository
@@ -65,6 +66,7 @@ def get_prediction_orchestrator(
     },
 )
 async def get_match_prediction(
+    request: Request,
     match_id: int,
     home_win_odds: float | None = Query(None, gt=1.0, description="Cuota 1"),
     draw_odds: float | None = Query(None, gt=1.0, description="Cuota X"),
@@ -115,7 +117,7 @@ async def get_match_prediction(
                 select(User).where(User.id == current_user_id, User.is_active.is_(True))
             )
             user = user_result.scalar_one_or_none()
-            if user is not None and not effective_pro(user):
+            if user is not None and not is_effectively_pro(request, effective_pro(user), settings.DEBUG):
                 response.ev_analysis = response.ev_analysis[:10]
                 response.bet_builder = []
 

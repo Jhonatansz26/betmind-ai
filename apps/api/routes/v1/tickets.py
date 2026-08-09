@@ -1,7 +1,7 @@
 import logging
 import json
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi import HTTPException, status
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -33,7 +33,8 @@ from apps.api.dependencies import (
 )
 from apps.api.repositories.ticket_repository import TicketRepository
 from apps.api.repositories.ticket_repository import TicketStatusConflict
-from apps.api.services.subscription_service import effective_pro
+from apps.api.config import settings
+from apps.api.services.subscription_service import effective_pro, is_effectively_pro
 from apps.api.models.user import User
 from betmind_ml.ev.ev_calculator import calculate_ev_metrics
 from betmind_ml.config import EV_POSITIVE_THRESHOLD
@@ -47,7 +48,8 @@ COT = ZoneInfo("America/Bogota")
 
 @router.post("/save", response_model=SavedTicketResponse, status_code=status.HTTP_201_CREATED)
 async def save_ticket(
-    request: SaveTicketRequest,
+    request: Request,
+    body: SaveTicketRequest,
     session=Depends(get_async_session),
     current_user_id: int | None = Depends(get_optional_user_id),
 ):
@@ -59,7 +61,7 @@ async def save_ticket(
             select(User).where(User.id == current_user_id, User.is_active.is_(True))
         )
         user = user_result.scalar_one_or_none()
-        if user is not None and not effective_pro(user):
+        if user is not None and not is_effectively_pro(request, effective_pro(user), settings.DEBUG):
             existing = await repository.count_by_user(current_user_id)
             if existing >= 5:
                 raise HTTPException(
@@ -68,10 +70,10 @@ async def save_ticket(
                 )
 
     return await repository.create(
-        ticket_data=request.ticket_data,
-        total_odds=request.total_odds,
-        total_ev=request.total_ev,
-        stake_amount=request.stake_amount,
+        ticket_data=body.ticket_data,
+        total_odds=body.total_odds,
+        total_ev=body.total_ev,
+        stake_amount=body.stake_amount,
         user_id=current_user_id,
     )
 
@@ -340,7 +342,8 @@ def _bridge_market_categories(markets: set[str]) -> set[str]:
     summary="Generate AI tickets for selected date (today, tomorrow, or all)",
 )
 async def generate_tickets(
-    request: TicketGenerateRequest,
+    request: Request,
+    body: TicketGenerateRequest,
     date_filter: str | None = Query(
         None,
         alias="date_filter",
@@ -355,26 +358,26 @@ async def generate_tickets(
     start_utc, end_utc = _ticket_window(date_filter)
     window_slug = f"{start_utc.strftime('%Y%m%d%H')}_{end_utc.strftime('%Y%m%d%H')}"
     normalized_league_keys = {
-        str(key).strip().lower() for key in (request.league_keys or []) if str(key).strip()
+        str(key).strip().lower() for key in (body.league_keys or []) if str(key).strip()
     }
-    requested_leagues = normalized_league_keys or request.league_filter
+    requested_leagues = normalized_league_keys or body.league_filter
     leagues_slug = ",".join(sorted(requested_leagues or [])) or "all"
-    markets_slug = ",".join(sorted(request.markets or [])) or "all"
-    cache_key = f"tickets:stored:{date_filter or 'rolling'}:{window_slug}:{leagues_slug}:{markets_slug}:{request.selection_count or 'default'}"
+    markets_slug = ",".join(sorted(body.markets or [])) or "all"
+    cache_key = f"tickets:stored:{date_filter or 'rolling'}:{window_slug}:{leagues_slug}:{markets_slug}:{body.selection_count or 'default'}"
 
-    if not request.force_refresh:
+    if not body.force_refresh:
         if cached := await cache.get(cache_key, TicketGenerateResponse):
-            if set(request.modes) != {TicketMode.EDGE, TicketMode.VALUE, TicketMode.BOLD}:
-                cached.tickets = [t for t in cached.tickets if t.mode in request.modes]
+            if set(body.modes) != {TicketMode.EDGE, TicketMode.VALUE, TicketMode.BOLD}:
+                cached.tickets = [t for t in cached.tickets if t.mode in body.modes]
             return cached
 
     all_matches, odds_map = await _read_stored_predictions(
         session, date_filter, requested_leagues
     )
 
-    requested_markets = {market.upper() for market in (request.markets or [])}
+    requested_markets = {market.upper() for market in (body.markets or [])}
     all_predictions = _prediction_rows(all_matches, odds_map)
-    target_opportunities = request.selection_count or 1
+    target_opportunities = body.selection_count or 1
 
     # Horizon shifting is only activated for today's sparse catalog. It first
     # checks +24h and then +48h, merging only rows that later pass the same
@@ -421,7 +424,7 @@ async def generate_tickets(
         if user is not None and effective_pro(user):
             is_pro = True
 
-    if not is_pro:
+    if not is_effectively_pro(request, is_pro, settings.DEBUG):
         gen_key = (
             f"gen:daily:{current_user_id}:{cot_date}"
             if current_user_id is not None
@@ -446,12 +449,12 @@ async def generate_tickets(
 
     tickets = []
     used_match_ids: set[int] = set()
-    for mode in request.modes:
+    for mode in body.modes:
         ticket = build_ticket_for_mode(
             mode,
             all_predictions,
             exclude_match_ids=used_match_ids,
-            requested_count=request.selection_count,
+            requested_count=body.selection_count,
             league_keys=normalized_league_keys,
             markets=builder_markets,
         )

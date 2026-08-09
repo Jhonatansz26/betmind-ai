@@ -15,7 +15,7 @@ from apps.api.models.ticket import SavedTicket
 from apps.api.repositories.ticket_repository import TicketRepository
 from apps.api.routes.v1.subscriptions import _valid_event_signature
 from apps.api.schemas.prediction import BetBuilderProfileSchema, EVAnalysis, PredictionResponse, ProbabilityDistribution, TacticalAnalysisResponse, Verdict
-from apps.api.services.subscription_service import apply_transaction_status, effective_pro, as_utc
+from apps.api.services.subscription_service import apply_transaction_status, effective_pro, as_utc, is_effectively_pro
 
 
 @pytest.fixture
@@ -390,6 +390,55 @@ def test_effective_pro_trial():
     future = datetime.now(timezone.utc) + timedelta(days=7)
     user = User(email="trial@example.com", is_pro=True, pro_expires_at=future)
     assert effective_pro(user) is True
+
+
+# ── is_effectively_pro (dev-pro bypass) ────────────────────────────────────
+
+
+class _MockRequest:
+    def __init__(self, headers: dict[str, str] | None = None):
+        self.headers = dict(headers or {})
+
+
+def test_is_effectively_pro_real_pro_always_true():
+    """A user with real is_pro=True bypasses limits regardless of DEBUG or header."""
+    req = _MockRequest()
+    assert is_effectively_pro(req, is_pro=True, debug=False) is True
+    assert is_effectively_pro(req, is_pro=True, debug=True) is True
+
+
+def test_is_effectively_pro_free_user_no_header():
+    """Free user without the dev header is not effectively pro."""
+    req = _MockRequest()
+    assert is_effectively_pro(req, is_pro=False, debug=False) is False
+    assert is_effectively_pro(req, is_pro=False, debug=True) is False
+
+
+def test_is_effectively_pro_dev_pro_header_in_debug():
+    """Dev header only grants bypass when DEBUG=True."""
+    req = _MockRequest({"X-Betmind-Dev-Pro": "1"})
+    assert is_effectively_pro(req, is_pro=False, debug=False) is False
+    assert is_effectively_pro(req, is_pro=False, debug=True) is True
+
+
+def test_is_effectively_pro_dev_pro_header_with_wrong_value():
+    """Only '1' is accepted as the header value."""
+    req = _MockRequest({"X-Betmind-Dev-Pro": "true"})
+    assert is_effectively_pro(req, is_pro=False, debug=True) is False
+    req2 = _MockRequest({"X-Betmind-Dev-Pro": "0"})
+    assert is_effectively_pro(req2, is_pro=False, debug=True) is False
+
+
+def test_is_effectively_pro_header_ignored_in_production():
+    """Even with the header present, DEBUG=False must never grant bypass."""
+    req = _MockRequest({"X-Betmind-Dev-Pro": "1"})
+    assert is_effectively_pro(req, is_pro=False, debug=False) is False
+
+
+def test_is_effectively_pro_no_header_no_pro():
+    """Sanity: free user, no header, DEBUG=True -> no bypass."""
+    req = _MockRequest()
+    assert is_effectively_pro(req, is_pro=False, debug=True) is False
 
 
 @pytest.mark.asyncio

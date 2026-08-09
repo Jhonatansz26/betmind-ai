@@ -7187,3 +7187,80 @@ send_password_reset_email()  [async]
 
 ### 7. Tests
 Suite completa: **149 passed, 0 failed**.
+
+---
+
+## 🟢 Fase 6.4: Dev-Pro Bypass — Toggle "Simular PRO (dev)" conectado al backend (2026-08-09)
+
+### 1. Diagnóstico
+
+El `POST /api/v1/tickets/generate` devolvía 403 en desarrollo local porque el límite diario de generación anónima (2 por IP/día) se activaba correctamente. El toggle "Simular PRO (dev)" del frontend era puramente cosmético — solo afectaba el estado de React, nunca viajaba al backend. Sin sesión autenticada, el backend aplicaba el límite usando Redis (`gen:daily:ip:{client_ip}:{fecha}` con TTL 24h).
+
+### 2. Solución Inicial (reemplazada)
+
+Primero se implementó un bypass basado en `settings.DEBUG` — si `DEBUG=True`, todos los límites se saltaban incondicionalmente. Esto funcionaba pero no permitía probar el comportamiento de un usuario Free real en desarrollo.
+
+### 3. Solución Final: Header `X-Betmind-Dev-Pro`
+
+Se implementó una función compartida `is_effectively_pro(request, is_pro, debug)` que decide si un usuario debe ser tratado como PRO:
+
+```python
+def is_effectively_pro(request: Request, is_pro: bool, debug: bool) -> bool:
+    if is_pro:
+        return True
+    if debug and request.headers.get("X-Betmind-Dev-Pro") == "1":
+        return True
+    return False
+```
+
+**Comportamiento:**
+- **Toggle ON en frontend** → envía header `X-Betmind-Dev-Pro: 1` → backend recibe `debug=True` + header → sin límites
+- **Toggle OFF en frontend** → no envía el header → backend aplica límites de Free normalmente
+- **Producción** (`DEBUG=False`) → aunque alguien mande el header, `is_effectively_pro` retorna `False` → los límites se aplican
+
+### 4. Puntos de bypass unificados
+
+Los 3 puntos donde se aplicaban límites de Free ahora usan la misma función:
+
+| Punto | Archivo:Línea | Límite original |
+|-------|--------------|-----------------|
+| Generación de boletos (2/día) | `tickets.py:427` | `gen:daily:*` en Redis |
+| Guardado de boletos (máx 5) | `tickets.py:64` | `TicketRepository.count_by_user` |
+| Truncamiento de EV analysis (10 mercados) | `predictions.py:120` | `ev_analysis[:10]` |
+
+### 5. Frontend
+
+`apps/web/lib/api.ts:49-55` — se agregó header `X-Betmind-Dev-Pro: 1` en `apiFetch()` cuando:
+- No hay token de autenticación (`!token`)
+- El flag `betmind_dev_is_pro` en localStorage es `'true'` (toggle ON)
+
+Cuando el toggle está OFF, el flag es `'false'` → el header no se envía → límites de Free activos.
+
+### 6. Tests
+
+6 tests nuevos en `tests/test_subscriptions.py`:
+- `test_is_effectively_pro_real_pro_always_true` — PRO real siempre pasa
+- `test_is_effectively_pro_free_user_no_header` — Free sin header no pasa
+- `test_is_effectively_pro_dev_pro_header_in_debug` — header + DEBUG = bypass
+- `test_is_effectively_pro_dev_pro_header_with_wrong_value` — solo `"1"` es aceptado
+- `test_is_effectively_pro_header_ignored_in_production` — **header ignorado si DEBUG=False** (clave para seguridad)
+- `test_is_effectively_pro_no_header_no_pro` — sin header ni PRO, no hay bypass
+
+Suite completa: **66 passed** (tickets + subscriptions), `tsc --noEmit` limpio, `next build` exitoso.
+
+### 7. Archivos Modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `apps/api/services/subscription_service.py:27-37` | Nueva función `is_effectively_pro(request, is_pro, debug)` |
+| `apps/api/routes/v1/tickets.py` | +`Request`, +`is_effectively_pro`; `save_ticket` y `generate_tickets` usan la función compartida; parámetro `body` renombrado para no colisionar con `request: Request` |
+| `apps/api/routes/v1/predictions.py` | +`Request`, +`is_effectively_pro`; `get_match_prediction` usa la función compartida |
+| `apps/web/lib/api.ts:49-55` | Header `X-Betmind-Dev-Pro: 1` cuando toggle activo y sin sesión |
+| `tests/test_subscriptions.py:393-443` | 6 tests para `is_effectively_pro` |
+
+### 8. Verificación
+
+- **Toggle OFF + sin sesión:** límites de Free reales activos (generar 3er boleto → 403)
+- **Toggle ON + sin sesión:** sin límites (generar >2 boletos sin problema)
+- **Producción (`DEBUG=False`):** header ignorado, límites se aplican normalmente
+- **Build:** `tsc --noEmit` limpio, `next build` exitoso, 66/66 tests pasan

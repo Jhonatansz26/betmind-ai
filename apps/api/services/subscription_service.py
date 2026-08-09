@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +27,14 @@ def period_delta(plan: str) -> timedelta:
 def effective_pro(user: User, now: datetime | None = None) -> bool:
     now = now or utc_now()
     return bool(user.is_pro and (user.pro_expires_at is None or as_utc(user.pro_expires_at) > now))
+
+
+def is_effectively_pro(request: Request, is_pro: bool, debug: bool) -> bool:
+    if is_pro:
+        return True
+    if debug and request.headers.get("X-Betmind-Dev-Pro") == "1":
+        return True
+    return False
 
 
 async def apply_transaction_status(
