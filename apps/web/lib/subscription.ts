@@ -8,10 +8,8 @@
  * localStorage flag is kept as a **dev-only fallback** for testing gates without
  * needing to log in. It is ignored whenever there is an active session.
  *
- * TODO(backend-pagos): `is_pro` is now connected to /users/me.
- * What remains pending is the real payment integration (Wompi) so that
- * is_pro is updated automatically after a successful charge — until then
- * it must be set manually in the database by the backend team.
+ * `is_pro` is connected to /users/me and updated by the subscription webhook.
+ * The localStorage flag remains available only for anonymous local testing.
  */
 
 import * as React from 'react'

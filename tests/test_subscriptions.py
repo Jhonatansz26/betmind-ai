@@ -4,12 +4,17 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from apps.api.config import settings
+from apps.api.dependencies import get_client_ip
 from apps.api.models import Base, Subscription, SubscriptionTransaction, User
+from apps.api.models.ticket import SavedTicket
+from apps.api.repositories.ticket_repository import TicketRepository
 from apps.api.routes.v1.subscriptions import _valid_event_signature
-from apps.api.services.subscription_service import apply_transaction_status
+from apps.api.schemas.prediction import BetBuilderProfileSchema, EVAnalysis, PredictionResponse, ProbabilityDistribution, TacticalAnalysisResponse, Verdict
+from apps.api.services.subscription_service import apply_transaction_status, effective_pro, as_utc
 
 
 @pytest.fixture
@@ -164,3 +169,128 @@ def test_wompi_signature_uses_dynamic_properties_and_timestamp(monkeypatch):
 
     assert _valid_event_signature(payload, payload["signature"]["checksum"]) is True
     assert _valid_event_signature(payload, "bad-checksum") is False
+
+
+# ── Paywall enforcement tests ───────────────────────────────────────────────
+
+def test_effective_pro_free_user():
+    user = User(email="free@example.com", is_pro=False, pro_expires_at=None)
+    assert effective_pro(user) is False
+
+
+def test_effective_pro_active_pro():
+    future = datetime.now(timezone.utc) + timedelta(days=30)
+    user = User(email="pro@example.com", is_pro=True, pro_expires_at=future)
+    assert effective_pro(user) is True
+
+
+def test_effective_pro_expired():
+    past = datetime.now(timezone.utc) - timedelta(days=1)
+    user = User(email="expired@example.com", is_pro=True, pro_expires_at=past)
+    assert effective_pro(user) is False
+
+
+def test_effective_pro_trial():
+    future = datetime.now(timezone.utc) + timedelta(days=7)
+    user = User(email="trial@example.com", is_pro=True, pro_expires_at=future)
+    assert effective_pro(user) is True
+
+
+@pytest.mark.asyncio
+async def test_ticket_repository_count(session):
+    user = await _user(session)
+    repo = TicketRepository(session)
+    assert await repo.count_by_user(user.id) == 0
+
+    for _ in range(3):
+        ticket = SavedTicket(
+            ticket_data={"legs": []},
+            total_odds=2.0,
+            total_ev=0.05,
+            user_id=user.id,
+        )
+        session.add(ticket)
+    await session.flush()
+    assert await repo.count_by_user(user.id) == 3
+
+
+def test_prediction_response_total_markets():
+    response = PredictionResponse(
+        match_id=1,
+        home_team="A",
+        away_team="B",
+        league="Test",
+        match_date="2026-01-01T00:00:00",
+        probabilities=ProbabilityDistribution(
+            home_win=0.4, draw=0.3, away_win=0.3, over_2_5=0.5, over_1_5=0.75,
+        ),
+        ev_analysis=[
+            EVAnalysis(market=f"MARKET_{i}", our_probability=0.5, verdict=Verdict.NO_VALUE)
+            for i in range(15)
+        ],
+        confidence_score=70,
+        tactical_narrative="test",
+        tactical_analysis=None,
+        bet_builder=[
+            BetBuilderProfileSchema(
+                profile="balanced", label="Test", selections=[],
+                combined_odds=2.0, combined_probability=0.5,
+            ),
+        ],
+        total_markets=15,
+    )
+    assert response.total_markets == 15
+    assert len(response.ev_analysis) == 15
+    assert len(response.bet_builder) == 1
+
+
+# ── IP extraction tests ──────────────────────────────────────────────────
+
+def _make_request(ip: str, x_forwarded: str | None = None):
+    """Build a minimal Starlette Request with the given client and headers."""
+    headers = []
+    if x_forwarded is not None:
+        headers.append((b"x-forwarded-for", x_forwarded.encode()))
+    scope = {
+        "type": "http",
+        "headers": headers,
+        "client": (ip, 12345),
+    }
+    from starlette.requests import Request
+    return Request(scope)
+
+
+@pytest.mark.asyncio
+async def test_client_ip_from_x_forwarded():
+    request = _make_request("127.0.0.1", "10.0.0.1, 10.0.0.2")
+    assert await get_client_ip(request) == "10.0.0.1"
+
+
+@pytest.mark.asyncio
+async def test_client_ip_fallback_to_client_host():
+    request = _make_request("192.168.1.5")
+    assert await get_client_ip(request) == "192.168.1.5"
+
+
+def test_generation_key_format_authenticated():
+    """Key uses user_id when authenticated."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    now_cot = datetime.now(ZoneInfo("America/Bogota"))
+    cot_date = now_cot.strftime("%Y-%m-%d")
+    user_id = 42
+    key = f"gen:daily:{user_id}:{cot_date}"
+    assert key.startswith("gen:daily:42:")
+    assert key.endswith(cot_date)
+
+
+def test_generation_key_format_anonymous():
+    """Key uses IP when anonymous."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    now_cot = datetime.now(ZoneInfo("America/Bogota"))
+    cot_date = now_cot.strftime("%Y-%m-%d")
+    client_ip = "10.0.0.1"
+    key = f"gen:daily:ip:{client_ip}:{cot_date}"
+    assert key.startswith("gen:daily:ip:10.0.0.1:")
+    assert key.endswith(cot_date)

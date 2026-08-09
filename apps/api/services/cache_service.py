@@ -109,6 +109,16 @@ class CacheService:
             logger.debug(f"Error escribiendo JSON en Redis key '{key}': {e}")
             return False
 
+    async def increment(self, key: str, ttl_seconds: int = 86_400) -> int:
+        try:
+            count = await self.client.incr(key)
+            if count == 1:
+                await self.client.expire(key, ttl_seconds)
+            return count
+        except (RedisError, ConnectionError, OSError) as e:
+            logger.debug(f"Error incrementando Redis key '{key}': {e}")
+            return 0
+
     async def close(self) -> None:
         try:
             await self.client.aclose()

@@ -1,6 +1,7 @@
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.db.database import get_async_session as _get_async_session
 from apps.api.services.cache_service import CacheService, get_redis_pool, close_redis_pool
+from apps.api.services.subscription_service import effective_pro, as_utc
 from apps.api.config import settings
 from apps.api.models.user import User
 
@@ -110,3 +112,30 @@ async def get_optional_user_id(
     if credentials is None:
         return None
     return await get_current_user_id(credentials=credentials, session=session)
+
+
+async def require_pro_user(
+    user_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_async_session),
+) -> int:
+    result = await session.execute(
+        select(User).where(User.id == user_id, User.is_active.is_(True))
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuario no encontrado.")
+    if not effective_pro(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Esta función requiere una suscripción PRO activa.",
+        )
+    return user_id
+
+
+async def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"

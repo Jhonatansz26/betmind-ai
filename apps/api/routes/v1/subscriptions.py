@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.config import settings
@@ -21,6 +21,7 @@ from apps.api.schemas.subscription import (
     SubscriptionCancelResponse,
     SubscriptionRefundResponse,
     SubscriptionTrialResponse,
+    LastSubscriptionTransactionResponse,
 )
 from apps.api.services.subscription_service import (
     apply_transaction_status,
@@ -50,6 +51,27 @@ async def _get_user(user_id: int, session: AsyncSession) -> User:
     return user
 
 
+async def _last_transaction(
+    subscription_id: int,
+    session: AsyncSession,
+) -> LastSubscriptionTransactionResponse | None:
+    result = await session.execute(
+        select(SubscriptionTransaction)
+        .where(SubscriptionTransaction.subscription_id == subscription_id)
+        .order_by(desc(SubscriptionTransaction.created_at))
+        .limit(1)
+    )
+    transaction = result.scalar_one_or_none()
+    if transaction is None:
+        return None
+    return LastSubscriptionTransactionResponse(
+        id=transaction.wompi_transaction_id,
+        status=transaction.status,
+        status_message=transaction.status_message,
+        processor_response_code=transaction.processor_response_code,
+    )
+
+
 def _wompi_http_error(exc: WompiAPIError) -> HTTPException:
     code = 422 if 400 <= exc.status_code < 500 else 502
     return HTTPException(status_code=code, detail=str(exc))
@@ -64,7 +86,23 @@ async def get_subscription(
     subscription = result.scalar_one_or_none()
     if subscription is None:
         raise HTTPException(status_code=404, detail="El usuario no tiene una suscripción.")
-    return SubscriptionTrialResponse.model_validate(subscription)
+    response = SubscriptionTrialResponse.model_validate(subscription)
+    response.last_transaction = await _last_transaction(subscription.id, session)
+    return response
+
+
+@router.get("/wompi-tokenization-key")
+async def get_wompi_tokenization_key(
+    user_id: int = Depends(get_current_user_id),
+) -> dict[str, str]:
+    del user_id
+    client = WompiClient()
+    try:
+        return {"public_key": await client.get_tokenization_public_key()}
+    except WompiConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except WompiAPIError as exc:
+        raise _wompi_http_error(exc) from exc
 
 
 @router.post("/trial", response_model=SubscriptionTrialResponse)
@@ -81,7 +119,9 @@ async def start_trial(
 
     if subscription is not None:
         if subscription.status == "trial" and subscription.trial_ends_at and as_utc(subscription.trial_ends_at) > now:
-            return SubscriptionTrialResponse.model_validate(subscription)
+            response = SubscriptionTrialResponse.model_validate(subscription)
+            response.last_transaction = await _last_transaction(subscription.id, session)
+            return response
         if subscription.trial_ends_at is not None or subscription.status in {
             "active", "pending_payment", "past_due", "refund_requested"
         }:
@@ -101,7 +141,9 @@ async def start_trial(
     user.is_pro = True
     user.pro_expires_at = trial_end
     await session.commit()
-    return SubscriptionTrialResponse.model_validate(subscription)
+    response = SubscriptionTrialResponse.model_validate(subscription)
+    response.last_transaction = await _last_transaction(subscription.id, session)
+    return response
 
 
 @router.post(
@@ -190,6 +232,12 @@ async def activate_subscription(
         recurrence_enabled=subscription.recurrence_enabled,
         transaction_id=transaction.wompi_transaction_id,
         transaction_status=transaction.status,
+        last_transaction=LastSubscriptionTransactionResponse(
+            id=transaction.wompi_transaction_id,
+            status=transaction.status,
+            status_message=transaction.status_message,
+            processor_response_code=transaction.processor_response_code,
+        ),
     )
 
 

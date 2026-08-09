@@ -27,11 +27,14 @@ from apps.api.engine.ticket_builder import build_ticket_for_mode
 from apps.api.dependencies import (
     get_async_session,
     get_cache_service,
+    get_client_ip,
     get_current_user_id,
     get_optional_user_id,
 )
 from apps.api.repositories.ticket_repository import TicketRepository
 from apps.api.repositories.ticket_repository import TicketStatusConflict
+from apps.api.services.subscription_service import effective_pro
+from apps.api.models.user import User
 from betmind_ml.ev.ev_calculator import calculate_ev_metrics
 from betmind_ml.config import EV_POSITIVE_THRESHOLD
 
@@ -50,6 +53,20 @@ async def save_ticket(
 ):
     """Persist a ticket snapshot for the user's tracking history."""
     repository = TicketRepository(session)
+
+    if current_user_id is not None:
+        user_result = await session.execute(
+            select(User).where(User.id == current_user_id, User.is_active.is_(True))
+        )
+        user = user_result.scalar_one_or_none()
+        if user is not None and not effective_pro(user):
+            existing = await repository.count_by_user(current_user_id)
+            if existing >= 5:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tu plan gratuito guarda hasta 5 boletos. Actualizá a PRO para guardar sin límite.",
+                )
+
     return await repository.create(
         ticket_data=request.ticket_data,
         total_odds=request.total_odds,
@@ -331,6 +348,8 @@ async def generate_tickets(
     ),
     session=Depends(get_async_session),
     cache=Depends(get_cache_service),
+    current_user_id: int | None = Depends(get_optional_user_id),
+    client_ip: str = Depends(get_client_ip),
 ):
     now_cot = datetime.now(COT)
     start_utc, end_utc = _ticket_window(date_filter)
@@ -388,6 +407,32 @@ async def generate_tickets(
         # Avoid reconnecting to the database on every empty dashboard refresh.
         await cache.set(cache_key, empty_response, ttl=30)
         return empty_response
+
+    # Enforce daily generation limit (cached hits do not count).
+    # Authenticated Free users are counted by user_id; anonymous requests
+    # are counted by client IP as a reasonable abuse mitigation.
+    cot_date = now_cot.strftime("%Y-%m-%d")
+    is_pro = False
+    if current_user_id is not None:
+        user_result = await session.execute(
+            select(User).where(User.id == current_user_id, User.is_active.is_(True))
+        )
+        user = user_result.scalar_one_or_none()
+        if user is not None and effective_pro(user):
+            is_pro = True
+
+    if not is_pro:
+        gen_key = (
+            f"gen:daily:{current_user_id}:{cot_date}"
+            if current_user_id is not None
+            else f"gen:daily:ip:{client_ip}:{cot_date}"
+        )
+        count = await cache.increment(gen_key, ttl_seconds=86_400)
+        if count > 2:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tu plan gratuito genera hasta 2 boletos por día. Actualizá a PRO para generar sin límite.",
+            )
 
     bridge_markets = _bridge_market_categories(requested_markets)
     builder_markets = (

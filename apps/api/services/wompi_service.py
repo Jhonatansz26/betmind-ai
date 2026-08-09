@@ -119,6 +119,27 @@ class WompiClient:
             raise WompiAPIError(502, "Wompi no devolvió tokens de aceptación completos.", payload)
         return str(acceptance), str(personal)
 
+    async def get_tokenization_public_key(self) -> str:
+        public_key = self._require_public_key()
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.get(
+                    f"{self._base_url}/tokens/keys/tokenization",
+                    headers={"Authorization": f"Bearer {public_key}"},
+                )
+        except httpx.HTTPError as exc:
+            raise WompiAPIError(503, "No se pudo conectar con Wompi.") from exc
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"raw": response.text}
+        if not response.is_success:
+            raise WompiAPIError(response.status_code, "No se pudo obtener la llave de tokenización.", payload)
+        tokenization_key = (payload.get("data") or {}).get("publicKey")
+        if not tokenization_key:
+            raise WompiAPIError(502, "Wompi no devolvió la llave de tokenización.", payload)
+        return str(tokenization_key)
+
     async def create_payment_source(
         self,
         *,

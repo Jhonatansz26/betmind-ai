@@ -24,8 +24,16 @@ class SubscriptionTrialResponse(BaseModel):
     current_period_end: datetime
     trial_ends_at: datetime | None = None
     recurrence_enabled: bool | None = None
+    last_transaction: "LastSubscriptionTransactionResponse | None" = None
 
     model_config = {"from_attributes": True}
+
+
+class LastSubscriptionTransactionResponse(BaseModel):
+    id: str
+    status: str
+    status_message: str | None = None
+    processor_response_code: str | None = None
 
 
 class SubscriptionActivateRequest(BaseModel):

@@ -804,6 +804,7 @@ class PredictionOrchestrator:
             tactical_narrative=tactical_narrative,
             tactical_analysis=tactical_analysis,
             bet_builder=bet_builder,
+            total_markets=len(ev_analysis),
         )
 
     def _build_tactical_narrative(self, tactical: TacticalAnalysis) -> str:

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models.bankroll import Bankroll, BankrollMovement
@@ -36,6 +36,12 @@ class TicketRepository:
         await self._session.flush()
         await self._session.refresh(ticket)
         return ticket
+
+    async def count_by_user(self, user_id: int) -> int:
+        result = await self._session.execute(
+            select(func.count()).where(SavedTicket.user_id == user_id)
+        )
+        return result.scalar_one()
 
     async def list_history(self, user_id: int, limit: int = 100) -> list[SavedTicket]:
         result = await self._session.execute(

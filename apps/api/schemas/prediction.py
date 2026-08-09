@@ -107,6 +107,7 @@ class PredictionResponse(BaseModel):
     tactical_narrative: str = Field(..., description="Explicación en lenguaje natural")
     tactical_analysis: TacticalAnalysisResponse | None = Field(None, description="Análisis táctico completo (Fase 4)")
     bet_builder: list[BetBuilderProfileSchema] = Field(default_factory=list, description="Bet Builder automático por perfil")
+    total_markets: int = Field(0, description="Número total de mercados calculados por el modelo (puede ser mayor que los devueltos en ev_analysis para planes Free)")
 
     @computed_field
     @property

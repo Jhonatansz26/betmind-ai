@@ -36,7 +36,8 @@ export default function RegistroPage() {
       await register(email, password, fullName || undefined)
       // Task 5: claim anonymous tickets silently
       claimPendingTickets().catch((err: unknown) => console.error('[claim]', err))
-      router.push('/')
+      const params = new URLSearchParams(window.location.search)
+      router.push(params.get('redirect') ?? '/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ocurrió un error inesperado.')
     } finally {

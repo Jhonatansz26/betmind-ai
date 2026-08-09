@@ -6999,3 +6999,74 @@ El handler de planes solo activa el flag local, muestra el mensaje de demostraci
 - Frontend: `npx tsc --noEmit` y `npm run build` sin errores.
 - `.env` confirmado en `.gitignore`.
 - La tarjeta nunca pasó por el backend propio: tokenización vía Widget/API de Wompi con llave pública.
+
+---
+
+## 🟢 Fase 6: Enforcement Server-Side del Paywall PRO (Completado)
+
+### 1. Auditoría Inicial (Paso 0)
+
+Se mapearon 5 reglas de negocio contra el código existente. El supuesto original era incorrecto: sí existen endpoints backend para generación de boletos y Bet Builder, ambos expuestos:
+
+| Regla | Estado antes |
+|-------|-------------|
+| Guardado tickets (`POST /tickets/save`) | Sin límite, sin conteo, acepta anónimos |
+| Generación diaria (`POST /tickets/generate`) | Endpoint existe, sin auth, sin contador |
+| Mercados por partido (`GET /predictions/{match_id}`) | Devuelve 56 mercados sin auth, sin restricción |
+| Bet Builder | Devuelto dentro de `/predictions/{match_id}` sin auth |
+| Bankroll (4 endpoints) | Solo `get_current_user_id`, sin verificar PRO |
+
+### 2. Dependencia `require_pro_user`
+
+- **`apps/api/dependencies.py`:** nueva dependencia `require_pro_user` que consulta `effective_pro()` existente en `subscription_service.py` y eleva `403` si el usuario no es PRO con expiración válida.
+
+### 3. Bankroll Gateado (4 endpoints)
+
+- **`apps/api/routes/v1/bankroll.py`:** `POST /setup`, `GET`, `PATCH`, `POST /adjust` ahora usan `Depends(require_pro_user)` en lugar de `get_current_user_id`.
+
+### 4. Límite de 5 Tickets Guardados
+
+- **`apps/api/repositories/ticket_repository.py`:** nuevo método `count_by_user(user_id)` para contar tickets del usuario.
+- **`apps/api/routes/v1/tickets.py` (`save_ticket`):** si el usuario autenticado no es PRO, cuenta sus tickets y rechaza el 6to con `403`. Usuarios anónimos (`user_id=None`) sin límite server-side (el tope es el `localStorage` del frontend: 10 boletos) — documentado como limitación aceptada.
+
+### 5. Límite de 2 Generaciones Diarias (cache-miss, contador Redis)
+
+- **`apps/api/services/cache_service.py`:** nuevo método `increment(key, ttl_seconds)` atómico.
+- **`apps/api/routes/v1/tickets.py` (`generate_tickets`):** solo cuenta generaciones efectivas (cache-miss). Usuarios Free autenticados: clave `gen:daily:{user_id}:{cot_date}`. Usuarios PRO: sin límite. Hits de caché no incrementan el contador.
+
+### 6. Respuesta Parcial de `/predictions/{match_id}` para Free
+
+- **`apps/api/schemas/prediction.py`:** nuevo campo `total_markets` en `PredictionResponse`.
+- **`apps/api/orchestrators/prediction_orchestrator.py`:** asigna `total_markets = len(ev_analysis)` al construir la respuesta.
+- **`apps/api/routes/v1/predictions.py`:** obtiene usuario opcional via `get_optional_user_id`. Si no es PRO: `ev_analysis` recortado a 10, `bet_builder` vaciado, `total_markets` conserva el conteo real. Usuarios no autenticados reciben respuesta Free.
+- **Impacto frontend:** el campo `total_markets` reemplaza el hardcode `56` en `apps/web/app/partidos/[id]/page.tsx:499`. El frontend ya maneja arrays recortados y `betBuilder` vacío sin romper.
+
+### 7. Fix: Límite de Generación para Usuarios Anónimos
+
+- **`apps/api/dependencies.py`:** nueva dependencia `get_client_ip` — lee `X-Forwarded-For`, fallback a `request.client.host`, último fallback `127.0.0.1`.
+- **`apps/api/routes/v1/tickets.py` (`generate_tickets`):** ampliado para aplicar el mismo límite 2/día a peticiones sin sesión usando clave `gen:daily:ip:{client_ip}:{cot_date}`. Misma lógica de cache-miss que usuarios autenticados.
+
+### 8. Tests
+
+- **`tests/test_subscriptions.py`:** extendido de 4 a 14 tests.
+  - 4 tests existentes de suscripciones.
+  - 4 tests de `effective_pro` (Free, PRO activo, expirado, trial).
+  - 1 test de `count_by_user` en TicketRepository.
+  - 1 test de schema `PredictionResponse` con `total_markets`.
+  - 2 tests de `get_client_ip` (X-Forwarded-For y fallback).
+  - 2 tests de formato de clave de generación (user_id e IP).
+- **Suite completa:** 119 passed, 0 failed.
+
+### 9. Archivos Modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `apps/api/dependencies.py` | `require_pro_user` + `get_client_ip` |
+| `apps/api/services/cache_service.py` | Método `increment()` |
+| `apps/api/routes/v1/bankroll.py` | 4 endpoints → `require_pro_user` |
+| `apps/api/routes/v1/tickets.py` | Límite guardado, límite generación (auth + IP) |
+| `apps/api/routes/v1/predictions.py` | Recorte Free de ev_analysis + bet_builder |
+| `apps/api/repositories/ticket_repository.py` | `count_by_user()` |
+| `apps/api/schemas/prediction.py` | Campo `total_markets` |
+| `apps/api/orchestrators/prediction_orchestrator.py` | Asignación `total_markets` |
+| `tests/test_subscriptions.py` | 10 tests nuevos |

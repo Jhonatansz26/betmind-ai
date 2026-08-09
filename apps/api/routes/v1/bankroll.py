@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.dependencies import get_async_session, get_current_user_id
+from apps.api.dependencies import get_async_session, require_pro_user
 from apps.api.models.bankroll import Bankroll, BankrollMovement
 from apps.api.schemas.bankroll import (
     BankrollAdjust,
@@ -56,7 +56,7 @@ async def _load_bankroll_response(bankroll: Bankroll, session: AsyncSession) -> 
 @router.post("/setup", response_model=BankrollResponse)
 async def setup_bankroll(
     body: BankrollSetup,
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Depends(require_pro_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> BankrollResponse:
     """Initialize a bankroll for the authenticated user.
@@ -95,7 +95,7 @@ async def setup_bankroll(
 
 @router.get("", response_model=BankrollResponse)
 async def get_bankroll(
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Depends(require_pro_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> BankrollResponse:
     """Return the current bankroll state with full movement history."""
@@ -106,7 +106,7 @@ async def get_bankroll(
 @router.patch("", response_model=BankrollResponse)
 async def patch_bankroll(
     body: BankrollPatch,
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Depends(require_pro_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> BankrollResponse:
     """Update mutable bankroll fields (currently: risk_profile)."""
@@ -122,7 +122,7 @@ async def patch_bankroll(
 @router.post("/adjust", response_model=BankrollResponse)
 async def adjust_bankroll(
     body: BankrollAdjust,
-    user_id: int = Depends(get_current_user_id),
+    user_id: int = Depends(require_pro_user),
     session: AsyncSession = Depends(get_async_session),
 ) -> BankrollResponse:
     """Record a manual capital adjustment (deposit or withdrawal).
