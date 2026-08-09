@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import func, select
@@ -153,7 +154,202 @@ async def test_approved_renewal_confirms_recurrence_capability(session):
     assert subscription.recurrence_enabled is True
 
 
-def test_wompi_signature_uses_dynamic_properties_and_timestamp(monkeypatch):
+# ── Reconciliation job tests ───────────────────────────────────────────────
+
+@pytest.fixture
+async def _reconcile_db():
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+    )
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        yield session, factory
+    await engine.dispose()
+
+
+async def _setup_pending_subscription(session, user, wompi_id, minutes_ago=60):
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(minutes=minutes_ago)
+    subscription = Subscription(
+        user_id=user.id,
+        plan="mensual",
+        status="pending_payment",
+        current_period_end=now,
+        initial_transaction_id=wompi_id,
+        created_at=past,
+    )
+    session.add(subscription)
+    await session.flush()
+    transaction = SubscriptionTransaction(
+        subscription_id=subscription.id,
+        wompi_transaction_id=wompi_id,
+        reference=f"ref-{wompi_id}",
+        kind="initial",
+        amount_in_cents=2_990_000,
+        status="PENDING",
+    )
+    session.add(transaction)
+    await session.flush()
+    await session.commit()
+    return subscription, transaction
+
+
+@pytest.mark.asyncio
+async def test_reconcile_approved(_reconcile_db, monkeypatch):
+    session, factory = _reconcile_db
+    monkeypatch.setattr(
+        "apps.api.jobs.reconcile_pending_subscriptions.async_session_factory",
+        factory,
+    )
+    monkeypatch.setattr(settings, "PENDING_PAYMENT_RECONCILE_DELAY_MINUTES", 5)
+    user = await _user(session)
+    sub, tx = await _setup_pending_subscription(session, user, "tx-rec-approved")
+
+    with patch("apps.api.jobs.reconcile_pending_subscriptions.WompiClient") as MockClient:
+        instance = MockClient.return_value
+        instance.get_transaction = AsyncMock(return_value={
+            "id": "tx-rec-approved",
+            "status": "APPROVED",
+        })
+        from apps.api.jobs.reconcile_pending_subscriptions import (
+            reconcile_pending_subscriptions,
+        )
+        result = await reconcile_pending_subscriptions()
+
+    assert result == {"approved": 1, "declined": 0, "skipped": 0, "wompi_pending": 0}
+
+    await session.refresh(sub)
+    assert sub.status == "active"
+    await session.refresh(user)
+    assert user.is_pro is True
+
+
+@pytest.mark.asyncio
+async def test_reconcile_declined(_reconcile_db, monkeypatch):
+    session, factory = _reconcile_db
+    monkeypatch.setattr(
+        "apps.api.jobs.reconcile_pending_subscriptions.async_session_factory",
+        factory,
+    )
+    monkeypatch.setattr(settings, "PENDING_PAYMENT_RECONCILE_DELAY_MINUTES", 5)
+    user = await _user(session)
+    sub, tx = await _setup_pending_subscription(session, user, "tx-rec-declined")
+
+    with patch("apps.api.jobs.reconcile_pending_subscriptions.WompiClient") as MockClient:
+        instance = MockClient.return_value
+        instance.get_transaction = AsyncMock(return_value={
+            "id": "tx-rec-declined",
+            "status": "DECLINED",
+        })
+        from apps.api.jobs.reconcile_pending_subscriptions import (
+            reconcile_pending_subscriptions,
+        )
+        result = await reconcile_pending_subscriptions()
+
+    assert result == {"approved": 0, "declined": 1, "skipped": 0, "wompi_pending": 0}
+
+    await session.refresh(sub)
+    assert sub.status == "cancelled"
+    await session.refresh(user)
+    assert user.is_pro is False
+
+
+@pytest.mark.asyncio
+async def test_reconcile_wompi_still_pending(_reconcile_db, monkeypatch):
+    session, factory = _reconcile_db
+    monkeypatch.setattr(
+        "apps.api.jobs.reconcile_pending_subscriptions.async_session_factory",
+        factory,
+    )
+    monkeypatch.setattr(settings, "PENDING_PAYMENT_RECONCILE_DELAY_MINUTES", 5)
+    user = await _user(session)
+    sub, tx = await _setup_pending_subscription(session, user, "tx-rec-still-pending")
+
+    with patch("apps.api.jobs.reconcile_pending_subscriptions.WompiClient") as MockClient:
+        instance = MockClient.return_value
+        instance.get_transaction = AsyncMock(return_value={
+            "id": "tx-rec-still-pending",
+            "status": "PENDING",
+        })
+        from apps.api.jobs.reconcile_pending_subscriptions import (
+            reconcile_pending_subscriptions,
+        )
+        result = await reconcile_pending_subscriptions()
+
+    assert result == {"approved": 0, "declined": 0, "skipped": 0, "wompi_pending": 1}
+
+    await session.refresh(sub)
+    assert sub.status == "pending_payment"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_idempotent_with_webhook(_reconcile_db, monkeypatch):
+    session, factory = _reconcile_db
+    monkeypatch.setattr(
+        "apps.api.jobs.reconcile_pending_subscriptions.async_session_factory",
+        factory,
+    )
+    monkeypatch.setattr(settings, "PENDING_PAYMENT_RECONCILE_DELAY_MINUTES", 5)
+    user = await _user(session)
+    sub, tx = await _setup_pending_subscription(session, user, "tx-rec-idempotent")
+
+    with patch("apps.api.jobs.reconcile_pending_subscriptions.WompiClient") as MockClient:
+        instance = MockClient.return_value
+        instance.get_transaction = AsyncMock(return_value={
+            "id": "tx-rec-idempotent",
+            "status": "APPROVED",
+        })
+        from apps.api.jobs.reconcile_pending_subscriptions import (
+            reconcile_pending_subscriptions,
+        )
+        result = await reconcile_pending_subscriptions()
+
+    assert result == {"approved": 1, "declined": 0, "skipped": 0, "wompi_pending": 0}
+
+    await session.refresh(tx)
+    changed = await apply_transaction_status(
+        session,
+        tx,
+        "APPROVED",
+        {"status": "APPROVED"},
+    )
+    assert changed is False
+
+    await session.refresh(sub)
+    assert sub.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_recent_pending(_reconcile_db, monkeypatch):
+    session, factory = _reconcile_db
+    monkeypatch.setattr(
+        "apps.api.jobs.reconcile_pending_subscriptions.async_session_factory",
+        factory,
+    )
+    monkeypatch.setattr(settings, "PENDING_PAYMENT_RECONCILE_DELAY_MINUTES", 10)
+    user = await _user(session)
+    sub, tx = await _setup_pending_subscription(session, user, "tx-rec-recent", minutes_ago=3)
+
+    with patch("apps.api.jobs.reconcile_pending_subscriptions.WompiClient") as MockClient:
+        instance = MockClient.return_value
+        instance.get_transaction = AsyncMock(return_value={
+            "id": "tx-rec-recent",
+            "status": "APPROVED",
+        })
+        from apps.api.jobs.reconcile_pending_subscriptions import (
+            reconcile_pending_subscriptions,
+        )
+        result = await reconcile_pending_subscriptions()
+
+    assert result == {"approved": 0, "declined": 0, "skipped": 0, "wompi_pending": 0}
+    await session.refresh(sub)
+    assert sub.status == "pending_payment"
+
+
+# ── Wompi signature validation ───────────────────────────────────────────
     secret = "events_test_secret"
     monkeypatch.setattr(settings, "WOMPI_EVENTS_SECRET", secret)
     payload = {

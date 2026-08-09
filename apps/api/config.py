@@ -71,6 +71,16 @@ class Settings(BaseSettings):
     # Frontend base URL used to build password-reset links
     FRONTEND_URL: str = "http://localhost:3000"
 
+    # Email via Resend (https://resend.com). Leave unset for console fallback.
+    RESEND_API_KEY: str | None = None
+    EMAIL_FROM_ADDRESS: str = "no-reply@betmind.ai"
+
+    # Generic SMTP (Gmail, SendGrid, etc.). Falls back to Resend then console.
+    SMTP_SERVER: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+
     # Wompi integration. Keep all secrets in environment variables.
     WOMPI_BASE_URL: str = "https://sandbox.wompi.co/v1"
     WOMPI_PUBLIC_KEY: str = ""
@@ -80,6 +90,7 @@ class Settings(BaseSettings):
     WOMPI_MONTHLY_AMOUNT_CENTS: int = 2_990_000
     WOMPI_ANNUAL_AMOUNT_CENTS: int = 24_990_000
     SUBSCRIPTION_GRACE_DAYS: int = 3
+    PENDING_PAYMENT_RECONCILE_DELAY_MINUTES: int = 10
 
     GROQ_TIMEOUT_SECONDS: float = 90.0
     GROQ_SINGLE_CALL_TIMEOUT: float = 25.0

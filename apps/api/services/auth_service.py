@@ -2,15 +2,7 @@
 auth_service.py
 ~~~~~~~~~~~~~~~
 Lógica de autenticación: hashing de contraseñas, emisión/verificación de JWTs
-y envío de emails de recuperación (stub — ver nota de producción más abajo).
-
-NOTA DE PRODUCCIÓN — EMAIL:
-    No hay proveedor de email configurado en el proyecto. La función
-    `send_password_reset_email` loguea el link en consola y NUNCA
-    envía un email real. Antes de lanzar el flujo de recuperación a
-    usuarios reales, reemplazar esta función con una integración de
-    Resend (recomendado) o SMTP, y agregar las variables de entorno
-    correspondientes (RESEND_API_KEY o SMTP_HOST/PORT/USER/PASS).
+y envío de emails de recuperación (SMTP > Resend > fallback a consola).
 """
 
 from __future__ import annotations
@@ -101,20 +93,79 @@ def decode_reset_token(token: str) -> int:
         raise ValueError("Identificador de usuario inválido en el token") from exc
 
 
-# ── Email stub ─────────────────────────────────────────────────────────────────
+# ── Email ──────────────────────────────────────────────────────────────────────
 
-def send_password_reset_email(email: str, reset_link: str) -> None:
-    """
-    ⚠️  STUB — no email is sent.
+_RESET_EMAIL_SUBJECT = "Restablecé tu contraseña de BetMind"
 
-    In development this logs the reset link to stdout so you can copy-paste
-    it manually.  Replace with a real email provider before going to
-    production (see module docstring above).
-    """
+
+def _reset_email_body(reset_link: str) -> str:
+    return (
+        "Recibiste este correo porque pediste restablecer tu contraseña en BetMind.\n\n"
+        f"Hacé clic en el siguiente enlace para crear una nueva contraseña "
+        f"(expira en 30 minutos):\n\n{reset_link}\n\n"
+        "Si no pediste este cambio, ignorá este mensaje."
+    )
+
+
+def _log_stub(email: str, reset_link: str) -> None:
     logger.warning(
         "[EMAIL-STUB] Password reset requested for %s\n"
         "[EMAIL-STUB] Reset link (valid 30 min): %s\n"
-        "[EMAIL-STUB] Configure a real email provider before production.",
+        "[EMAIL-STUB] Configure SMTP_USERNAME/SMTP_PASSWORD or RESEND_API_KEY.",
         email,
         reset_link,
     )
+
+
+def _send_via_resend(email: str, reset_link: str) -> None:
+    import resend
+
+    resend.api_key = settings.RESEND_API_KEY
+    resend.Emails.send({
+        "from": settings.EMAIL_FROM_ADDRESS,
+        "to": [email],
+        "subject": _RESET_EMAIL_SUBJECT,
+        "text": _reset_email_body(reset_link),
+    })
+
+
+async def _send_via_smtp(email: str, reset_link: str) -> None:
+    from email.mime.text import MIMEText
+
+    import aiosmtplib
+
+    message = MIMEText(_reset_email_body(reset_link))
+    message["Subject"] = _RESET_EMAIL_SUBJECT
+    message["From"] = settings.SMTP_USERNAME
+    message["To"] = email
+
+    await aiosmtplib.send(
+        message,
+        hostname=settings.SMTP_SERVER,
+        port=settings.SMTP_PORT,
+        start_tls=True,
+        username=settings.SMTP_USERNAME,
+        password=settings.SMTP_PASSWORD,
+    )
+
+
+async def send_password_reset_email(email: str, reset_link: str) -> None:
+    if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
+        try:
+            await _send_via_smtp(email, reset_link)
+            logger.info("Password reset email sent via SMTP to %s", email)
+            return
+        except Exception:
+            logger.exception("SMTP send failed for %s", email)
+            return
+
+    if settings.RESEND_API_KEY:
+        try:
+            _send_via_resend(email, reset_link)
+            logger.info("Password reset email sent via Resend to %s", email)
+            return
+        except Exception:
+            logger.exception("Resend send failed for %s", email)
+            return
+
+    _log_stub(email, reset_link)

@@ -68,6 +68,29 @@ class WompiClient:
             raise WompiConfigurationError("WOMPI_PUBLIC_KEY is not configured")
         return settings.WOMPI_PUBLIC_KEY
 
+    async def _get(self, path: str) -> dict[str, Any]:
+        public_key = self._require_public_key()
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.get(
+                    f"{self._base_url}/{path.lstrip('/')}",
+                    headers={"Authorization": f"Bearer {public_key}"},
+                )
+        except httpx.HTTPError as exc:
+            raise WompiAPIError(503, "No se pudo conectar con Wompi.") from exc
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"raw": response.text}
+        if not response.is_success:
+            message = (
+                payload.get("error", {}).get("reason")
+                if isinstance(payload.get("error"), dict)
+                else None
+            ) or payload.get("message") or "Wompi rechazó la operación."
+            raise WompiAPIError(response.status_code, str(message), payload)
+        return payload
+
     async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         private_key = self._require_private_key()
         try:
@@ -196,4 +219,11 @@ class WompiClient:
         data = payload.get("data")
         if not isinstance(data, dict) or not data.get("id"):
             raise WompiAPIError(502, "Wompi no devolvió una transacción válida.", payload)
+        return data
+
+    async def get_transaction(self, transaction_id: str) -> dict[str, Any]:
+        payload = await self._get(f"/transactions/{transaction_id}")
+        data = payload.get("data")
+        if not isinstance(data, dict) or not data.get("id"):
+            raise WompiAPIError(502, "Wompi no devolvió datos de la transacción.", payload)
         return data

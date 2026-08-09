@@ -7070,3 +7070,120 @@ Se mapearon 5 reglas de negocio contra el código existente. El supuesto origina
 | `apps/api/schemas/prediction.py` | Campo `total_markets` |
 | `apps/api/orchestrators/prediction_orchestrator.py` | Asignación `total_markets` |
 | `tests/test_subscriptions.py` | 10 tests nuevos |
+
+---
+
+## 🟢 Fase 6.1: CORS Configurable para Producción (Completado)
+
+### 1. Diagnóstico
+`ALLOWED_ORIGINS` en `config.py` ya tenía un validator (`normalize_allowed_origins`) que soportaba tanto JSON arrays como strings separadas por coma desde variable de entorno. El único faltante era documentarlo en `.env.example`.
+
+### 2. Cambio
+- **`.env.example`:** agregado `ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000` como primera línea.
+- Defaults preservados: si no se define la variable, `localhost:3000` y `127.0.0.1:3000` siguen activos para desarrollo local.
+- Sin dominios de producción hardcodeados — se agregan vía variable de entorno el día del deploy.
+
+### 3. Archivos Modificados
+| Archivo | Cambio |
+|---------|--------|
+| `.env.example:1` | `ALLOWED_ORIGINS` documentado |
+
+---
+
+## 🟢 Fase 6.2: Reconciliación de Suscripciones (Completado)
+
+### 1. Motivación
+Si el webhook de Wompi nunca llega (caída de red, timeout), una suscripción queda trabada en `pending_payment` para siempre. Esta fase agrega un job de auto-corrección.
+
+### 2. Paso 0 — Mapeo
+- `initial_transaction_id` en `Subscription` (`models/subscription.py:31`), seteado en `/activate`.
+- Endpoint Wompi: `GET /transactions/{id}` con `Authorization: Bearer {public_key}` (confirmado contra docs oficiales).
+- Patrón de jobs: standalone script con `async_session_factory()` + `__main__` con `asyncio.run()` (`jobs/renew_subscriptions.py`).
+- `apply_transaction_status()` en `subscription_service.py:31-93` es idempotente (retorna `False` si ya está en estado final).
+
+### 3. WompiClient — `get_transaction()`
+- **`services/wompi_service.py`:** nuevo helper `_get()` (línea 71) con auth de llave pública, mismo patrón de errores que `_post()`.
+- **`services/wompi_service.py`:** método público `get_transaction(transaction_id)` (línea 218) — `GET /transactions/{id}` → retorna `data`.
+
+### 4. Job `reconcile_pending_subscriptions`
+- **`jobs/reconcile_pending_subscriptions.py`:** `python -m apps.api.jobs.reconcile_pending_subscriptions`
+- Busca suscripciones `pending_payment` con `created_at` anterior a `PENDING_PAYMENT_RECONCILE_DELAY_MINUTES` (default 10 min).
+- Consulta Wompi vía `get_transaction(initial_transaction_id)`.
+- Si `APPROVED`/`DECLINED`: aplica `apply_transaction_status()` (misma lógica que el webhook).
+- Si todavía `PENDING`: no hace nada, se revisa en la siguiente corrida.
+- Idempotencia: si el webhook real llega después, `apply_transaction_status` retorna `False` sin modificar nada.
+
+### 5. Config
+- **`config.py:83`:** `PENDING_PAYMENT_RECONCILE_DELAY_MINUTES: int = 10`
+
+### 6. Tests (5 nuevos)
+| Test | Caso |
+|------|------|
+| `test_reconcile_approved` | Wompi confirma APPROVED → sub `active`, user `is_pro=True` |
+| `test_reconcile_declined` | Wompi confirma DECLINED → sub `cancelled`, user `is_pro=False` |
+| `test_reconcile_wompi_still_pending` | Wompi sigue PENDING → no se toca, contabilizado |
+| `test_reconcile_idempotent_with_webhook` | Job resuelve primero, webhook tardío → no-op |
+| `test_reconcile_skips_recent_pending` | Transacción <10 min → no se reconcilia |
+
+### 7. Archivos Modificados
+| Archivo | Cambio |
+|---------|--------|
+| `apps/api/services/wompi_service.py` | `_get()` helper + `get_transaction()` público |
+| `apps/api/config.py` | `PENDING_PAYMENT_RECONCILE_DELAY_MINUTES` |
+| `apps/api/jobs/reconcile_pending_subscriptions.py` | Nuevo job de reconciliación |
+| `tests/test_subscriptions.py` | 5 tests de reconciliación |
+
+---
+
+## 🟢 Fase 6.3: Email vía Gmail SMTP (Completado)
+
+### 1. Motivación
+Resend sin dominio verificado solo permite enviar a la cuenta propia (`onboarding@resend.dev`). Gmail SMTP con contraseña de aplicación permite enviar a cualquier destinatario, gratis, hasta 500 emails/día.
+
+### 2. Configuración
+Variables configuradas en `.env` (nombres genéricos, reutilizables para cualquier proveedor SMTP):
+- `SMTP_SERVER=smtp.gmail.com`
+- `SMTP_PORT=587`
+- `SMTP_USERNAME=betmind.soporte@gmail.com`
+- `SMTP_PASSWORD=<app_password_16_chars>`
+- `EMAIL_FROM_ADDRESS=betmind.soporte@gmail.com`
+
+**`config.py:77-81`:** `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`
+
+### 3. Refactor de `auth_service.py`
+Abstracción de proveedores con dispatch por prioridad: **SMTP > Resend > stub consola**.
+
+```
+send_password_reset_email()  [async]
+  ├── SMTP_USERNAME + SMTP_PASSWORD? → _send_via_smtp()  [aiosmtplib, async]
+  ├── RESEND_API_KEY?                → _send_via_resend() [sync, wrapped]
+  └── fallback                       → _log_stub()        [console]
+```
+
+- `_send_via_smtp()`: `aiosmtplib.send()` con `MIMEText`, `start_tls=True`, hostname/port configurables.
+- `_send_via_resend()`: SDK de Resend, igual que antes, mantenido como fallback.
+- `_log_stub()`: comportamiento original de consola.
+- `_reset_email_body()`: texto de email extraído a helper compartido.
+- Función convertida a `async def` — el call site en `forgot_password` ahora usa `await`.
+- Error handling: cada proveedor tiene su try/except; si uno falla, el endpoint sigue respondiendo 200 (anti-enumeración).
+
+### 4. Dependencia Nueva
+- `aiosmtplib>=3.0.0` en `requirements.txt` y `apps/api/requirements.txt`
+
+### 5. Verificación Real
+- Remitente: `betmind.soporte@gmail.com` → Destinatario: `jhonatan2000j@gmail.com` (distinto al remitente)
+- Log: `Password reset email sent via SMTP to jhonatan2000j@gmail.com` — confirma que usó SMTP, no Resend.
+- Flujo completo: forgot-password → email recibido → reset-password (200) → login (200, token JWT).
+- Gmail SMTP no tiene la limitación de Resend sin dominio: envía a cualquier destinatario.
+
+### 6. Archivos Modificados
+| Archivo | Cambio |
+|---------|--------|
+| `apps/api/config.py` | `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` |
+| `apps/api/services/auth_service.py` | Refactor: provider dispatch, `_send_via_smtp`, `_send_via_resend`, `_log_stub`, async |
+| `apps/api/routes/v1/auth.py:116` | `send_password_reset_email` → `await send_password_reset_email` |
+| `requirements.txt` (x2) | `aiosmtplib>=3.0.0` |
+| `.env.example` | Variables SMTP + comentario de prioridad |
+
+### 7. Tests
+Suite completa: **149 passed, 0 failed**.

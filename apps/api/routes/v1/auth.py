@@ -113,7 +113,7 @@ async def forgot_password(
         reset_token = create_reset_token(user.id)
         frontend_url = settings.FRONTEND_URL.rstrip("/")
         reset_link = f"{frontend_url}/cuenta/resetear?token={reset_token}"
-        send_password_reset_email(user.email, reset_link)
+        await send_password_reset_email(user.email, reset_link)
 
     # Same response whether user exists or not
     return ForgotPasswordResponse()
