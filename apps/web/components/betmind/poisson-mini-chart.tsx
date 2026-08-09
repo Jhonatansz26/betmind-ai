@@ -16,7 +16,7 @@ interface PoissonMiniChartProps {
 
 /**
  * The signature visual: a mini Poisson goal-probability histogram.
- * Home bars render in indigo, away bars in amber.
+ * Home and away bars follow the active team tokens.
  */
 export function PoissonMiniChart({
   lambdaHome,
@@ -64,7 +64,7 @@ export function PoissonMiniChart({
               width={barWidth}
               height={hHome}
               rx={1}
-              fill="var(--primary)"
+              fill="var(--home-team)"
               opacity={0.9}
             />
             <rect
@@ -73,7 +73,7 @@ export function PoissonMiniChart({
               width={barWidth}
               height={hAway}
               rx={1}
-              fill="var(--warning)"
+              fill="var(--away-team)"
               opacity={0.75}
             />
             <text

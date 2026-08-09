@@ -4,77 +4,58 @@ import * as React from 'react'
 import { Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { type Mode, type Ticket } from '@/lib/betmind'
+import { type Ticket } from '@/lib/betmind'
 import {
   fetchTicketHistory,
-  claimAnonymousTickets,
   saveTicket,
   updateTicketStatus,
-  type SavedTicketStatus,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { formatEV, formatOdds, formatCOTDate } from '@/lib/formatters'
+import { formatCOP, formatEV, formatOdds, formatCOTDate } from '@/lib/formatters'
+import { announceProLimit, isProUser } from '@/lib/subscription'
+import {
+  claimPendingTickets,
+  loadTrackedTickets,
+  TRACKED_TICKETS_STORAGE_KEY,
+  summarizeTrackedTickets,
+  type TrackStatus,
+  type TrackedTicket,
+} from '@/lib/tracking'
+
+export { claimPendingTickets } from '@/lib/tracking'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type TrackStatus = SavedTicketStatus
-
-export interface TrackedTicket {
-  id: string
-  mode: Mode
-  combinedOdds: number
-  evAverage: number
-  confidence: number
-  legsCount: number
-  trackedAt: string // ISO string
-  status: TrackStatus
-  remote?: boolean
-}
-
 /* ------------------------------------------------------------------ */
 /* Storage helpers                                                     */
 /* ------------------------------------------------------------------ */
 
-const STORAGE_KEY = 'betmind_tracked_tickets'
-
-function loadTracked(): TrackedTicket[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    const parsed = raw ? (JSON.parse(raw) as TrackedTicket[]) : []
-    return parsed.map((ticket) => ({ ...ticket, evAverage: ticket.evAverage ?? 0 }))
-  } catch {
-    return []
-  }
-}
-
 function saveTracked(tickets: TrackedTicket[]) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(tickets))
+    window.localStorage.setItem(TRACKED_TICKETS_STORAGE_KEY, JSON.stringify(tickets))
   } catch {
     // quota exceeded — silently fail
   }
 }
 
-export async function claimPendingTickets(): Promise<number> {
-  const pending = loadTracked().filter((ticket) => ticket.remote && /^\d+$/.test(ticket.id))
-  const ticketIds = pending.map((ticket) => Number(ticket.id))
-  if (!ticketIds.length) return 0
 
-  const result = await claimAnonymousTickets(ticketIds)
-  if (!result.ok || result.data.claimed_count <= 0) return 0
+export type AddToTrackingResult = { saved: true } | { saved: false; reason: 'free-limit' }
 
-  const pendingIds = new Set(ticketIds.map(String))
-  saveTracked(loadTracked().filter((ticket) => !pendingIds.has(ticket.id)))
-  return result.data.claimed_count
-}
+export async function addToTracking(
+  ticket: Ticket,
+  stakeAmount?: number,
+): Promise<AddToTrackingResult> {
+  // TODO(backend-pagos): reemplazar por chequeo real de suscripción.
+  if (!isProUser() && loadTrackedTickets().length >= 5) {
+    announceProLimit('saved')
+    return { saved: false, reason: 'free-limit' }
+  }
 
-export async function addToTracking(ticket: Ticket): Promise<void> {
-  const remoteResult = await saveTicket(ticket)
+  const remoteResult = await saveTicket(ticket, stakeAmount)
   if (remoteResult.ok) {
-    const existing = loadTracked()
+    const existing = loadTrackedTickets()
     const entry: TrackedTicket = {
       id: String(remoteResult.data.id),
       mode: ticket.mode,
@@ -84,13 +65,15 @@ export async function addToTracking(ticket: Ticket): Promise<void> {
       legsCount: ticket.legs.length,
       trackedAt: remoteResult.data.created_at,
       status: remoteResult.data.status,
+      stakeAmount: remoteResult.data.stake_amount,
       remote: true,
     }
+    // TODO(backend-pagos): PRO será ilimitado cuando exista persistencia backend; localStorage conserva su tope técnico de 10.
     saveTracked([entry, ...existing.filter((item) => item.id !== entry.id)].slice(0, 10))
-    return
+    return { saved: true }
   }
 
-  const existing = loadTracked()
+  const existing = loadTrackedTickets()
   const entryId = `${ticket.mode}-${Date.now()}`
   const entry: TrackedTicket = {
     id: entryId,
@@ -101,10 +84,13 @@ export async function addToTracking(ticket: Ticket): Promise<void> {
     legsCount: ticket.legs.length,
     trackedAt: new Date().toISOString(),
     status: 'PENDING',
+    stakeAmount,
     remote: false,
   }
+  // TODO(backend-pagos): PRO será ilimitado cuando exista persistencia backend; localStorage conserva su tope técnico de 10.
   const updated = [entry, ...existing].slice(0, 10)
   saveTracked(updated)
+  return { saved: true }
 }
 
 /* ------------------------------------------------------------------ */
@@ -221,11 +207,12 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
             legsCount: saved.ticket_data.legs.length,
             trackedAt: saved.created_at,
             status: saved.status,
+            stakeAmount: saved.stake_amount,
             remote: true,
           }
         }))
       } else {
-        setEntries(loadTracked())
+        setEntries(loadTrackedTickets())
       }
     }
     void loadHistory()
@@ -249,7 +236,21 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
     setEntries(next)
     if (current?.remote && /^\d+$/.test(id)) {
       const result = await updateTicketStatus(Number(id), status)
-      if (!result.ok) saveTracked(next)
+      if (!result.ok) {
+        setEntries((previous) => previous.map((entry) => entry.id === id ? current : entry))
+        if (result.error.code === 'HTTP_409') {
+          toast.error('Este boleto ya fue liquidado y no se puede cambiar de estado. Si fue un error, ajustá tu bankroll manualmente desde /bankroll.')
+        } else {
+          toast.error(result.error.message)
+        }
+        return
+      }
+      const movement = result.data.bankroll_movement
+      if (movement) {
+        if (movement.amount > 0) toast.success(`Tu bankroll subió ${formatCOP(movement.amount)}`)
+        else if (movement.amount < 0) toast.success(`Tu bankroll bajó ${formatCOP(Math.abs(movement.amount))}`)
+        else toast.success('Tu bankroll no cambió: boleto anulado.')
+      }
     } else {
       saveTracked(next)
     }
@@ -270,7 +271,7 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
   const averageEv = entries.length
     ? entries.reduce((sum, entry) => sum + entry.evAverage, 0) / entries.length
     : 0
-  const pending = entries.filter((e) => e.status === 'PENDING').length
+  const summary = summarizeTrackedTickets(entries)
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
@@ -278,12 +279,7 @@ export function TrackingPanel({ refreshKey }: { refreshKey?: number }) {
         <div className="pr-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Boletos guardados</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{entries.length}</span></div>
         <div className="px-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Cuota promedio</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{formatOdds(averageOdds)}</span></div>
         <div className="px-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">+EV medio</span><span className="font-mono text-sm font-bold tabular-nums text-positive">{formatEV(averageEv)}</span></div>
-        <div className="pl-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">En seguimiento</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{pending}</span></div>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/25 bg-primary/[0.04] px-4 py-2.5 text-xs">
-        <p className="font-mono text-xs font-medium text-foreground">MODO ANÓNIMO ACTIVO • Sincroniza tu Track Record en la nube y activa gestión de bankroll PRO</p>
-        <button type="button" onClick={() => toast('Cuenta PRO', { description: 'La conexión de cuenta estará disponible próximamente.' })} className="shrink-0 rounded-md border border-primary/40 bg-primary/10 px-3 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/20">Conectar Cuenta PRO</button>
+        <div className="pl-3"><span className="block text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">En seguimiento</span><span className="font-mono text-sm font-bold tabular-nums text-foreground">{summary.active}</span></div>
       </div>
 
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-1 pb-2">

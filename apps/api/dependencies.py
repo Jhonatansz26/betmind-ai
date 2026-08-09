@@ -54,31 +54,52 @@ async def get_current_user_id(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     session: AsyncSession = Depends(get_async_session),
 ) -> int:
-    """Resolve the local user from the Supabase Auth ``sub``/``auth.uid()``."""
+    """Resolve the local user from the JWT ``sub``.
+
+    Supports two token flavours:
+    - Own JWT (Opción B): ``sub`` = str(user_id) — look up by primary key.
+    - Supabase JWT (legacy/future Opción A): ``sub`` = UUID string stored
+      in ``users.auth_uid``.  Detected when ``sub`` is not a plain integer.
+    """
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
     secret = settings.SUPABASE_JWT_SECRET or settings.SECRET_KEY
     try:
+        # No audience constraint: our own JWTs don't carry the Supabase
+        # "authenticated" audience claim.  If SUPABASE_JWT_SECRET is set
+        # and a Supabase token with audience is received, jose ignores the
+        # claim gracefully when options={"verify_aud": False}.
         payload = jwt.decode(
             credentials.credentials,
             secret,
             algorithms=["HS256"],
-            audience=settings.SUPABASE_JWT_AUDIENCE,
+            options={"verify_aud": False},
         )
-        auth_uid = payload.get("sub")
-        if not isinstance(auth_uid, str) or not auth_uid:
-            raise JWTError("Missing Supabase subject")
+        sub = payload.get("sub")
+        if not isinstance(sub, str) or not sub:
+            raise JWTError("Missing subject")
     except JWTError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token") from exc
 
-    result = await session.execute(
-        select(User.id).where(User.auth_uid == auth_uid, User.is_active.is_(True))
-    )
+    # Determine lookup strategy: plain integer → own JWT (user_id as sub);
+    # UUID-like string → Supabase auth_uid.
+    try:
+        user_id_from_sub = int(sub)
+        result = await session.execute(
+            select(User.id).where(User.id == user_id_from_sub, User.is_active.is_(True))
+        )
+    except (ValueError, TypeError):
+        # sub is a UUID string (Supabase path)
+        result = await session.execute(
+            select(User.id).where(User.auth_uid == sub, User.is_active.is_(True))
+        )
+
     user_id = result.scalar_one_or_none()
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authenticated user is not provisioned")
     return int(user_id)
+
 
 
 async def get_optional_user_id(

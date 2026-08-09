@@ -3,6 +3,19 @@ import { IBM_Plex_Mono, Inter, Playfair_Display } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
+const themeInitScript = `
+(function() {
+  try {
+    var stored = localStorage.getItem('betmind_theme');
+    var theme = stored || 'system';
+    var isDark = theme === 'dark' ||
+      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.classList.toggle('dark', isDark);
+    document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+  } catch (e) {}
+})();
+`
+
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
@@ -43,8 +56,8 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  colorScheme: 'dark',
-  themeColor: '#070A0D',
+  colorScheme: 'light dark',
+  themeColor: '#0A0D10',
 }
 
 export default function RootLayout({
@@ -53,7 +66,10 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" className={`bg-background ${inter.variable} ${playfair.variable} ${ibmPlexMono.variable}`}>
+    <html lang="es" suppressHydrationWarning className={`bg-background ${inter.variable} ${playfair.variable} ${ibmPlexMono.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className="font-sans antialiased">
         {children}
         <Toaster position="bottom-right" />

@@ -6815,3 +6815,187 @@ Problema residual en logs de `batch_predict.py`: la tabla `teams` tenia 2 filas 
 - `python -m compileall -q apps/api`: OK.
 - `git diff --check`: limpio.
 - Suite completa bloqueada solo por `scripts/test_tickets.py` (requiere API local) y fallos pre-existentes de `pytest-asyncio`.
+
+---
+
+## Consolidacion P0/P1 — UX, rutas, juego responsable y paywall mock (Completado)
+
+**Fecha:** 8 de agosto de 2026
+**Alcance:** trabajo realizado en esta conversacion sobre `apps/web/`. Esta entrada documenta el estado frontend actual y las decisiones que quedaron pendientes por dependencias externas.
+
+### 1. P0 — Fundacion honesta y sistema de temas
+
+- Se retiro la pestaña y la vista de Escaner del dashboard, la navegacion superior e inferior y los tipos asociados.
+- Se elimino `scanner-empty-state.tsx` y se limpiaron referencias a componentes muertos.
+- Se eliminaron los componentes sin consumidores activos: `confidence-bar.tsx`, `ev-badge.tsx`, `insufficient-data-card.tsx`, `match-comparison-bars.tsx`, `mode-selector.tsx`, `odds-pill.tsx`, `poisson-modal-chart.tsx`, `referee-widget.tsx`, `score-heatmap.tsx`, `team-logo.tsx`, `trend-pills.tsx`.
+- Se depuro `app/partidos/[id]/page.tsx`, retirando los bloques muertos de `EVTable`, `AdditionalMarkets`, `ArbitroTab`, `SignalCard`, el `BetBuilder` local alternativo y `MarketTable` cuando quedo sin consumidores.
+- Se implemento el sistema dual claro/oscuro/sistema en `app/globals.css`, con tokens CSS compartidos por Tailwind v4.
+- Se creo `lib/theme.ts` para preferencia persistida en `localStorage` y cookie, resolucion del modo sistema y aplicacion de la clase `dark`.
+- Se agrego el script anti-FOUC en `app/layout.tsx` antes de los recursos CSS y `suppressHydrationWarning` en `<html>`.
+- Se agrego el control de tema de tres estados en `top-nav.tsx`, accesible como radiogroup y adaptable a viewport movil.
+- Se migraron los colores hardcodeados del radar, paneles terminal y graficos a variables de tokens. `lib/ticket-export.ts` conserva una paleta fija de marca para que el PNG no dependa del tema activo.
+
+### 2. Auditoria de Auth — bloqueada por backend
+
+Se verifico la arquitectura real antes de implementar UI de autenticacion:
+
+- No se encontro `@supabase/supabase-js`, `@supabase/ssr`, `createClient`, variables de entorno de Supabase ni middleware de sesion en `apps/web/`.
+- `lib/api.ts` solo contiene lectura pasiva del token `betmind_access_token`, construccion del header `Authorization` y el claim existente de tickets; no contiene endpoints de login, registro, sesion o token.
+- `tracking-panel.tsx` mantiene los tickets anonimos en `betmind_tracked_tickets` y escucha `betmind:auth-changed`, pero no existia un flujo frontend que pudiera emitir una sesion real.
+- El backend de Auth quedo confirmado como no implementado (stubs `501`). No se agregaron pantallas, endpoints inventados, cliente Supabase ni cambios de RLS.
+
+### 3. P0 — Onboarding y Home redisenada
+
+Archivos creados o ajustados:
+
+- `components/betmind/onboarding.tsx`: onboarding anonimo de tres pantallas, con carrusel, datos de ejemplo fijos y persistencia `betmind_onboarding_seen`.
+- `components/betmind/home.tsx` y `components/betmind/home-page.tsx`: Home como resumen diario accionable.
+- `app/page.tsx`: entrada por `OnboardingGate` antes de Home.
+- `lib/tracking.ts`: funciones compartidas para cargar y resumir tickets.
+
+La Home ahora muestra saludo dependiente de la hora, fecha, conteo real de senales, resumen condicional de tickets, hasta tres senales destacadas, partidos destacados y CTA a Generador. Cada bloque de datos tiene carga, error y retry independientes. El ROI continua como no disponible porque no existen stake y payout confiables.
+
+### 4. P1 — Rutas reales
+
+Se reemplazo la navegacion por tabs controladas por estado por rutas de Next.js:
+
+- `app/senales/page.tsx` — terminal completa de senales.
+- `app/partidos/page.tsx` — cartelera completa con filtros `liga` y `fecha` en querystring.
+- `app/generador/page.tsx` — generador como ruta propia.
+- `app/historial/page.tsx` — historial completo con filtros `estado`, `modo` y paginacion preparada.
+- `components/betmind/app-shell.tsx` — shell compartido para las rutas con navegacion.
+- `components/betmind/signals-page.tsx`, `matches-page.tsx`, `generator-page.tsx`, `history-page.tsx` y `route-states.tsx` — componentes de las vistas extraidas.
+
+Cambios adicionales:
+
+- `top-nav.tsx` y `BottomNav` usan `Link`/`usePathname`; las rutas activas ya no dependen de un `NavTab` manual.
+- Los CTAs de Home navegan a `/senales`, `/partidos` y `/generador`.
+- `dashboard.tsx` se elimino porque despues de la migracion no conservaba consumidores ni una responsabilidad de layout necesaria.
+- Se mantuvo sin cambios el contenido interno de `/partidos/[id]` durante la migracion de rutas.
+
+### 5. P1 — Juego responsable
+
+Se agregaron:
+
+- `components/betmind/responsible-gaming-footer.tsx`: footer global con enlace real a `https://www.coljuegos.gov.co`.
+- `components/betmind/stat-disclaimer.tsx` y `lib/disclaimers.ts`: componente y constante unificados para superficies con cifras.
+
+El footer se inserta una sola vez en `app-shell.tsx`. El disclaimer corto se aplica en TicketCard, Generador, detalle de partido, Historial, Senales y Home. Tambien se actualizo el texto dibujado en el PNG de `lib/ticket-export.ts`, manteniendo la paleta fija de exportacion. Se retiraron los disclaimers antiguos para evitar mensajes contradictorios.
+
+### 6. P1 — Planes y paywall mock
+
+Se implemento la UI completa sin pagos reales ni Auth:
+
+- `app/planes/page.tsx`: hero, planes mensual/anual, badge de ahorro, tabla Free/PRO y CTA de prueba.
+- `lib/subscription.ts`: flag temporal `betmind_dev_is_pro`, `isProUser`, `setDevProFlag` y eventos reactivos. Los puntos de integracion futura estan marcados con `TODO(backend-pagos)`.
+- `components/betmind/dev-pro-toggle.tsx`: switch `Simular PRO (dev)`, solo fuera de produccion.
+- `components/betmind/use-pro-status.ts`: estado reactivo del flag mock.
+- `components/betmind/pro-limit-modal.tsx`: modal reutilizable para limites de generacion y guardado.
+
+Gates implementados:
+
+- Mercados: Free ve los primeros 10 de 56; el resto queda atenuado, no interactivo y con overlay hacia `/planes`. PRO ve el catalogo completo.
+- Bet Builder: Free ve una muestra bloqueada; PRO conserva el comportamiento completo.
+- Generacion: Free tiene dos generaciones diarias mediante `betmind_daily_generations`; VALUE y BOLD quedan deshabilitados con indicacion de disponibilidad en PRO.
+- Guardado: Free queda limitado a cinco tickets; PRO puede usar el tope tecnico local de diez. El limite de diez no se cambio porque la persistencia ilimitada requiere backend.
+- Navegacion: el chip `PRO` lleva a `/planes` en modo Free y se muestra como `PRO ✓` estatico cuando el flag mock esta activo. Se eligio esta variante para evitar un CTA redundante en el estado simulado.
+
+El handler de planes solo activa el flag local, muestra el mensaje de demostracion y redirige a `/`. No se agregaron SDKs de Wompi/MercadoPago, checkout, webhooks, tablas ni logica de cobro.
+
+### 7. Verificacion y desviaciones conocidas
+
+- `npx tsc --noEmit`: correcto.
+- `npm run build`: correcto; las rutas nuevas incluyen `/planes`.
+- Se verificaron respuestas HTTP de las rutas reales principales.
+- El build mantiene el warning preexistente de Next.js sobre `images.domains` deprecado; no pertenece a estas fases y no se modifico.
+- Auth sigue bloqueada por ausencia del backend real. El onboarding y el paywall mock funcionan en modo anonimo y local.
+- La primera generacion automatica del componente Generador tambien participa en el contador diario porque el componente genera al montar; queda documentado como comportamiento del flujo actual.
+- Las referencias historicas anteriores de este archivo pueden mencionar el antiguo Escaner o banners de Auth; el estado vigente de `apps/web/` es el descrito en esta entrada y esas decisiones fueron reemplazadas.
+
+---
+
+## 💳 Sesión 2026-08-09 — Stake en Tickets + Bankroll Real + Suscripciones Wompi (Completado)
+
+**Fecha:** 9 de agosto de 2026
+**Alcance:** backend (`apps/api/`) y frontend (`apps/web/`). Reemplazo del paywall mock por flujo de cobro real con Wompi (MVP tarjeta), bankroll PRO real, historial con ROI calculado y verificación end-to-end contra el Sandbox real de Wompi.
+
+### 1. Backend — Stake en tickets y movimientos de bankroll atómicos
+
+- **`apps/api/models/ticket.py`:** nueva columna `stake_amount: float | None` (nullable).
+- **`apps/api/schemas/ticket.py`:** `stake_amount` opcional en `SaveTicketRequest` y `SavedTicketResponse`; `bankroll_movement: MovementOut | None` agregado a la respuesta plana del ticket (sin romper consumidores existentes).
+- **`apps/api/repositories/ticket_repository.py`:** nuevo `update_status_with_movement()` con bloqueo `SELECT ... FOR UPDATE` sobre ticket y movimiento existente. Cálculo atómico del movimiento:
+  - `WON` → `stake × (cuota - 1)` (`ticket_won`)
+  - `LOST` → `-stake` (`ticket_lost`)
+  - `VOID` → `0` (`ticket_void`)
+  - Actualiza `bankrolls.current_capital` en la misma transacción; el commit lo hace la sesión de FastAPI, cualquier error revierte todo.
+  - `TicketStatusConflict` → el endpoint responde `409` si un ticket ya liquidado intenta cambiar de estado otra vez. Repetir el mismo estado devuelve el movimiento existente (idempotente).
+- **`apps/api/routes/v1/tickets.py`:** `PATCH /tickets/{id}/status` incluye `bankroll_movement` en la respuesta; `POST /tickets/save` acepta `stake_amount`.
+- **`apps/api/migrations/016_add_stake_amount_to_saved_tickets.sql`:** columna + índice único parcial `uq_bankroll_movements_ticket_id` (refuerza idempotencia).
+- **`apps/api/routes/v1/bankroll.py`:** `POST /bankroll/adjust` ahora usa `SELECT FOR UPDATE` para evitar carreras con los movimientos automáticos.
+- **`tests/test_ticket_bankroll.py`:** 4 tests (montos correctos, idempotencia/409, rollback atómico con fallo simulado).
+
+### 2. Frontend — Gestor de Bankroll PRO
+
+- **`apps/web/lib/bankroll.ts`:** cliente real (`setupBankroll`, `getBankroll`, `updateRiskProfile`, `adjustBankroll`) reutilizando `apiFetch`; `404` → `null`; `409` con mensaje claro; normaliza `id`/`ticket_id` a string.
+- **`apps/web/app/bankroll/page.tsx` + `components/betmind/bankroll-page.tsx`:** ruta gateada por `useProStatus()` real.
+  - Paywall PRO con CTA a `/planes`.
+  - Setup en 2 pasos: capital en COP con formateo de miles y validación > $0; selector de perfil de riesgo (Conservador/Moderado/Agresivo) con advertencia de Full-Kelly.
+  - Dashboard: capital en Playfair, variación del mes desde movimientos, gráfico SVG de evolución acumulada (empieza en 0, incluye el movimiento inicial), selector de perfil editable, lista de movimientos con etiqueta "Capital inicial" y botón "Ajustar capital" (modal con monto/motivo).
+- **`components/betmind/stake-confirm-dialog.tsx`:** prefill editable del stake sugerido = `capital × ticket.kellyStake`; si no hay sugerencia, input vacío (sin fallback por selección).
+- **Kelly agregado conectado:** `GeneratedTicket.kelly_stake` → `ticket.kellyStake` en `lib/api.ts`/`lib/betmind.ts`; traducción a COP en la ficha cuantitativa (`ticket-leg.tsx`) solo para PRO con bankroll; link "Ver esto en pesos →" cuando PRO no tiene bankroll.
+- **`tracking-panel.tsx` / `history-page.tsx`:** `saveTicket(ticket, stakeAmount)`; toasts de impacto ("Tu bankroll subió/bajó $X") y mensaje claro para `409`.
+- **`top-nav.tsx`:** entrada "Bankroll" (ícono Wallet) como cuarto ítem en desktop y móvil.
+- **`app/cuenta/resetear/page.tsx`:** envuelto en `Suspense` (exigencia de prerender de Next 16); flujo de reset sin cambios.
+
+### 3. Frontend — Historial real con ROI
+
+- **`apps/web/lib/tracking.ts`:** `mapSavedTicket()`, `claimPendingTickets()` movido aquí, y `summarizeTrackedTickets()` ahora calcula ROI real solo sobre tickets resueltos con `stake_amount`:
+  - `WON`: `stake × (cuota - 1)`; `LOST`: `-stake`; `VOID`: `0`.
+  - Sin datos de stake → `No disponible` (nunca `0%` engañoso). ROI parcial → nota "Calculado sobre N de total boletos con seguimiento de bankroll".
+- **`components/betmind/use-ticket-history.ts`:** fuente única por sesión: con sesión → claim + `GET /tickets/history`; sin sesión → `localStorage`.
+- **`history-page.tsx`:** métricas con ROI real, stake por fila (`—` si no existe), error con reintento.
+- **`home.tsx`:** bloque "Tu resumen" usa el mismo hook según sesión (mismo criterio que Historial).
+- **`tracking-panel.tsx`:** usa los helpers centralizados y persiste `stakeAmount`.
+
+### 4. Backend + Frontend — Fix pérdida silenciosa en claim mixto
+
+- **`apps/api/schemas/ticket.py`:** `ClaimTicketsResponse` agrega `claimed_ticket_ids: list[int]`.
+- **`apps/api/repositories/ticket_repository.py`:** `claim_anonymous_ticket_ids()` con `UPDATE ... RETURNING id` (solo los IDs realmente reclamados); método legado de conteo conservado.
+- **`apps/api/routes/v1/tickets.py`:** el endpoint devuelve `claimed_ticket_ids` y deriva `claimed_count` de ellos.
+- **`apps/web/lib/api.ts` / `lib/tracking.ts`:** el frontend borra de `localStorage` únicamente los IDs en `claimed_ticket_ids`; los no reclamados permanecen.
+- **`tests/test_ticket_repository.py`:** test del caso mixto `[17, 18, 19]` → `[17, 19]`.
+
+### 5. Backend — Suscripciones y pago real Wompi (MVP tarjeta)
+
+- **Modelos (`models/subscription.py`):** `Subscription` (trial/pending_payment/active/past_due/cancelled/refund_requested, `wompi_payment_source_id`, `current_period_end`, `trial_ends_at`, `initial_transaction_id`, `recurrence_enabled: bool | None`) y `SubscriptionTransaction` (auditoría idempotente con unicidad por `wompi_transaction_id` y `reference`).
+- **Migración `017_create_subscriptions.sql`.**
+- **`services/wompi_service.py`:** cliente `httpx` con llave privada, `create_payment_source()` (token + acceptance), `create_recurrent_transaction()` (COF `recurrent: true`, firma de integridad `ref+monto+COP+secreto`), `get_acceptance_tokens()` vía `/merchants/{public}`. Loggers `httpx/httpcore` silenciados para no filtrar la llave pública en la URL de merchant.
+- **`services/subscription_service.py`:** `apply_transaction_status()` idempotente (un único efecto por estado final), `effective_pro()`, período +30 días / +1 año, gracia de 3 días (`SUBSCRIPTION_GRACE_DAYS`).
+- **Rutas (`routes/v1/subscriptions.py`):**
+  - `POST /subscriptions/trial` — 7 días sin tarjeta.
+  - `POST /subscriptions/activate` — recibe `card_token` + `acceptance_token` + `accept_personal_auth` + plan; crea fuente de pago y transacción recurrente; responde `202 pending_payment`; **nunca** activa PRO por respuesta síncrona.
+  - `POST /subscriptions/cancel` — no revoca acceso hasta `current_period_end`.
+  - `POST /subscriptions/refund` — marca `refund_requested` y revoca PRO inmediato; el reembolso monetario queda manual en el panel Wompi (TODO documentado).
+  - `POST /webhooks/wompi` — valida `X-Event-Checksum`/`signature.checksum` con propiedades dinámicas + timestamp + secreto; procesa `transaction.updated` en background; idempotente.
+- **`routes/v1/users.py`:** `GET /users/me` calcula `is_pro` efectivo comparando `pro_expires_at` contra `now()` y corrige el campo de forma perezosa.
+- **Job externo `jobs/renew_subscriptions.py`:** `python -m apps.api.jobs.renew_subscriptions` — cobra suscripciones activas vencidas con la fuente guardada, marca `past_due` con gracia de 3 días, revoca PRO al vencer la gracia.
+- **Config (`config.py`):** `WOMPI_BASE_URL`, `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`, `WOMPI_INTEGRITY_SECRET`, `WOMPI_EVENTS_SECRET`, montos (`2.990.000`/`24.990.000` centavos), `SUBSCRIPTION_GRACE_DAYS`.
+- **`tests/test_subscriptions.py`:** 4 tests (activación solo por webhook, idempotencia, gracia en renovación declinada, renovación aprobada confirma recurrencia, firma dinámica).
+
+### 6. Verificación E2E contra Sandbox real de Wompi
+
+- **Llaves:** confirmadas `pub_test_`/`prv_test_`/secretos `test_` + `https://sandbox.wompi.co/v1`. Durante la primera sesión el `.env` llegó a mezclar llaves de producción con URL Sandbox; el proceso se detuvo y no se ejecutaron cobros con llaves de producción.
+- **Merchant:** `GET /v1/merchants/{pub}` respondió `200` con tokens de aceptación.
+- **Trial:** registro real `201` + trial `200` → `is_pro=true`, expiración a 7 días.
+- **Activación aprobada (4242...4242):** tokenización real `201` (VISA), `202 pending_payment`, Wompi `APPROVED`. Webhook real entregado por Internet vía ngrok (`POST /api/v1/webhooks/wompi`, header real `X-Event-Checksum`, `User-Agent: Faraday v0.15.4`) → `is_pro=true`, suscripción `active`, período de 30 días, transacción `APPROVED`.
+- **Activación declinada (4111...1111):** Wompi `DECLINED`, código de procesador `12` → `is_pro=false`, suscripción `cancelled`; `status_message` y `processor_response_code` disponibles para el frontend.
+- **Firma:** payload alterado/faltante respondió `400` sin tocar la base.
+- **Recurrencia COF:** Sandbox acepta `recurrent: true` y una renovación real se aprobó (`201` + `APPROVED`), pero Wompi no expone un campo `recurrent` explícito; el backend marca `recurrence_enabled=true` cuando un cobro de renovación aprobado lo confirma, y deja `null` en caso contrario (sin asumir compatibilidad).
+- **ngrok:** instalado vía `winget` y actualizado a `3.39.10` (el plan exige versión mínima); authtoken configurado por el usuario (se le avisó de rotarlo tras exponerlo). URL temporal usada y túnel cerrado al terminar; queda pendiente retirar la URL de eventos del dashboard Sandbox (acción manual).
+
+### 7. Verificación final
+
+- Backend: **135 passed** (`pytest`).
+- Frontend: `npx tsc --noEmit` y `npm run build` sin errores.
+- `.env` confirmado en `.gitignore`.
+- La tarjeta nunca pasó por el backend propio: tokenización vía Widget/API de Wompi con llave pública.

@@ -11,6 +11,7 @@
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand: var(--brand);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -36,6 +37,8 @@
   --color-positive: var(--positive);
   --color-warning: var(--warning);
   --color-negative: var(--negative);
+  --color-home-team: var(--home-team);
+  --color-away-team: var(--away-team);
   --color-border-subtle: var(--border-subtle);
 
   --color-chart-1: var(--chart-1);
@@ -52,49 +55,89 @@
 }
 
 :root {
+  color-scheme: light;
+
+  --background: #F7F9F8;
+  --surface: #FFFFFF;
+  --surface-raised: #F0F3F2;
+  --surface-inset: #EDF1F0;
+  --card: #FFFFFF;
+  --popover: #FFFFFF;
+  --border: #E2E8E6;
+  --border-subtle: #EBEFEE;
+  --brand: #0D9488;
+  /* AA adjustment: darker teal preserves the primary hue and gives 4.5:1+ with primary-foreground. */
+  --primary: #0F766E;
+  --primary-foreground: #F7F9F8;
+  /* AA adjustment: darker green gives 4.5:1+ for normal text on surface. */
+  --positive: #15803D;
+  /* AA adjustment: darker amber gives 4.5:1+ for normal text on surface. */
+  --warning: #B45309;
+  --negative: #DC2626;
+  --home-team: #6366F1;
+  --away-team: #DB2777;
+  --foreground: #0F1614;
+  --subtle: #5B6B67;
+  --muted: #EDF1F0;
+  --muted-foreground: #74847F;
+
+  /* Existing shadcn tokens retained as aliases/additional semantic tokens. */
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --secondary: #E2E8E6;
+  --secondary-foreground: var(--foreground);
+  --accent: #EDF1F0;
+  --accent-foreground: var(--foreground);
+  --destructive: var(--negative);
+  --input: var(--border);
+  --ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: var(--warning);
+  --chart-3: var(--positive);
+  --chart-4: var(--negative);
+  --chart-5: var(--muted-foreground);
+  --radius: 0.75rem;
+}
+
+.dark {
   color-scheme: dark;
 
-  --background: #070a0d;
-  --foreground: #eef4f1;
+  --background: #0A0D10;
+  --surface: #12161B;
+  --surface-raised: #181D24;
+  --surface-inset: #08090C;
+  --card: #12161B;
+  --popover: #181D24;
+  --border: #242B32;
+  --border-subtle: #1A2027;
+  --brand: #8FE3A8;
+  --primary: #8FE3A8;
+  --primary-foreground: #07100B;
+  --positive: #5FD98A;
+  --negative: #F87171;
+  --warning: #FBBF24;
+  --home-team: #818CF8;
+  --away-team: #F472B6;
+  --foreground: #F1F5F4;
+  --subtle: #8B9A96;
+  --muted: #111A1F;
+  --muted-foreground: #97A6A1;
 
-  --surface: #0d1318;
-  --surface-raised: #121b21;
-  --surface-inset: #070c10;
-  --subtle: #84968f;
-  --border-subtle: #18242a;
-
-  --card: #0d1318;
-  --card-foreground: #eef4f1;
-  --popover: #10181d;
-  --popover-foreground: #eef4f1;
-
-  --primary: #9be6b0;
-  --primary-foreground: #07100b;
-
-  --secondary: #17231f;
-  --secondary-foreground: #eef4f1;
-
-  --muted: #111a1f;
-  --muted-foreground: #a8b7b0;
-
-  --accent: #17251f;
-  --accent-foreground: #eef4f1;
-
-  --positive: #74d99a;
-  --warning: #d8b36b;
-  --negative: #ee7b7b;
-  --destructive: #ee7b7b;
-
-  --border: #26343a;
-  --input: #26343a;
-  --ring: #9be6b0;
-
-  --chart-1: #9be6b0;
-  --chart-2: #d8b36b;
-  --chart-3: #74d99a;
-  --chart-4: #ee7b7b;
-  --chart-5: #a8b7b0;
-
+  /* Existing shadcn tokens retained as aliases/additional semantic tokens. */
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --secondary: #181D24;
+  --secondary-foreground: var(--foreground);
+  --accent: #181D24;
+  --accent-foreground: var(--foreground);
+  --destructive: var(--negative);
+  --input: var(--border);
+  --ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: var(--warning);
+  --chart-3: var(--positive);
+  --chart-4: var(--negative);
+  --chart-5: var(--muted-foreground);
   --radius: 0.75rem;
 }
 
@@ -106,9 +149,9 @@
     @apply bg-background text-foreground;
     font-feature-settings: 'cv11', 'ss01';
     background-image:
-      linear-gradient(rgba(155, 230, 176, 0.018) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(155, 230, 176, 0.018) 1px, transparent 1px),
-      radial-gradient(circle at 50% -20%, rgba(116, 217, 154, 0.08), transparent 42%);
+      linear-gradient(color-mix(in oklab, var(--primary) 3%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in oklab, var(--primary) 3%, transparent) 1px, transparent 1px),
+      radial-gradient(circle at 50% -20%, color-mix(in oklab, var(--positive) 8%, transparent), transparent 42%);
     background-size: 40px 40px, 40px 40px, 100% 100%;
     background-attachment: fixed;
   }

@@ -6,16 +6,23 @@ import { CopyIcon, Share2, StarIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { MODE_META, type Ticket } from '@/lib/betmind'
+import { useBankroll } from './use-bankroll'
 import { formatMarketName } from '@/lib/formatMarketName'
 import { formatEV, formatOdds } from '@/lib/formatters'
 import { shareOrDownloadTicket } from '@/lib/ticket-export'
 import { cn } from '@/lib/utils'
 import { TicketLeg } from './ticket-leg'
 import { addToTracking } from './tracking-panel'
+import { StatDisclaimer } from './stat-disclaimer'
+import { StakeConfirmDialog } from './stake-confirm-dialog'
+import { useProStatus } from './use-pro-status'
 
 export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (ticket: Ticket) => void }) {
   const meta = MODE_META[ticket.mode]
   const [currentTicket, setCurrentTicket] = React.useState(ticket)
+  const isPro = useProStatus()
+  const { bankroll, loading: bankrollLoading } = useBankroll(isPro)
+  const [stakeDialogOpen, setStakeDialogOpen] = React.useState(false)
 
   function swapLeg(index: number) {
     const replacement = currentTicket.replacementCandidates?.find((candidate) => !currentTicket.legs.some((leg, legIndex) => legIndex !== index && leg.match === candidate.match))
@@ -28,12 +35,21 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
     toast('Boleto copiado')
   }
 
-  async function handleTrack() {
-    await addToTracking(currentTicket)
+  async function persistTicket(stakeAmount?: number) {
+    const result = await addToTracking(currentTicket, stakeAmount)
+    if (!result.saved) return
     onTrack?.(currentTicket)
     toast('Añadido a seguimiento', {
       description: `${ticket.legs.length} selecciones en seguimiento.`,
     })
+  }
+
+  function handleTrack() {
+    if (isPro && bankroll) {
+      setStakeDialogOpen(true)
+      return
+    }
+    void persistTicket()
   }
 
   async function handleShare() {
@@ -102,23 +118,39 @@ export function TicketCard({ ticket, onTrack }: { ticket: Ticket; onTrack?: (tic
       )}
       <ul className="flex flex-1 list-none flex-col px-4 pb-4">
         {currentTicket.legs.map((leg, i) => (
-          <TicketLeg key={`${leg.match}-${leg.market}`} leg={leg} index={i} onSwap={() => swapLeg(i)} />
+          <TicketLeg
+            key={`${leg.match}-${leg.market}`}
+            leg={leg}
+            index={i}
+            onSwap={() => swapLeg(i)}
+            isPro={isPro}
+            bankroll={bankroll}
+            bankrollLoading={bankrollLoading}
+            ticketKellyStake={currentTicket.kellyStake}
+          />
         ))}
       </ul>
 
       {/* ── FOOTER — pinned to bottom ── */}
       <div className="mt-auto flex flex-col gap-2 border-t border-border/40 px-4 py-3">
-        <Button id="generator-save-ticket" className="w-full cursor-pointer bg-primary py-3 text-xs font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90" onClick={handleTrack}>
+        <Button id="generator-save-ticket" className="w-full cursor-pointer bg-primary py-3 text-xs font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90" onClick={handleTrack} disabled={isPro && bankrollLoading}>
           <StarIcon data-icon="inline-start" aria-hidden="true" />
           Guardar en Ledger Cuantitativo
         </Button>
         <button type="button" onClick={handleShare} className="mt-2 w-full rounded-lg border border-border bg-transparent py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface hover:text-foreground">
           <Share2 className="mr-2 inline-block size-3.5" aria-hidden /> Compartir / Descargar Imagen
         </button>
-        <p className="text-[10px] leading-tight text-subtle">
-          Confianza basada en datos de 90 min. No es asesoría financiera.
-        </p>
+        <StatDisclaimer />
       </div>
+      {bankroll && (
+        <StakeConfirmDialog
+          open={stakeDialogOpen}
+          onOpenChange={setStakeDialogOpen}
+          ticket={currentTicket}
+          bankroll={bankroll}
+          onConfirm={(stakeAmount) => persistTicket(stakeAmount)}
+        />
+      )}
     </div>
   )
 }

@@ -4,6 +4,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 from enum import Enum
 
+from apps.api.schemas.bankroll import MovementOut
+
 
 class TicketMode(str, Enum):
     EDGE = "edge"
@@ -83,6 +85,7 @@ class SaveTicketRequest(BaseModel):
     ticket_data: dict[str, Any]
     total_odds: float = Field(..., gt=1.0)
     total_ev: float
+    stake_amount: float | None = Field(default=None, ge=0)
 
 
 class UpdateTicketStatusRequest(BaseModel):
@@ -95,6 +98,7 @@ class ClaimTicketsRequest(BaseModel):
 
 class ClaimTicketsResponse(BaseModel):
     claimed_count: int
+    claimed_ticket_ids: list[int]
     message: str
 
 
@@ -104,6 +108,9 @@ class SavedTicketResponse(BaseModel):
     status: SavedTicketStatus
     total_odds: float
     total_ev: float
+    stake_amount: float | None = None
     created_at: datetime
+    # Kept on the existing flat response to avoid breaking current clients.
+    bankroll_movement: MovementOut | None = None
 
     model_config = {"from_attributes": True}

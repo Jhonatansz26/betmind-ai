@@ -64,8 +64,22 @@ class Settings(BaseSettings):
     SUPABASE_JWT_SECRET: str | None = None
     SUPABASE_JWT_AUDIENCE: str = "authenticated"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # 7 days — no refresh token for MVP (conscious scope decision)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
+    # Password-reset tokens use a hard-coded 30-minute TTL in auth_service.py
     ADMIN_API_KEY: str = ""
+    # Frontend base URL used to build password-reset links
+    FRONTEND_URL: str = "http://localhost:3000"
+
+    # Wompi integration. Keep all secrets in environment variables.
+    WOMPI_BASE_URL: str = "https://sandbox.wompi.co/v1"
+    WOMPI_PUBLIC_KEY: str = ""
+    WOMPI_PRIVATE_KEY: str = ""
+    WOMPI_INTEGRITY_SECRET: str = ""
+    WOMPI_EVENTS_SECRET: str = ""
+    WOMPI_MONTHLY_AMOUNT_CENTS: int = 2_990_000
+    WOMPI_ANNUAL_AMOUNT_CENTS: int = 24_990_000
+    SUBSCRIPTION_GRACE_DAYS: int = 3
 
     GROQ_TIMEOUT_SECONDS: float = 90.0
     GROQ_SINGLE_CALL_TIMEOUT: float = 25.0

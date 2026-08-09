@@ -42,9 +42,6 @@ function ShieldFallback({
   const height = Math.round(size * 1.05)
   const borderW = Math.max(1, Math.round(size * 0.02))
   const fontSize = Math.round(size * 0.32)
-  const startColor = '#27272a'
-  const endColor = '#09090b'
-
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
@@ -55,14 +52,14 @@ function ShieldFallback({
     >
       <defs>
         <linearGradient id={`shield-grad-${initials}`} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor={startColor} />
-          <stop offset="100%" stopColor={endColor} />
+          <stop offset="0%" stopColor="var(--surface-raised)" />
+          <stop offset="100%" stopColor="var(--surface-inset)" />
         </linearGradient>
       </defs>
       <path
         d={`M${borderW},${Math.round(height * 0.15)} L${borderW},${Math.round(height * 0.42)} C${borderW},${Math.round(height * 0.78)} ${Math.round(width * 0.32)},${height - borderW} ${Math.round(width * 0.5)},${height - borderW} C${Math.round(width * 0.68)},${height - borderW} ${width - borderW},${Math.round(height * 0.78)} ${width - borderW},${Math.round(height * 0.42)} L${width - borderW},${Math.round(height * 0.15)} Z`}
         fill="url(#shield-grad-${initials})"
-        stroke="#3f3f46"
+        stroke="var(--border)"
         strokeWidth={borderW}
       />
       <text
@@ -70,7 +67,7 @@ function ShieldFallback({
         y={height / 2}
         textAnchor="middle"
         dominantBaseline="central"
-        fill="#e4e4e7"
+        fill="var(--foreground)"
         fontWeight={700}
         fontFamily="system-ui, -apple-system, sans-serif"
         fontSize={fontSize}

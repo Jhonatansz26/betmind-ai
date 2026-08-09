@@ -1,8 +1,9 @@
 import type { Mode, Ticket, TicketLegData, Match, MatchStatus, TacticalFactor, Referee, MarketOdds } from './betmind'
+import type { BankrollMovement } from './bankroll'
 import { resolveLeague } from './league-metadata'
 import { formatEV } from './formatters'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 const API_TIMEOUT_MS = 12_000
 
 export interface ApiError {
@@ -113,6 +114,7 @@ interface BackendTicket {
   legs: BackendLeg[]
   combined_odds: number
   average_ev: number
+  kelly_stake?: number | null
   confidence_score: number
   correlation_validated: boolean
   tactical_summary: string
@@ -161,6 +163,7 @@ function mapBackendTicket(raw: BackendTicket): Ticket {
     combinedOdds: raw.combined_odds,
     confidence: raw.confidence_score,
     evAverage: raw.average_ev,
+    kellyStake: raw.kelly_stake ?? undefined,
     legs: raw.legs.map(mapLeg),
     correlation: raw.correlation_validated
       ? 'Todas las selecciones pasaron la validación de correlación negativa'
@@ -198,10 +201,15 @@ export interface SavedTicketRecord {
   status: SavedTicketStatus
   total_odds: number
   total_ev: number
+  stake_amount?: number | null
   created_at: string
+  bankroll_movement?: BankrollMovement | null
 }
 
-export async function saveTicket(ticket: Ticket): Promise<ApiResult<SavedTicketRecord>> {
+export async function saveTicket(
+  ticket: Ticket,
+  stakeAmount?: number | null,
+): Promise<ApiResult<SavedTicketRecord>> {
   return apiFetch<SavedTicketRecord>(`${API_BASE}/api/v1/tickets/save`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -209,12 +217,14 @@ export async function saveTicket(ticket: Ticket): Promise<ApiResult<SavedTicketR
       ticket_data: ticket,
       total_odds: ticket.combinedOdds,
       total_ev: ticket.evAverage,
+      ...(stakeAmount != null ? { stake_amount: stakeAmount } : {}),
     }),
   })
 }
 
 export interface ClaimTicketsResponse {
   claimed_count: number
+  claimed_ticket_ids: number[]
   message: string
 }
 

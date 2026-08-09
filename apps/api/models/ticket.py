@@ -20,6 +20,7 @@ class SavedTicket(Base):
     )
     total_odds: Mapped[float] = mapped_column(Float, nullable=False)
     total_ev: Mapped[float] = mapped_column(Float, nullable=False)
+    stake_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     user_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),

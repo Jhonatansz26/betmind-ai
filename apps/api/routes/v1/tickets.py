@@ -31,6 +31,7 @@ from apps.api.dependencies import (
     get_optional_user_id,
 )
 from apps.api.repositories.ticket_repository import TicketRepository
+from apps.api.repositories.ticket_repository import TicketStatusConflict
 from betmind_ml.ev.ev_calculator import calculate_ev_metrics
 from betmind_ml.config import EV_POSITIVE_THRESHOLD
 
@@ -53,6 +54,7 @@ async def save_ticket(
         ticket_data=request.ticket_data,
         total_odds=request.total_odds,
         total_ev=request.total_ev,
+        stake_amount=request.stake_amount,
         user_id=current_user_id,
     )
 
@@ -74,10 +76,20 @@ async def update_ticket_status(
     current_user_id: int = Depends(get_current_user_id),
 ):
     repository = TicketRepository(session)
-    ticket = await repository.update_status(ticket_id, request.status.value, current_user_id)
-    if ticket is None:
+    try:
+        result = await repository.update_status_with_movement(
+            ticket_id, request.status.value, current_user_id
+        )
+    except TicketStatusConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    if result is None:
         raise HTTPException(status_code=404, detail="Saved ticket not found")
-    return ticket
+
+    ticket, movement = result
+    response = SavedTicketResponse.model_validate(ticket)
+    response.bankroll_movement = movement
+    return response
 
 
 @router.post("/claim", response_model=ClaimTicketsResponse)
@@ -87,13 +99,14 @@ async def claim_anonymous_tickets(
     current_user_id: int = Depends(get_current_user_id),
 ):
     repository = TicketRepository(session)
-    claimed_count = await repository.claim_anonymous_tickets(
+    claimed_ticket_ids = await repository.claim_anonymous_ticket_ids(
         request.ticket_ids,
         current_user_id,
     )
     return ClaimTicketsResponse(
-        claimed_count=claimed_count,
-        message=f"{claimed_count} boletos anónimos reclamados para la cuenta PRO.",
+        claimed_count=len(claimed_ticket_ids),
+        claimed_ticket_ids=claimed_ticket_ids,
+        message=f"{len(claimed_ticket_ids)} boletos anónimos reclamados para la cuenta PRO.",
     )
 
 

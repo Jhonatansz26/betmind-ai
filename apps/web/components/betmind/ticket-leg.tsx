@@ -2,18 +2,32 @@
 
 import * as React from 'react'
 import { RotateCw } from 'lucide-react'
+import Link from 'next/link'
 
+import type { Bankroll } from '@/lib/bankroll'
 import type { TicketLegData } from '@/lib/betmind'
-import { formatEV, formatOdds, formatPercent, formatxG } from '@/lib/formatters'
+import { formatCOP, formatEV, formatOdds, formatPercent, formatxG } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 
 interface TicketLegProps {
   leg: TicketLegData
   index?: number
   onSwap?: () => void
+  isPro?: boolean
+  bankroll?: Bankroll | null
+  bankrollLoading?: boolean
+  ticketKellyStake?: number
 }
 
-export function TicketLeg({ leg, index = 0, onSwap }: TicketLegProps) {
+export function TicketLeg({
+  leg,
+  index = 0,
+  onSwap,
+  isPro = false,
+  bankroll = null,
+  bankrollLoading = false,
+  ticketKellyStake,
+}: TicketLegProps) {
   const [detailsOpen, setDetailsOpen] = React.useState(false)
   const [detailsPinned, setDetailsPinned] = React.useState(false)
   const hasPositiveEv = leg.ev >= 0
@@ -91,6 +105,19 @@ export function TicketLeg({ leg, index = 0, onSwap }: TicketLegProps) {
                   </dd>
                 </div>
               </dl>
+              {isPro && bankroll && ticketKellyStake != null ? (
+                <p className="mt-3 border-t border-border/60 pt-2 text-xs leading-5 text-muted-foreground">
+                  Con tu bankroll actual, esta apuesta sugiere arriesgar <span className="font-mono font-semibold text-primary">{formatCOP(bankroll.current_capital * ticketKellyStake)}</span> ({(ticketKellyStake * 100).toFixed(1)}%).
+                </p>
+              ) : null}
+              {isPro && bankroll && ticketKellyStake == null ? (
+                <p className="mt-3 border-t border-border/60 pt-2 text-xs leading-5 text-muted-foreground">No hay sugerencia Kelly agregada disponible para este boleto.</p>
+              ) : null}
+              {isPro && !bankroll && !bankrollLoading ? (
+                <Link href="/bankroll" className="mt-3 block border-t border-border/60 pt-2 text-xs font-semibold leading-5 text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60">
+                  Ver esto en pesos →
+                </Link>
+              ) : null}
               <p className="mt-3 border-t border-border/60 pt-2 text-xs leading-5 text-muted-foreground">
                 {leg.varianceNote || leg.reasoning || 'Varianza dentro del rango del perfil seleccionado.'}
               </p>

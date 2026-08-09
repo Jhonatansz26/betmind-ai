@@ -115,6 +115,8 @@ export interface Ticket {
   combinedOdds: number
   confidence: number
   evAverage: number
+  /** Combined Kelly fraction from the ticket-level backend calculation. */
+  kellyStake?: number
   legs: TicketLegData[]
   correlation: string
   correlationPositive: boolean

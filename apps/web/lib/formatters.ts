@@ -41,3 +41,27 @@ export function formatDecimal(value: number | string, digits = 1): string {
   const numeric = Number(value)
   return finite(numeric) ? numeric.toFixed(digits) : String(value)
 }
+
+const COP_FORMATTER = new Intl.NumberFormat('es-CO', {
+  style: 'currency',
+  currency: 'COP',
+  maximumFractionDigits: 0,
+})
+
+export function formatCOP(value: number): string {
+  return finite(value) ? COP_FORMATTER.format(value) : '—'
+}
+
+export function formatCOPInput(value: number): string {
+  return finite(value) ? Math.round(value).toLocaleString('es-CO') : ''
+}
+
+/** Parse the integer COP input used by the bankroll forms. */
+export function parseCOPInput(value: string): number | null {
+  const trimmed = value.trim()
+  const digits = trimmed.replace(/\D/g, '')
+  if (!digits) return null
+  const amount = Number(digits)
+  if (!Number.isFinite(amount)) return null
+  return trimmed.includes('-') ? -amount : amount
+}

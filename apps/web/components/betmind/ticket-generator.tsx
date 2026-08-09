@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Search,
   ChevronDown,
+  LockKeyhole,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -22,6 +23,8 @@ import { shareOrDownloadTicket } from '@/lib/ticket-export'
 import { cn } from '@/lib/utils'
 import { addToTracking } from './tracking-panel'
 import { TicketLeg } from './ticket-leg'
+import { StakeConfirmDialog } from './stake-confirm-dialog'
+import { useBankroll } from './use-bankroll'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -180,15 +183,19 @@ export function TicketGenerator({
   matches,
   leagues = [],
   onTrack,
+  isPro = true,
+  onBeforeGenerate,
 }: {
   matches: Match[]
   leagues?: LeagueData[]
   onTrack?: () => void
+  isPro?: boolean
+  onBeforeGenerate?: () => boolean
 }) {
   /* ── Config state ── */
   const [config, setConfig] = React.useState<GeneratorConfig>({
     selectionCount: 3,
-    riskProfile: 'balanced',
+    riskProfile: isPro ? 'balanced' : 'conservative',
     oddsMin: 1.80,
     oddsMax: 10.00,
     selectedMarkets: MARKET_CATEGORIES.map((category) => category.key),
@@ -200,6 +207,16 @@ export function TicketGenerator({
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState(false)
   const [generationKey, setGenerationKey] = React.useState(0)
+  const { bankroll, loading: bankrollLoading } = useBankroll(isPro)
+  const [stakeDialogOpen, setStakeDialogOpen] = React.useState(false)
+
+  /**
+   * One-shot flag: set to `true` only when the user explicitly clicks
+   * "Regenerar Boleto". The generation effect reads and immediately resets
+   * this flag so that automatic re-runs (mount, config changes) never
+   * invoke `onBeforeGenerate` and therefore never increment the counter.
+   */
+  const isExplicitGenerate = React.useRef(false)
 
   const activeLeagues = React.useMemo(
     () => leagues
@@ -252,6 +269,13 @@ export function TicketGenerator({
         setLoading(false)
         return
       }
+      // Only gate/count against the daily limit when the user explicitly
+      // clicked the generate button (isExplicitGenerate.current === true).
+      // Auto-runs (mount, config changes) bypass this check entirely.
+      if (isExplicitGenerate.current) {
+        isExplicitGenerate.current = false
+        if (onBeforeGenerate && !onBeforeGenerate()) return
+      }
       setLoading(true)
       setError(false)
 
@@ -283,7 +307,13 @@ export function TicketGenerator({
       cancelled = true
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.riskProfile, config.selectedLeagues, config.selectedMarkets, config.selectionCount, generationKey, activeLeagueKeys.join(',')])
+  }, [config.riskProfile, config.selectedLeagues, config.selectedMarkets, config.selectionCount, generationKey, activeLeagueKeys.join(','), onBeforeGenerate])
+
+  React.useEffect(() => {
+    if (!isPro && config.riskProfile !== 'conservative') {
+      setConfig((previous) => ({ ...previous, riskProfile: 'conservative' }))
+    }
+  }, [config.riskProfile, isPro])
 
   /* ── Helpers ── */
   function updateCount(delta: number) {
@@ -316,13 +346,23 @@ export function TicketGenerator({
     })
   }
 
-  async function handleSave() {
+  async function persistTicket(stakeAmount?: number) {
     if (!ticket) return
-    await addToTracking(ticket)
+    const result = await addToTracking(ticket, stakeAmount)
+    if (!result.saved) return
     onTrack?.()
     toast('Añadido a seguimiento', {
       description: `${displayedLegs.length} selecciones en seguimiento.`,
     })
+  }
+
+  function handleSave() {
+    if (!ticket) return
+    if (isPro && bankroll) {
+      setStakeDialogOpen(true)
+      return
+    }
+    void persistTicket()
   }
 
   async function handleShare() {
@@ -510,6 +550,9 @@ export function TicketGenerator({
                     type="button"
                     id={`risk-${profile.key}`}
                     aria-pressed={active}
+                    aria-disabled={!isPro && profile.key !== 'conservative'}
+                    disabled={!isPro && profile.key !== 'conservative'}
+                    title={!isPro && profile.key !== 'conservative' ? 'Disponible en PRO' : undefined}
                     onClick={() =>
                       setConfig((prev) => ({ ...prev, riskProfile: profile.key }))
                     }
@@ -518,9 +561,11 @@ export function TicketGenerator({
                       active
                         ? 'border-primary/60 bg-primary/10 text-primary'
                         : 'border-border bg-surface/40 text-muted-foreground hover:bg-surface hover:text-foreground',
+                      !isPro && profile.key !== 'conservative' && 'cursor-not-allowed opacity-50',
                     )}
                   >
                     <span className="text-[11px] font-bold leading-none">
+                      {!isPro && profile.key !== 'conservative' && <LockKeyhole className="mr-1 inline-block size-3" aria-hidden="true" />}
                       {profile.label}
                     </span>
                     <span className="text-[9px] font-medium leading-none opacity-70">
@@ -572,7 +617,13 @@ export function TicketGenerator({
           <button
             type="button"
             id="generator-regenerate"
-            onClick={() => setGenerationKey((k) => k + 1)}
+            onClick={() => {
+              // Mark this as an explicit user-initiated generation so the
+              // effect will call onBeforeGenerate() and count towards the
+              // daily limit. Auto-runs must NOT set this flag.
+              isExplicitGenerate.current = true
+              setGenerationKey((k) => k + 1)
+            }}
             disabled={loading}
             className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface-raised disabled:opacity-40"
           >
@@ -716,6 +767,10 @@ export function TicketGenerator({
                     leg={leg}
                     index={i}
                     onSwap={() => swapLeg(i)}
+                    isPro={isPro}
+                    bankroll={bankroll}
+                    bankrollLoading={bankrollLoading}
+                    ticketKellyStake={ticket?.kellyStake}
                   />
                 ))}
               </ul>
@@ -771,7 +826,7 @@ export function TicketGenerator({
                 type="button"
                 id="generator-save-ticket"
                 onClick={handleSave}
-                disabled={!ticket || loading}
+                 disabled={!ticket || loading || (isPro && bankrollLoading)}
                 className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-primary py-3 text-xs font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90 disabled:opacity-35"
               >
                 <Star size={13} aria-hidden />
@@ -781,10 +836,16 @@ export function TicketGenerator({
                 Compartir / Descargar Imagen
               </button>
             </div>
-            <p className="mt-2.5 text-center text-[9px] font-medium text-subtle tracking-wide">
-              Probabilidades estimadas por modelo Poisson + IA. No constituye asesoría financiera.
-            </p>
           </div>
+          {ticket && bankroll && (
+            <StakeConfirmDialog
+              open={stakeDialogOpen}
+              onOpenChange={setStakeDialogOpen}
+              ticket={ticket}
+              bankroll={bankroll}
+              onConfirm={(stakeAmount) => persistTicket(stakeAmount)}
+            />
+          )}
         </section>
       </div>
     </div>

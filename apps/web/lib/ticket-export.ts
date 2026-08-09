@@ -1,6 +1,13 @@
 import type { Ticket } from './betmind'
 import { formatMarketName } from './formatMarketName'
 import { formatEV, formatOdds } from './formatters'
+import { STAT_DISCLAIMER_TEXT } from './disclaimers'
+
+const EXPORT_PALETTE = {
+  background: '#0A0D10',
+  accent: '#8FE3A8',
+  text: '#F1F5F4',
+} as const
 
 function ticketSummary(ticket: Ticket): string {
   const heroOdds = ticket.legs.reduce((total, leg) => total * leg.odds, 1)
@@ -48,47 +55,47 @@ async function renderTicketImage(ticket: Ticket): Promise<Blob> {
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Canvas no disponible')
 
-  context.fillStyle = '#0c1016'
+  context.fillStyle = EXPORT_PALETTE.background
   context.fillRect(0, 0, width, height)
-  context.fillStyle = '#3de3a5'
+  context.fillStyle = EXPORT_PALETTE.accent
   context.fillRect(0, 0, width, 8)
-  context.fillStyle = '#f2f5f8'
+  context.fillStyle = EXPORT_PALETTE.text
   context.font = '700 34px ui-monospace, SFMono-Regular, Menlo, monospace'
   context.fillText('BETMIND AI', 56, 72)
-  context.fillStyle = '#9aa6b2'
+  context.fillStyle = EXPORT_PALETTE.text
   context.font = '600 18px ui-monospace, SFMono-Regular, Menlo, monospace'
   context.fillText(`${ticket.mode} · LEDGER CUANTITATIVO`, 56, 106)
 
   const heroOdds = ticket.legs.reduce((total, leg) => total * leg.odds, 1)
-  context.fillStyle = '#f2f5f8'
+  context.fillStyle = EXPORT_PALETTE.text
   context.font = '700 58px ui-monospace, SFMono-Regular, Menlo, monospace'
   context.fillText(`@${formatOdds(heroOdds)}`, width - 340, 92)
-  context.fillStyle = '#3de3a5'
+  context.fillStyle = EXPORT_PALETTE.accent
   context.font = '700 20px ui-monospace, SFMono-Regular, Menlo, monospace'
   context.fillText(`${formatEV(ticket.evAverage)} EV`, width - 338, 124)
 
   let y = 190
   ticket.legs.forEach((leg, index) => {
-    context.strokeStyle = '#27303b'
+    context.strokeStyle = EXPORT_PALETTE.text
     context.beginPath()
     context.moveTo(56, y - 28)
     context.lineTo(width - 56, y - 28)
     context.stroke()
-    context.fillStyle = '#f2f5f8'
+    context.fillStyle = EXPORT_PALETTE.text
     context.font = '700 22px ui-monospace, SFMono-Regular, Menlo, monospace'
     context.fillText(`${index + 1}. ${formatMarketName(leg.market)}`, 56, y)
-    context.fillStyle = '#9aa6b2'
+    context.fillStyle = EXPORT_PALETTE.text
     context.font = '500 18px ui-monospace, SFMono-Regular, Menlo, monospace'
     y = drawWrappedText(context, leg.match, 56, y + 30, width - 300, 24)
-    context.fillStyle = '#3de3a5'
+    context.fillStyle = EXPORT_PALETTE.accent
     context.font = '700 22px ui-monospace, SFMono-Regular, Menlo, monospace'
     context.fillText(`@${formatOdds(leg.odds)} · ${formatEV(leg.ev)} EV`, width - 330, y - 28)
     y += 42
   })
 
-  context.fillStyle = '#657181'
+  context.fillStyle = EXPORT_PALETTE.text
   context.font = '500 16px ui-monospace, SFMono-Regular, Menlo, monospace'
-  context.fillText('Probabilidades estimadas por modelo Poisson + IA.', 56, height - 34)
+  context.fillText(STAT_DISCLAIMER_TEXT, 56, height - 34)
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('No se pudo generar la imagen'))), 'image/png')

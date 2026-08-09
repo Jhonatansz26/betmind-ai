@@ -43,12 +43,13 @@ async def init_db() -> None:
     from apps.api.models import (
         Team, League, Match, Prediction, User, BookmakerOdd,
         MatchEvent, MatchAdvancedStats, RefereeProfile,
-        SavedTicket,
+        SavedTicket, Bankroll, BankrollMovement, Subscription, SubscriptionTransaction,
     )
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables created successfully")
+
 
 
 async def dispose_engine() -> None:
