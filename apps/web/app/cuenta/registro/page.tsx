@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 import { register } from '@/lib/auth'
-import { claimPendingTickets } from '@/components/betmind/tracking-panel'
+import { claimPendingTickets } from '@/lib/tracking'
+import { toast } from 'sonner'
 
 export default function RegistroPage() {
   const router = useRouter()
@@ -33,9 +34,12 @@ export default function RegistroPage() {
 
     setLoading(true)
     try {
-      await register(email, password, fullName || undefined)
-      // Task 5: claim anonymous tickets silently
-      claimPendingTickets().catch((err: unknown) => console.error('[claim]', err))
+      await register(email, password, ageConfirmed, fullName || undefined)
+      claimPendingTickets()
+        .then((result) => {
+          if (result.claimedCount < result.sentCount && result.message) toast.info(result.message)
+        })
+        .catch((err: unknown) => console.error('[claim]', err))
       const params = new URLSearchParams(window.location.search)
       router.push(params.get('redirect') ?? '/')
     } catch (err) {

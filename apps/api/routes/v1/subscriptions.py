@@ -42,6 +42,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 webhook_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
+REFUND_WINDOW_DAYS = 7
+
 
 async def _get_user(user_id: int, session: AsyncSession) -> User:
     result = await session.execute(select(User).where(User.id == user_id).with_for_update())
@@ -77,6 +79,32 @@ def _wompi_http_error(exc: WompiAPIError) -> HTTPException:
     return HTTPException(status_code=code, detail=str(exc))
 
 
+async def _compute_refund_eligibility(subscription_id: int, session: AsyncSession) -> bool:
+    if subscription_id is None:
+        return False
+    sub_result = await session.execute(
+        select(Subscription).where(Subscription.id == subscription_id)
+    )
+    sub = sub_result.scalar_one_or_none()
+    if sub is None:
+        return False
+    if sub.status in ("trial", "cancelled", "refund_requested"):
+        return False
+    txn_result = await session.execute(
+        select(SubscriptionTransaction)
+        .where(
+            SubscriptionTransaction.subscription_id == sub.id,
+            SubscriptionTransaction.kind == "initial",
+            SubscriptionTransaction.status == "APPROVED",
+        )
+        .order_by(SubscriptionTransaction.created_at.desc())
+    )
+    txn = txn_result.scalars().first()
+    if txn is None:
+        return False
+    return (utc_now() - as_utc(txn.created_at)).days < REFUND_WINDOW_DAYS
+
+
 @router.get("/me", response_model=SubscriptionTrialResponse)
 async def get_subscription(
     user_id: int = Depends(get_current_user_id),
@@ -88,6 +116,7 @@ async def get_subscription(
         raise HTTPException(status_code=404, detail="El usuario no tiene una suscripción.")
     response = SubscriptionTrialResponse.model_validate(subscription)
     response.last_transaction = await _last_transaction(subscription.id, session)
+    response.refund_eligible = _compute_refund_eligibility(subscription.id, session)
     return response
 
 
@@ -284,8 +313,8 @@ async def request_refund(
     initial_transaction = transaction_result.scalars().first()
     if initial_transaction is None:
         raise HTTPException(status_code=422, detail="No existe un pago inicial aprobado para reembolsar.")
-    if utc_now() - as_utc(initial_transaction.created_at) > timedelta(days=7):
-        raise HTTPException(status_code=422, detail="La ventana de reembolso de 7 días ya expiró.")
+    if utc_now() - as_utc(initial_transaction.created_at) > timedelta(days=REFUND_WINDOW_DAYS):
+        raise HTTPException(status_code=422, detail=f"La ventana de reembolso de {REFUND_WINDOW_DAYS} días ya expiró.")
 
     subscription.status = "refund_requested"
     user.is_pro = False

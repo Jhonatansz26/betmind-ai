@@ -10,7 +10,7 @@ interface TabDef { id: MatchTab; icon: React.ElementType; label: string }
 
 const TABS: TabDef[] = [
   { id: 'preview', icon: TrendingUpIcon, label: 'Resumen & Insights' },
-  { id: 'markets', icon: BarChart3Icon, label: 'Pronósticos (56M)' },
+  { id: 'markets', icon: BarChart3Icon, label: 'Pronósticos' },
   { id: 'builder', icon: TargetIcon, label: 'Bet Builder' },
   { id: 'h2h', icon: SwordsIcon, label: 'Cara a Cara' },
 ]

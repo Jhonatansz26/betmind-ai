@@ -6,6 +6,7 @@ import Link from 'next/link'
 
 import type { Bankroll } from '@/lib/bankroll'
 import type { TicketLegData } from '@/lib/betmind'
+import { formatMarketName } from '@/lib/formatMarketName'
 import { formatCOP, formatEV, formatOdds, formatPercent, formatxG } from '@/lib/formatters'
 import { cn } from '@/lib/utils'
 
@@ -38,7 +39,7 @@ export function TicketLeg({
       style={{ animationDelay: `${index * 60}ms` }}
     >
       <div className="min-w-0">
-        <p className="truncate text-xs font-semibold text-foreground">{leg.market}</p>
+        <p className="truncate text-xs font-semibold text-foreground">{formatMarketName(leg.market)}</p>
         <p className="mt-1 truncate text-xs text-muted-foreground" title={leg.match}>{leg.match}</p>
       </div>
 

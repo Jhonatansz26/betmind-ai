@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 import { login } from '@/lib/auth'
-import { claimPendingTickets } from '@/components/betmind/tracking-panel'
+import { claimPendingTickets } from '@/lib/tracking'
+import { toast } from 'sonner'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -20,8 +21,11 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login(email, password)
-      // Task 5: claim anonymous tickets silently
-      claimPendingTickets().catch((err: unknown) => console.error('[claim]', err))
+      claimPendingTickets()
+        .then((result) => {
+          if (result.claimedCount < result.sentCount && result.message) toast.info(result.message)
+        })
+        .catch((err: unknown) => console.error('[claim]', err))
       // Redirect to ?redirect= param or home
       const params = new URLSearchParams(window.location.search)
       router.push(params.get('redirect') ?? '/')

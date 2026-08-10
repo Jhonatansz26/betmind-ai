@@ -11,7 +11,7 @@
  *
  * Events:
  *   "betmind:auth-changed" — dispatched on login, register, logout, and
- *   successful password reset so reactive listeners (TrackingPanel, TopNav, etc.)
+ *   successful password reset so reactive listeners (TopNav, etc.)
  *   update without a full page reload.
  */
 
@@ -37,6 +37,7 @@ export interface UserMe {
 /* ── Token storage ───────────────────────────────────────────────────── */
 
 function storeToken(payload: AuthTokenPayload): void {
+  setCachedIsPro(null)
   localStorage.setItem(TOKEN_KEY, JSON.stringify({ access_token: payload.access_token }))
   window.dispatchEvent(new Event('betmind:auth-changed'))
 }
@@ -68,12 +69,18 @@ async function parseApiError(res: Response): Promise<Error> {
 export async function register(
   email: string,
   password: string,
+  ageConfirmed: boolean,
   fullName?: string,
 ): Promise<AuthTokenPayload> {
   const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, full_name: fullName ?? undefined }),
+    body: JSON.stringify({
+      email,
+      password,
+      full_name: fullName ?? undefined,
+      age_confirmed: ageConfirmed,
+    }),
   })
   if (!res.ok) throw await parseApiError(res)
   const data = (await res.json()) as AuthTokenPayload

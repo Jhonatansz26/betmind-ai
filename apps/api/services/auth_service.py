@@ -108,13 +108,21 @@ def _reset_email_body(reset_link: str) -> str:
 
 
 def _log_stub(email: str, reset_link: str) -> None:
+    masked_email = email.split("@")[0] if "@" in email else email
+    if len(masked_email) > 3:
+        masked_email = masked_email[:2] + "***"
+    else:
+        masked_email = masked_email[:1] + "***"
+    domain = email[email.index("@") + 1:] if "@" in email else "unknown"
     logger.warning(
-        "[EMAIL-STUB] Password reset requested for %s\n"
-        "[EMAIL-STUB] Reset link (valid 30 min): %s\n"
-        "[EMAIL-STUB] Configure SMTP_USERNAME/SMTP_PASSWORD or RESEND_API_KEY.",
-        email,
-        reset_link,
+        "[EMAIL-STUB] Password reset requested for %s@%s. "
+        "Configure SMTP_USERNAME/SMTP_PASSWORD or RESEND_API_KEY to send real emails.",
+        masked_email,
+        domain,
     )
+    show_link = settings.EMAIL_STUB_SHOW_LINK if getattr(settings, "EMAIL_STUB_SHOW_LINK", None) else False
+    if show_link:
+        logger.warning("[EMAIL-STUB-DEBUG] Reset link (valid 30 min): %s", reset_link)
 
 
 def _send_via_resend(email: str, reset_link: str) -> None:

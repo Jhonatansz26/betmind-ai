@@ -539,3 +539,111 @@ def test_generation_key_format_anonymous():
     key = f"gen:daily:ip:{client_ip}:{cot_date}"
     assert key.startswith("gen:daily:ip:10.0.0.1:")
     assert key.endswith(cot_date)
+
+
+# ── Refund eligibility ──────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_refund_eligible_within_window(session):
+    user = await _user(session)
+    now = datetime.now(timezone.utc)
+    sub = Subscription(
+        user_id=user.id,
+        plan="mensual",
+        status="active",
+        current_period_end=now + timedelta(days=25),
+    )
+    session.add(sub)
+    await session.flush()
+    txn = SubscriptionTransaction(
+        subscription_id=sub.id,
+        wompi_transaction_id="tx-elig-1",
+        reference="ref-elig-1",
+        kind="initial",
+        amount_in_cents=2_990_000,
+        status="APPROVED",
+        created_at=now - timedelta(days=3),
+    )
+    session.add(txn)
+    await session.flush()
+
+    from apps.api.routes.v1.subscriptions import _compute_refund_eligibility
+    eligible = await _compute_refund_eligibility(sub.id, session)
+    assert eligible is True
+
+
+@pytest.mark.asyncio
+async def test_refund_ineligible_expired_window(session):
+    user = await _user(session)
+    now = datetime.now(timezone.utc)
+    sub = Subscription(
+        user_id=user.id,
+        plan="mensual",
+        status="active",
+        current_period_end=now + timedelta(days=25),
+    )
+    session.add(sub)
+    await session.flush()
+    txn = SubscriptionTransaction(
+        subscription_id=sub.id,
+        wompi_transaction_id="tx-elig-2",
+        reference="ref-elig-2",
+        kind="initial",
+        amount_in_cents=2_990_000,
+        status="APPROVED",
+        created_at=now - timedelta(days=10),
+    )
+    session.add(txn)
+    await session.flush()
+
+    from apps.api.routes.v1.subscriptions import _compute_refund_eligibility
+    eligible = await _compute_refund_eligibility(sub.id, session)
+    assert eligible is False
+
+
+@pytest.mark.asyncio
+async def test_refund_ineligible_trial(session):
+    user = await _user(session)
+    now = datetime.now(timezone.utc)
+    sub = Subscription(
+        user_id=user.id,
+        plan="mensual",
+        status="trial",
+        current_period_end=now + timedelta(days=7),
+        trial_ends_at=now + timedelta(days=7),
+    )
+    session.add(sub)
+    await session.flush()
+
+    from apps.api.routes.v1.subscriptions import _compute_refund_eligibility
+    eligible = await _compute_refund_eligibility(sub.id, session)
+    assert eligible is False
+
+
+@pytest.mark.asyncio
+async def test_refund_ineligible_already_refunded(session):
+    user = await _user(session)
+    now = datetime.now(timezone.utc)
+    sub = Subscription(
+        user_id=user.id,
+        plan="mensual",
+        status="refund_requested",
+        current_period_end=now + timedelta(days=25),
+    )
+    session.add(sub)
+    await session.flush()
+    txn = SubscriptionTransaction(
+        subscription_id=sub.id,
+        wompi_transaction_id="tx-elig-3",
+        reference="ref-elig-3",
+        kind="initial",
+        amount_in_cents=2_990_000,
+        status="APPROVED",
+        created_at=now - timedelta(days=3),
+    )
+    session.add(txn)
+    await session.flush()
+
+    from apps.api.routes.v1.subscriptions import _compute_refund_eligibility
+    eligible = await _compute_refund_eligibility(sub.id, session)
+    assert eligible is False

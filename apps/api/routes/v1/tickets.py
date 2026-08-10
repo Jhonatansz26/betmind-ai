@@ -51,29 +51,51 @@ async def save_ticket(
     request: Request,
     body: SaveTicketRequest,
     session=Depends(get_async_session),
+    cache=Depends(get_cache_service),
     current_user_id: int | None = Depends(get_optional_user_id),
+    client_ip: str = Depends(get_client_ip),
 ):
     """Persist a ticket snapshot for the user's tracking history."""
     repository = TicketRepository(session)
 
+    now_cot = datetime.now(COT)
+    cot_date = now_cot.strftime("%Y-%m-%d")
+
+    is_pro = False
     if current_user_id is not None:
         user_result = await session.execute(
             select(User).where(User.id == current_user_id, User.is_active.is_(True))
         )
         user = user_result.scalar_one_or_none()
-        if user is not None and not is_effectively_pro(request, effective_pro(user), settings.DEBUG):
+        if user is not None and effective_pro(user):
+            is_pro = True
+
+    if not is_effectively_pro(request, is_pro, settings.DEBUG):
+        if current_user_id is not None:
             existing = await repository.count_by_user(current_user_id)
             if existing >= 5:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Tu plan gratuito guarda hasta 5 boletos. Actualizá a PRO para guardar sin límite.",
                 )
+        else:
+            anon_key = f"save:daily:ip:{client_ip}:{cot_date}"
+            saved_count = await cache.increment(anon_key, ttl_seconds=86_400)
+            if saved_count > 5:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Registrate para guardar más de 5 boletos por día.",
+                )
+
+    effective_stake = body.stake_amount
+    if effective_stake is not None and not is_effectively_pro(request, is_pro, settings.DEBUG):
+        effective_stake = None
 
     return await repository.create(
         ticket_data=body.ticket_data,
         total_odds=body.total_odds,
         total_ev=body.total_ev,
-        stake_amount=body.stake_amount,
+        stake_amount=effective_stake,
         user_id=current_user_id,
     )
 
@@ -113,19 +135,54 @@ async def update_ticket_status(
 
 @router.post("/claim", response_model=ClaimTicketsResponse)
 async def claim_anonymous_tickets(
-    request: ClaimTicketsRequest,
+    body: ClaimTicketsRequest,
+    http_request: Request,
     session=Depends(get_async_session),
     current_user_id: int = Depends(get_current_user_id),
 ):
     repository = TicketRepository(session)
+
+    is_pro = False
+    user_result = await session.execute(
+        select(User).where(User.id == current_user_id, User.is_active.is_(True))
+    )
+    user = user_result.scalar_one_or_none()
+    if user is not None and effective_pro(user):
+        is_pro = True
+
+    if not is_effectively_pro(http_request, is_pro, settings.DEBUG):
+        current_count = await repository.count_by_user(current_user_id)
+        remaining_slots = 5 - current_count
+        if remaining_slots <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tu plan gratuito guarda hasta 5 boletos. Actualizá a PRO para guardar sin límite.",
+            )
+        claim_ids = body.ticket_ids[:remaining_slots]
+        unclaimed = body.ticket_ids[remaining_slots:]
+    else:
+        claim_ids = body.ticket_ids
+        unclaimed = []
+
     claimed_ticket_ids = await repository.claim_anonymous_ticket_ids(
-        request.ticket_ids,
+        claim_ids,
         current_user_id,
     )
+    unclaimed = unclaimed + [tid for tid in claim_ids if tid not in claimed_ticket_ids]
+
+    total_claimed = len(claimed_ticket_ids)
+    if unclaimed:
+        message = (
+            f"{total_claimed} boletos reclamados. "
+            f"{len(unclaimed)} restantes no pudieron reclamarse (límite de 5 en plan gratuito)."
+        )
+    else:
+        message = f"{total_claimed} boletos anónimos reclamados para la cuenta."
+
     return ClaimTicketsResponse(
-        claimed_count=len(claimed_ticket_ids),
+        claimed_count=total_claimed,
         claimed_ticket_ids=claimed_ticket_ids,
-        message=f"{len(claimed_ticket_ids)} boletos anónimos reclamados para la cuenta PRO.",
+        message=message,
     )
 
 
@@ -365,6 +422,31 @@ async def generate_tickets(
     markets_slug = ",".join(sorted(body.markets or [])) or "all"
     cache_key = f"tickets:stored:{date_filter or 'rolling'}:{window_slug}:{leagues_slug}:{markets_slug}:{body.selection_count or 'default'}"
 
+    # Enforce daily generation limit BEFORE serving from cache so that
+    # hitting the same cached request cannot bypass the daily cap.
+    cot_date = now_cot.strftime("%Y-%m-%d")
+    is_pro = False
+    if current_user_id is not None:
+        user_result = await session.execute(
+            select(User).where(User.id == current_user_id, User.is_active.is_(True))
+        )
+        user = user_result.scalar_one_or_none()
+        if user is not None and effective_pro(user):
+            is_pro = True
+
+    if not is_effectively_pro(request, is_pro, settings.DEBUG):
+        gen_key = (
+            f"gen:daily:{current_user_id}:{cot_date}"
+            if current_user_id is not None
+            else f"gen:daily:ip:{client_ip}:{cot_date}"
+        )
+        count = await cache.increment(gen_key, ttl_seconds=86_400)
+        if count > 2:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tu plan gratuito genera hasta 2 boletos por día. Actualizá a PRO para generar sin límite.",
+            )
+
     if not body.force_refresh:
         if cached := await cache.get(cache_key, TicketGenerateResponse):
             if set(body.modes) != {TicketMode.EDGE, TicketMode.VALUE, TicketMode.BOLD}:
@@ -410,32 +492,6 @@ async def generate_tickets(
         # Avoid reconnecting to the database on every empty dashboard refresh.
         await cache.set(cache_key, empty_response, ttl=30)
         return empty_response
-
-    # Enforce daily generation limit (cached hits do not count).
-    # Authenticated Free users are counted by user_id; anonymous requests
-    # are counted by client IP as a reasonable abuse mitigation.
-    cot_date = now_cot.strftime("%Y-%m-%d")
-    is_pro = False
-    if current_user_id is not None:
-        user_result = await session.execute(
-            select(User).where(User.id == current_user_id, User.is_active.is_(True))
-        )
-        user = user_result.scalar_one_or_none()
-        if user is not None and effective_pro(user):
-            is_pro = True
-
-    if not is_effectively_pro(request, is_pro, settings.DEBUG):
-        gen_key = (
-            f"gen:daily:{current_user_id}:{cot_date}"
-            if current_user_id is not None
-            else f"gen:daily:ip:{client_ip}:{cot_date}"
-        )
-        count = await cache.increment(gen_key, ttl_seconds=86_400)
-        if count > 2:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Tu plan gratuito genera hasta 2 boletos por día. Actualizá a PRO para generar sin límite.",
-            )
 
     bridge_markets = _bridge_market_categories(requested_markets)
     builder_markets = (

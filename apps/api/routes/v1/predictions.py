@@ -112,14 +112,18 @@ async def get_match_prediction(
     try:
         response = await orchestrator.get_prediction(match_id=match_id, odds=odds_input)
 
+        is_pro = False
         if current_user_id is not None:
             user_result = await session.execute(
                 select(User).where(User.id == current_user_id, User.is_active.is_(True))
             )
             user = user_result.scalar_one_or_none()
-            if user is not None and not is_effectively_pro(request, effective_pro(user), settings.DEBUG):
-                response.ev_analysis = response.ev_analysis[:10]
-                response.bet_builder = []
+            if user is not None and effective_pro(user):
+                is_pro = True
+
+        if not is_effectively_pro(request, is_pro, settings.DEBUG):
+            response.ev_analysis = response.ev_analysis[:10]
+            response.bet_builder = []
 
         return response
 

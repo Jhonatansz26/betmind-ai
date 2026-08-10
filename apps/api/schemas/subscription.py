@@ -25,6 +25,7 @@ class SubscriptionTrialResponse(BaseModel):
     trial_ends_at: datetime | None = None
     recurrence_enabled: bool | None = None
     last_transaction: "LastSubscriptionTransactionResponse | None" = None
+    refund_eligible: bool = False
 
     model_config = {"from_attributes": True}
 

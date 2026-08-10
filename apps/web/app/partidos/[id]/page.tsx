@@ -37,7 +37,6 @@ import { cn } from '@/lib/utils'
 import { TeamLogo } from '@/components/ui/team-logo'
 import { LeagueLogo } from '@/components/betmind/league-logo'
 import { MatchTabBar, type MatchTab } from '@/components/betmind/match-tab-bar'
-import { MarketTable } from '@/components/betmind/market-table'
 import { BetBuilderCards } from '@/components/betmind/bet-builder-cards'
 import { TacticalPanel } from '@/components/betmind/tactical-panel'
 import { StatDisclaimer } from '@/components/betmind/stat-disclaimer'
@@ -368,7 +367,7 @@ function MatchHero({ match, leagueMeta, model }: {
 /* ConfidenceBar                                                       */
 /* ------------------------------------------------------------------ */
 
-function ConfidenceBar({ detail, model }: { detail: MatchDetailData; model: MatchModel }) {
+function ConfidenceBar({ detail }: { detail: MatchDetailData }) {
   const riskColor = RISK_COLORS[detail.riskLevel] ?? RISK_COLORS.MEDIUM
   const riskLabel = RISK_LABELS[detail.riskLevel] ?? RISK_LABELS.MEDIUM
 
@@ -491,15 +490,16 @@ function SignalMarketCard({ market }: { market: QuantMarket }) {
 
 function QuantMarkets({ enriched }: { enriched: EnrichedMatch | null }) {
   const allMarkets = enriched?.evAnalysis ?? []
+  const totalMarkets = enriched?.totalMarkets ?? allMarkets.length
   const [showAll, setShowAll] = React.useState(false)
   // TODO(backend-pagos): reemplazar por chequeo real de suscripción.
   const isPro = useProStatus()
   const markets = isPro ? allMarkets : allMarkets.slice(0, 10)
   const signals = [...markets].filter((market) => market.ev > 0 || market.probability > 0.65).sort((a, b) => (b.ev - a.ev) || (b.probability - a.probability)).slice(0, 5)
-  return <div className="flex flex-col gap-4"><div className="flex items-end justify-between"><div><p className="text-[10px] tracking-[0.14em] text-subtle">Señales filtradas · 80/20</p><h2 className="mt-1 text-lg font-semibold text-foreground">Señales de margen +EV</h2></div><span className="font-mono text-xs text-primary">{markets.length}/56 mercados</span></div>{signals.length > 0 ? <div className="grid gap-3 lg:grid-cols-2">{signals.map((market) => <SignalMarketCard key={market.market} market={market} />)}</div> : <div className="rounded-xl border border-dashed border-[var(--surface-raised)] bg-[var(--surface)] px-5 py-8 text-center text-sm text-subtle">No hay señales destacadas en este partido. El mercado está ajustado.</div>}<button type="button" onClick={() => setShowAll((value) => !value)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--surface-raised)] bg-[var(--surface)] px-4 text-sm font-semibold text-subtle transition-colors hover:border-primary/50 hover:text-foreground">{showAll ? 'Ocultar catálogo completo' : 'Explorar los 56 mercados completos · Modo Analista'}</button>{showAll && <div className="flex flex-col gap-3 pt-2">{MARKET_GROUPS.map((group, index) => <MarketAccordion key={group.id} label={group.label} markets={markets.filter((market) => group.match(market.market))} defaultOpen={index === 0} />)}</div>}<p className="text-xs leading-5 text-subtle">Las señales priorizan valor o probabilidad relevante. Las cuotas no publicadas se muestran como N/D, nunca como una oportunidad inventada.</p></div>
+  return <div className="flex flex-col gap-4"><div className="flex items-end justify-between"><div><p className="text-[10px] tracking-[0.14em] text-subtle">Señales filtradas · 80/20</p><h2 className="mt-1 text-lg font-semibold text-foreground">Señales de margen +EV</h2></div><span className="font-mono text-xs text-primary">{markets.length}/{totalMarkets} mercados</span></div>{signals.length > 0 ? <div className="grid gap-3 lg:grid-cols-2">{signals.map((market) => <SignalMarketCard key={market.market} market={market} />)}</div> : <div className="rounded-xl border border-dashed border-[var(--surface-raised)] bg-[var(--surface)] px-5 py-8 text-center text-sm text-subtle">No hay señales destacadas en este partido. El mercado está ajustado.</div>}<button type="button" onClick={() => setShowAll((value) => !value)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--surface-raised)] bg-[var(--surface)] px-4 text-sm font-semibold text-subtle transition-colors hover:border-primary/50 hover:text-foreground">{showAll ? 'Ocultar catálogo completo' : `Explorar los ${totalMarkets} mercados completos · Modo Analista`}</button>{showAll && <div className="flex flex-col gap-3 pt-2">{MARKET_GROUPS.map((group, index) => <MarketAccordion key={group.id} label={group.label} markets={markets.filter((market) => group.match(market.market))} defaultOpen={index === 0} />)}</div>}<p className="text-xs leading-5 text-subtle">Las señales priorizan valor o probabilidad relevante. Las cuotas no publicadas se muestran como N/D, nunca como una oportunidad inventada.</p></div>
 }
 
-function LockedMarkets({ markets }: { markets: QuantMarket[] }) {
+function LockedMarkets({ markets, totalMarkets }: { markets: QuantMarket[]; totalMarkets: number }) {
   const lockedMarkets = markets.slice(10)
   if (!lockedMarkets.length) return null
   return (
@@ -508,7 +508,7 @@ function LockedMarkets({ markets }: { markets: QuantMarket[] }) {
         <div className="grid gap-3 lg:grid-cols-2">{lockedMarkets.map((market) => <SignalMarketCard key={market.market} market={market} />)}</div>
       </div>
       <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/55 px-5 text-center backdrop-blur-[1px]">
-        <p className="text-sm font-semibold text-foreground">Estás viendo 10 de 56 mercados</p>
+        <p className="text-sm font-semibold text-foreground">Estás viendo 10 de {totalMarkets} mercados</p>
         <p className="mt-2 max-w-md text-xs leading-5 text-muted-foreground">El resto del análisis cuantitativo completo — córneres, tarjetas, remates y más — está en PRO.</p>
         <Link href="/planes" className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-brand px-4 text-xs font-bold text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">Desbloquear todo →</Link>
       </div>
@@ -785,13 +785,11 @@ function H2HReferencePanel({ match, detail, h2h }: { match: Match; detail: Match
 function H2HTab({
   match,
   enriched,
-  model,
   detail,
   h2h,
 }: {
   match: Match
   enriched: EnrichedMatch | null
-  model: MatchModel
   detail: MatchDetailData
   h2h: MatchH2HData | null
 }) {
@@ -802,13 +800,14 @@ function H2HTab({
   const goalEvents = h2hMatches.flatMap((item) => item.events.filter((event) => event.event_type === 'goal'))
   const secondHalfGoals = goalEvents.filter((event) => event.minute > 45).length
   const secondHalfShare = goalEvents.length ? Math.round((secondHalfGoals / goalEvents.length) * 100) : null
+  const llmModelLabel = enriched?.llmModelUsed?.trim() || 'QUANT ENGINE'
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-center">
         <div className="flex items-center gap-1.5 text-[11px] text-subtle bg-surface/60 border border-border rounded-full px-3 py-1">
           <Sparkles size={10} className="text-primary" />
-          Análisis Táctico · Groq · Llama 3.3
+          Análisis Táctico · {llmModelLabel}
         </div>
       </div>
 
@@ -968,7 +967,7 @@ function MatchDetailContent({ match, enriched, h2h }: { match: Match; enriched?:
       <SignalRail match={match} detail={detail} enriched={enriched ?? null} marketEdge={mainEdge} />
 
       {detail.confidenceScore > 0 && (
-        <ConfidenceBar detail={detail} model={model} />
+        <ConfidenceBar detail={detail} />
       )}
 
       <MatchTabBar active={activeTab} onChange={setActiveTab} />
@@ -976,7 +975,7 @@ function MatchDetailContent({ match, enriched, h2h }: { match: Match; enriched?:
       {activeTab === 'preview' && (
         <PreviaTab match={match} enriched={enriched ?? null} model={model} rows={rows} best={best} detail={detail} />
       )}
-      {activeTab === 'markets' && <div className="flex flex-col gap-3"><QuantMarkets enriched={enriched ?? null} />{!isPro && <LockedMarkets markets={enriched?.evAnalysis ?? []} />}<StatDisclaimer /></div>}
+      {activeTab === 'markets' && <div className="flex flex-col gap-3"><QuantMarkets enriched={enriched ?? null} />{!isPro && <LockedMarkets markets={enriched?.evAnalysis ?? []} totalMarkets={enriched?.totalMarkets ?? 0} />}<StatDisclaimer /></div>}
       {activeTab === 'builder' && (
         isPro ? (
           detail.betBuilder && detail.betBuilder.length > 0 && <div className="rounded-xl border border-border bg-card p-4"><BetBuilderCards profiles={detail.betBuilder} /></div>
@@ -988,7 +987,7 @@ function MatchDetailContent({ match, enriched, h2h }: { match: Match; enriched?:
         )
       )}
       {activeTab === 'h2h' && (
-        <H2HTab match={match} enriched={enriched ?? null} model={model} detail={detail} h2h={h2h} />
+        <H2HTab match={match} enriched={enriched ?? null} detail={detail} h2h={h2h} />
       )}
     </div>
   )
@@ -1055,7 +1054,7 @@ export default function PartidoDetailPage() {
       <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-sm">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4">
           <Link
-            href="/"
+            href="/partidos"
             className="inline-flex items-center gap-1.5 text-sm font-medium text-subtle hover:text-foreground transition-colors"
           >
             <ArrowLeft size={14} />
@@ -1079,7 +1078,7 @@ export default function PartidoDetailPage() {
                 Es posible que el partido ya no esté disponible para hoy.
               </p>
               <Link
-                href="/"
+                href="/partidos"
                 className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
               >
                 <ArrowLeft size={14} />

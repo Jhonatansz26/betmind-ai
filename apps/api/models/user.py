@@ -18,3 +18,4 @@ class User(TimestampMixin, Base):
     # Subscription flags — set manually or via payment webhook
     is_pro: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     pro_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    age_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

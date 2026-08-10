@@ -15,13 +15,13 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { type Match, type Ticket, MODE_META } from '@/lib/betmind'
+import { type Ticket, MODE_META } from '@/lib/betmind'
 import { fetchTickets, type LeagueData } from '@/lib/api'
 import { formatMarketName } from '@/lib/formatMarketName'
 import { formatEV, formatOdds } from '@/lib/formatters'
 import { shareOrDownloadTicket } from '@/lib/ticket-export'
 import { cn } from '@/lib/utils'
-import { addToTracking } from './tracking-panel'
+import { addToTracking } from '@/lib/tracking'
 import { TicketLeg } from './ticket-leg'
 import { StakeConfirmDialog } from './stake-confirm-dialog'
 import { useBankroll } from './use-bankroll'
@@ -36,8 +36,6 @@ type MarketKey = 'GOALS' | 'CORNERS' | '1X2' | 'CARDS' | 'SHOTS'
 interface GeneratorConfig {
   selectionCount: number
   riskProfile: RiskProfile
-  oddsMin: number
-  oddsMax: number
   selectedMarkets: MarketKey[]
   selectedLeagues: string[]
 }
@@ -97,12 +95,6 @@ const DISPLAY_MARKET_KEYWORDS: Record<MarketKey, string[]> = {
   CARDS: ['TARJETA', 'CARD'],
   SHOTS: ['REMATE', 'TIRO', 'SHOT'],
 }
-
-const ODDS_PRESETS = [
-  { label: '1.5 – 3.0', min: 1.5, max: 3.0 },
-  { label: '3.0 – 6.0', min: 3.0, max: 6.0 },
-  { label: '6.0+', min: 6.0, max: 50 },
-]
 
 /* ------------------------------------------------------------------ */
 /* Market category filter helper                                       */
@@ -180,24 +172,22 @@ function GeneratorLeg({
 /* ------------------------------------------------------------------ */
 
 export function TicketGenerator({
-  matches,
   leagues = [],
   onTrack,
   isPro = true,
   onBeforeGenerate,
+  dateFilter = 'today',
 }: {
-  matches: Match[]
   leagues?: LeagueData[]
   onTrack?: () => void
   isPro?: boolean
   onBeforeGenerate?: () => boolean
+  dateFilter?: string
 }) {
   /* ── Config state ── */
   const [config, setConfig] = React.useState<GeneratorConfig>({
     selectionCount: 3,
     riskProfile: isPro ? 'balanced' : 'conservative',
-    oddsMin: 1.80,
-    oddsMax: 10.00,
     selectedMarkets: MARKET_CATEGORIES.map((category) => category.key),
     selectedLeagues: [],
   })
@@ -256,9 +246,6 @@ export function TicketGenerator({
     [displayedLegs],
   )
 
-  const combinedOddsInRange =
-    combinedOddsDisplay >= config.oddsMin && combinedOddsDisplay <= config.oddsMax
-
   /* ── Generate ticket when risk profile or key changes ── */
   React.useEffect(() => {
     let cancelled = false
@@ -284,7 +271,7 @@ export function TicketGenerator({
         const result = await fetchTickets(
           [mode],
           config.selectedLeagues.length === activeLeagueKeys.length ? undefined : config.selectedLeagues,
-          undefined,
+          dateFilter,
           config.selectionCount,
           config.selectedMarkets.length === MARKET_CATEGORIES.length ? undefined : config.selectedMarkets,
         )
@@ -294,7 +281,7 @@ export function TicketGenerator({
         if (!result.ok) throw new Error(result.error.message)
         const candidate =
           result.data.tickets.find((t) => t.mode === mode) ?? result.data.tickets[0] ?? null
-        setTicket(candidate)
+        setTicket(config.selectedMarkets.length === 0 ? null : candidate)
       } catch {
         if (!cancelled) setError(true)
       } finally {
@@ -307,7 +294,7 @@ export function TicketGenerator({
       cancelled = true
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.riskProfile, config.selectedLeagues, config.selectedMarkets, config.selectionCount, generationKey, activeLeagueKeys.join(','), onBeforeGenerate])
+  }, [config.riskProfile, config.selectedLeagues, config.selectedMarkets, config.selectionCount, generationKey, activeLeagueKeys.join(','), dateFilter, onBeforeGenerate])
 
   React.useEffect(() => {
     if (!isPro && config.riskProfile !== 'conservative') {
@@ -579,40 +566,6 @@ export function TicketGenerator({
 
           <div className="h-px bg-border-subtle" />
 
-          {/* 3. Odds Range */}
-          <fieldset className="flex flex-col gap-2.5">
-            <legend className="text-[10px] font-bold uppercase tracking-widest text-subtle">
-              Rango de Cuota Combinada
-            </legend>
-
-            <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-surface/50 p-1">
-              {ODDS_PRESETS.map((preset) => {
-                const active = config.oddsMin === preset.min && config.oddsMax === preset.max
-                return (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() =>
-                      setConfig((prev) => ({
-                        ...prev,
-                        oddsMin: preset.min,
-                        oddsMax: preset.max,
-                      }))
-                    }
-                    className={cn(
-                      'flex-1 rounded-md border py-2 text-[10px] font-bold transition-colors',
-                      active
-                        ? 'border-primary/40 bg-primary/12 text-primary'
-                        : 'border-border bg-transparent text-subtle hover:text-foreground',
-                    )}
-                  >
-                    {preset.label}
-                  </button>
-                )
-              })}
-            </div>
-          </fieldset>
-
           {/* Regenerate */}
           <button
             type="button"
@@ -669,7 +622,7 @@ export function TicketGenerator({
                   <span
                     className={cn(
                       'font-mono text-4xl font-bold tabular-nums tracking-tight leading-none',
-                      combinedOddsInRange ? 'text-positive' : 'text-warning',
+                      'text-positive',
                     )}
                   >
                     {formatOdds(combinedOddsDisplay)}
@@ -711,19 +664,11 @@ export function TicketGenerator({
                 </div>
                 <div className="flex flex-col gap-0.5 pl-3">
                   <span className="text-[9px] font-bold uppercase tracking-widest text-subtle">
-                    Rango
+                    Mercados
                   </span>
-                  <div className="flex items-center gap-1">
-                    <span className={cn('size-1.5 rounded-full', combinedOddsInRange ? 'bg-positive' : 'bg-warning')} aria-hidden />
-                    <span
-                      className={cn(
-                        'text-xs font-bold',
-                        combinedOddsInRange ? 'text-positive' : 'text-warning',
-                      )}
-                    >
-                      {combinedOddsInRange ? 'En rango' : 'Fuera de rango'}
-                    </span>
-                  </div>
+                  <span className="font-mono text-xs font-bold text-foreground">
+                    {config.selectedMarkets.length}/{MARKET_CATEGORIES.length}
+                  </span>
                 </div>
               </div>
             ) : (

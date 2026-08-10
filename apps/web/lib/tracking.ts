@@ -1,5 +1,6 @@
-import { claimAnonymousTickets, type SavedTicketRecord, type SavedTicketStatus } from './api'
-import type { Mode } from './betmind'
+import { claimAnonymousTickets, saveTicket, type SavedTicketRecord, type SavedTicketStatus } from './api'
+import type { Mode, Ticket } from './betmind'
+import { announceProLimit, isProUser } from './subscription'
 
 export type TrackStatus = SavedTicketStatus
 
@@ -33,17 +34,76 @@ export function mapSavedTicket(saved: SavedTicketRecord): TrackedTicket {
   }
 }
 
-export async function claimPendingTickets(): Promise<number> {
+export interface ClaimPendingTicketsResult {
+  sentCount: number
+  claimedCount: number
+  message?: string
+}
+
+export async function claimPendingTickets(): Promise<ClaimPendingTicketsResult> {
   const pending = loadTrackedTickets().filter((ticket) => ticket.remote && /^\d+$/.test(ticket.id))
   const ticketIds = pending.map((ticket) => Number(ticket.id))
-  if (!ticketIds.length) return 0
+  if (!ticketIds.length) return { sentCount: 0, claimedCount: 0 }
 
   const result = await claimAnonymousTickets(ticketIds)
-  if (!result.ok || result.data.claimed_count <= 0) return 0
+  if (!result.ok) return { sentCount: ticketIds.length, claimedCount: 0 }
 
   const claimedIds = new Set((result.data.claimed_ticket_ids ?? []).map(String))
-  saveTrackedTickets(loadTrackedTickets().filter((ticket) => !claimedIds.has(ticket.id)))
-  return result.data.claimed_count
+  if (claimedIds.size > 0) {
+    saveTrackedTickets(loadTrackedTickets().filter((ticket) => !claimedIds.has(ticket.id)))
+  }
+  return {
+    sentCount: ticketIds.length,
+    claimedCount: result.data.claimed_count,
+    message: result.data.message,
+  }
+}
+
+export type AddToTrackingResult = { saved: true } | { saved: false; reason: 'free-limit' }
+
+export async function addToTracking(
+  ticket: Ticket,
+  stakeAmount?: number,
+): Promise<AddToTrackingResult> {
+  if (!isProUser() && loadTrackedTickets().length >= 5) {
+    announceProLimit('saved')
+    return { saved: false, reason: 'free-limit' }
+  }
+
+  const remoteResult = await saveTicket(ticket, stakeAmount)
+  if (remoteResult.ok) {
+    const existing = loadTrackedTickets()
+    const entry: TrackedTicket = {
+      id: String(remoteResult.data.id),
+      mode: ticket.mode,
+      combinedOdds: remoteResult.data.total_odds,
+      evAverage: remoteResult.data.total_ev,
+      confidence: ticket.confidence,
+      legsCount: ticket.legs.length,
+      trackedAt: remoteResult.data.created_at,
+      status: remoteResult.data.status,
+      stakeAmount: remoteResult.data.stake_amount,
+      remote: true,
+    }
+    saveTrackedTickets([entry, ...existing.filter((item) => item.id !== entry.id)].slice(0, 10))
+    return { saved: true }
+  }
+
+  const existing = loadTrackedTickets()
+  const entry: TrackedTicket = {
+    id: `${ticket.mode}-${Date.now()}`,
+    mode: ticket.mode,
+    combinedOdds: ticket.combinedOdds,
+    evAverage: ticket.evAverage,
+    confidence: ticket.confidence,
+    legsCount: ticket.legs.length,
+    trackedAt: new Date().toISOString(),
+    status: 'PENDING',
+    stakeAmount,
+    remote: false,
+  }
+  saveTrackedTickets([entry, ...existing].slice(0, 10))
+  return { saved: true }
 }
 
 export function loadTrackedTickets(): TrackedTicket[] {

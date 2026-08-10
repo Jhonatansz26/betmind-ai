@@ -9,6 +9,18 @@ from pydantic_settings import BaseSettings, NoDecode
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_db_url(url: str) -> str:
+    from urllib.parse import urlparse, urlunparse
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or "unknown"
+        db_name = parsed.path.lstrip("/") if parsed.path else "unknown"
+        scheme = parsed.scheme.split("+")[-1] if "+" in parsed.scheme else parsed.scheme
+        return f"{scheme}://{host}/{db_name}"
+    except Exception:
+        return url.split("@")[-1] if "@" in url else url
+
+
 def _find_env_files() -> list[Path]:
     """
     Busca archivos .env en multiples ubicaciones.
@@ -80,6 +92,8 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USERNAME: str | None = None
     SMTP_PASSWORD: str | None = None
+
+    EMAIL_STUB_SHOW_LINK: bool = False
 
     # Wompi integration. Keep all secrets in environment variables.
     WOMPI_BASE_URL: str = "https://sandbox.wompi.co/v1"
@@ -159,7 +173,7 @@ class Settings(BaseSettings):
                 "SECRET_KEY must be changed when DEBUG=False; refusing to start in production"
             )
         
-        logger.info(f"DATABASE_URL: {self.DATABASE_URL[:80]}...")
+        logger.info(f"Using database at {_sanitize_db_url(self.DATABASE_URL)}")
 
     def get_groq_api_keys(self) -> list[str]:
         """

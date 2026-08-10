@@ -7264,3 +7264,138 @@ Suite completa: **66 passed** (tickets + subscriptions), `tsc --noEmit` limpio, 
 - **Toggle ON + sin sesión:** sin límites (generar >2 boletos sin problema)
 - **Producción (`DEBUG=False`):** header ignorado, límites se aplican normalmente
 - **Build:** `tsc --noEmit` limpio, `next build` exitoso, 66/66 tests pasan
+
+---
+
+## 🟢 Auditoría Frontend + Paquete Post-Auditoría + Fix `refund_eligible` (2026-08-10)
+
+### 1. Auditoría completa del frontend
+
+Se produjo `AUDITORIA_FRONTEND.md` (506 líneas, en la raíz del repo) con el mismo criterio que `AUDITORIA_BACKEND.md`:
+- **Stack:** Next.js 16.2.6, React 19, TypeScript 5.7.3, Tailwind 4, `@base-ui/react`, `sonner`, `jose` (JWE Wompi). Sin React Query/SWR/Redux — estado en hooks locales.
+- **Rutas:** 12 `page.tsx` físicos (home, senales, generador, partidos, partidos/[id], historial, bankroll, planes, 4 de cuenta). Sin middleware/guards de ruta; protección condicional en componentes.
+- **Hallazgos clave documentados:** repetición de fetches entre Home/Cartelera/Generador sin caché ni dedupe; `useIsPro`/`cachedIsPro` como fuente de PRO; gates Free client-side (mercados recortados por backend, blur visual en detalle); tokens `light/dark/system` con decisiones oscuras fuera del sistema (Canvas export, Sonner, `themeColor`); `TrackingPanel` y `MarketTable` huérfanos; detalle de partido monolítico (1.095 líneas, 4 tabs).
+- **Validaciones ejecutadas:** `tsc --noEmit` pasa; `next build` pasa (warning `images.domains` deprecated); `npm run lint` no ejecutable (eslint no instalado); sin script `test`; `--noUnusedLocals/Parameters` reporta 11 símbolos sin uso.
+
+### 2. Paquete post-auditoría — 8 tareas
+
+| # | Tarea | Cambio |
+|---|-------|--------|
+| 1 | Claim parcial | `claimPendingTickets()` en `lib/tracking.ts` ahora retorna `{sentCount, claimedCount, message}`; login y registro muestran `toast.info(message)` solo si `claimedCount < sentCount`. La purga por `claimed_ticket_ids` se conserva. |
+| 2 | `total_markets` | `lib/api.ts` conserva `total_markets` del backend en `EnrichedMatch.totalMarkets`; detalle de partido usa el valor real en `QuantMarkets`, `LockedMarkets` y tab `Pronósticos` (se quitó el hardcode `56`). En `/planes` se reemplazó "10 de 56" por texto genérico porque ese endpoint no devuelve el total. |
+| 3 | Mayoría de edad | `register(email, password, ageConfirmed, fullName?)` envía `age_confirmed` en el body; el registro pasa `ageConfirmed` del checkbox. |
+| 4 | Cache PRO | `storeToken()` en `lib/auth.ts` ejecuta `setCachedIsPro(null)` antes de escribir el nuevo token (mismo criterio que `clearToken()`). |
+| 5 | Reembolso | `requestRefund()` en `lib/subscriptions.ts` (`POST /subscriptions/refund`); en `/planes`: estado `refundOpen`/`refundLoading`, modal de confirmación y toast post-éxito ("PRO revocado de inmediato; el reembolso se procesa por separado"). Inicialmente gateado por `created_at` (campo que no existía en la respuesta) — ver §4. |
+| 6 | Generador | `TicketGenerator` envía `date_filter="today"` (consistente con la carga de partidos); el control "Rango de Cuota Combinada" se eliminó porque el backend no acepta `odds_min/odds_max` (evita un control que mentía); `fetchTickets` envía `markets: []` explícito cuando el usuario desactiva todos y no se muestra ticket en ese caso (el backend interpreta ausencia como "todos"). |
+| 7 | Badge H2H | `H2HTab` renderiza `llmModelUsed` real del adapter en lugar del texto fijo "Groq · Llama 3.3" (fallback `QUANT ENGINE`). |
+| 8 | Limpieza | Links "Volver a Partidos" apuntan a `/partidos` (header y error del detalle); `TrackingPanel` eliminado (confirmado sin consumidores; sus helpers `addToTracking`/`claimPendingTickets` se movieron a `lib/tracking.ts`); `TicketLeg` renderiza `formatMarketName(leg.market)`; se eliminó el import muerto de `MarketTable`. |
+
+### 3. Otros ajustes incluidos
+
+- `apps/web/components/betmind/match-tab-bar.tsx`: tab renombrada de `Pronósticos (56M)` a `Pronósticos`.
+- `apps/web/app/planes/page.tsx`: tabla comparativa Free/PRO sin el número fijo 56.
+- `apps/web/components/betmind/generator-page.tsx`: se eliminó el estado `matches` (prop no usada por `TicketGenerator`); la carga de ligas/partidos sigue igual.
+
+### 4. Fix `refund_eligible` (después del fix backend)
+
+El backend pasó a exponer `refund_eligible: bool` en `GET /subscriptions/me` (ventana de 7 días, excluye trial/cancelado/ya reembolsado). Cambios:
+- `apps/web/lib/subscriptions.ts`: campo `refund_eligible: boolean` agregado al tipo `Subscription`.
+- `apps/web/app/planes/page.tsx`: `refundEligible = subscription?.refund_eligible ?? false` — se eliminó el cálculo local de fechas basado en `created_at` (campo que no existía). El botón "Solicitar reembolso" aparece/desaparece según el campo real del backend.
+
+### 5. Archivos modificados (frontend)
+
+| Archivo | Cambio |
+|---------|--------|
+| `AUDITORIA_FRONTEND.md` | Nuevo — auditoría completa del frontend |
+| `apps/web/lib/tracking.ts` | `ClaimPendingTicketsResult`, `addToTracking` movido desde `tracking-panel.tsx`, mensaje de claim |
+| `apps/web/lib/api.ts` | `totalMarkets` en `EnrichedMatch`; `markets` vacío se envía explícito |
+| `apps/web/lib/auth.ts` | `age_confirmed` en registro; `storeToken()` limpia `cachedIsPro` |
+| `apps/web/lib/subscriptions.ts` | `requestRefund()`; campo `refund_eligible` |
+| `apps/web/app/cuenta/login/page.tsx` | Toast de claim parcial; import desde `lib/tracking` |
+| `apps/web/app/cuenta/registro/page.tsx` | `ageConfirmed` enviado; toast de claim parcial; import desde `lib/tracking` |
+| `apps/web/app/partidos/[id]/page.tsx` | `totalMarkets` real, badge LLM dinámico, links `/partidos`, `ConfidenceBar`/`H2HTab` sin `model` muerto, import `MarketTable` eliminado |
+| `apps/web/app/planes/page.tsx` | Modal de reembolso + botón por `refund_eligible`; tabla comparativa sin 56 |
+| `apps/web/components/betmind/generator-page.tsx` | Estado `matches` eliminado; `dateFilter="today"` |
+| `apps/web/components/betmind/ticket-generator.tsx` | `date_filter` enviado; control de rango de cuota eliminado; `markets` vacío → sin ticket |
+| `apps/web/components/betmind/ticket-card.tsx` | Import `addToTracking` desde `lib/tracking` |
+| `apps/web/components/betmind/ticket-leg.tsx` | `formatMarketName()` en render |
+| `apps/web/components/betmind/match-tab-bar.tsx` | Tab `Pronósticos` (sin 56M) |
+| `apps/web/components/betmind/tracking-panel.tsx` | **Eliminado** (huérfano, helpers migrados) |
+
+### 6. Verificación
+
+- `npx tsc --noEmit`: **pasa sin errores**.
+- `npm run build`: **pasa** (13 páginas; único warning: `images.domains` deprecated).
+- Backend dependiente ya aplicado en chat de backend: `age_confirmed` requerido en `UserCreate`, `total_markets` en `PredictionResponse`, `refund_eligible` en `/subscriptions/me`.
+- Sin cambios de backend en esta sesión.
+
+---
+
+## 🔴 Paquete de Seguridad y Enforcement (Backend) + Edad Mínima + Reembolso (2026-08-10)
+
+### 1. Auditoría backend + 6 fixes críticos de enforcement
+
+Se produjo `AUDITORIA_BACKEND.md` (9 secciones, en la raíz del repo) y luego se ejecutó el paquete de fixes críticos de seguridad, cada uno con su test:
+
+| Fix | Problema | Solución | Archivo:línea |
+|-----|----------|----------|---------------|
+| 1 | Usuarios anónimos recibían el análisis PRO completo en `GET /predictions/{id}` (solo se truncaba cuando existía `current_user_id`) | El recorte se aplica por defecto a CUALQUIER solicitante que no sea PRO efectivo (anónimo, Free, PRO expirado → mismo payload recortado: `ev_analysis[:10]`, `bet_builder=[]`); solo PRO efectivo recibe el payload completo | `predictions.py:115-126` |
+| 2 | `POST /tickets/generate` servía respuestas cacheadas sin pasar por el límite diario de 2/día | El chequeo de límite (`cache.increment` + `if count > 2 → 403`) se movió ANTES del lookup de caché — repetir la misma request con el límite alcanzado da 403, no el resultado cacheado | `tickets.py:367-390` |
+| 3A | `POST /tickets/save` anónimo sin límite server-side | Límite de 5 guardados/día por IP vía Redis (misma estrategia que generación anónima) | `tickets.py:73-85` |
+| 3B | `POST /tickets/claim` no verificaba el tope de 5 Free | Política de **claim parcial**: se reclaman solo los tickets que entren en el cupo (5 - actuales) y el resto queda sin reclamar, informado en `message`; PRO sin límite; 0 slots → 403 | `tickets.py:136-171` |
+| 4A | `_log_stub()` imprimía el JWT de reset (válido 30 min) en logs | Email enmascarado (`ve***@domain.com`) sin link; link solo si `EMAIL_STUB_SHOW_LINK=true` (nunca por default) | `auth_service.py:110-125` |
+| 4B | Startup logueaba `DATABASE_URL[:80]` (podía incluir credenciales) | Nueva `_sanitize_db_url()` parsea la URL y loguea solo `scheme://host/dbname` | `config.py:12-21,164` |
+| 5 | `POST /matches/sync/{league_id}` y `/sync-all` públicos | Ambos protegidos con `Depends(require_admin_key)` (X-Admin-Key); si `ADMIN_API_KEY` está vacía → 503 | `matches.py:11,222,281` |
+| 6 | `POST /tickets/save` aceptaba `stake_amount` de usuarios no-PRO (vía indirecta a movimientos de bankroll) | `stake_amount` se ignora silenciosamente (se guarda `None`) si el usuario no es PRO efectivo; el ticket se guarda igual | `tickets.py:88-90` |
+
+### 2. Confirmación de mayoría de edad (registro)
+
+El frontend ya exigía el checkbox 18+; el backend no tenía dónde persistirlo:
+- `schemas/auth.py`: `age_confirmed: bool` en `UserCreate` con `model_validator` — `False`/ausente → `400` ("Debés confirmar que sos mayor de 18 años").
+- `models/user.py`: columna `age_confirmed_at: DateTime(timezone=True) nullable` (timestamp, mejor evidencia que un booleano).
+- `routes/v1/auth.py`: al registrar, `age_confirmed_at = datetime.now(timezone.utc)`.
+- Migración `migrations/018_add_age_confirmation.sql` (Postgres); SQLite dev por `create_all`.
+
+### 3. `refund_eligible` en GET /subscriptions/me
+
+El frontend no tenía cómo calcular la ventana de reembolso de 7 días:
+- `schemas/subscription.py`: `refund_eligible: bool = False` en `SubscriptionTrialResponse`.
+- `routes/v1/subscriptions.py`: constante compartida `REFUND_WINDOW_DAYS = 7` (se reutiliza en `/refund`, sin duplicar el número) + `_compute_refund_eligibility()` — `True` solo si hay transacción inicial APPROVED con ≤7 días y status no es trial/cancelled/refund_requested.
+
+### 4. Migraciones aplicadas a Supabase
+
+Verificación de migraciones locales vs. la BD (proyecto `sruhpmucytkaksdtkrsi`): se detectó que las migraciones 014-017 se aplicaron por fuera del registro de migraciones de Supabase, y que **faltaban** `016 (stake_amount)` y `018 (age_confirmed_at)`:
+- Aplicada `add_age_confirmation` → `users.age_confirmed_at TIMESTAMPTZ` ✓
+- Aplicada `add_stake_amount_saved_tickets` → `saved_tickets.stake_amount DOUBLE PRECISION` + índice único parcial en `bankroll_movements(ticket_id)` ✓
+- Confirmado vía `information_schema` que ambas columnas existen.
+
+### 5. Tests
+
+- Nuevo `tests/test_security_fixes.py` (33 tests): Fix 1-6 + edad mínima (rechazo `False`/ausente, aceptación `True`, registro persiste `age_confirmed_at`).
+- 4 tests de refund eligibility en `tests/test_subscriptions.py` (3 días → true, 10 días → false, trial → false, refund_requested → false).
+- Suite completa: **192 passed** en 26s. Comando: `pytest` desde la raíz.
+
+### 6. Archivos modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `apps/api/routes/v1/predictions.py` | Fix 1 — truncamiento unificado para no-PRO |
+| `apps/api/routes/v1/tickets.py` | Fixes 2, 3A, 3B, 6 — límite antes de caché, save anónimo por IP, claim parcial, stake ignorado |
+| `apps/api/routes/v1/matches.py` | Fix 5 — sync protegidos con admin key |
+| `apps/api/services/auth_service.py` | Fix 4A — stub sin JWT, email enmascarado |
+| `apps/api/config.py` | Fix 4B — `_sanitize_db_url`, setting `EMAIL_STUB_SHOW_LINK` |
+| `apps/api/schemas/auth.py` | `age_confirmed` con validación |
+| `apps/api/models/user.py` | Columna `age_confirmed_at` |
+| `apps/api/routes/v1/auth.py` | Seteo de `age_confirmed_at` en registro |
+| `apps/api/schemas/subscription.py` | `refund_eligible` en respuesta |
+| `apps/api/routes/v1/subscriptions.py` | `REFUND_WINDOW_DAYS` + `_compute_refund_eligibility` |
+| `apps/api/migrations/018_add_age_confirmation.sql` | Nuevo — ALTER TABLE users |
+| `tests/test_security_fixes.py` | Nuevo — 33 tests |
+| `tests/test_subscriptions.py` | +4 tests de refund eligibility |
+
+### 7. Nota sobre el contrato de `/tickets/claim` (claim parcial)
+
+Respuesta en los 3 escenarios (schema `ClaimTicketsResponse`: `claimed_count: int`, `claimed_ticket_ids: list[int]`, `message: str`):
+- **Cupo completo:** `{"claimed_count": 3, "claimed_ticket_ids": [101,102,103], "message": "3 boletos anónimos reclamados para la cuenta."}` — sin cambios respecto al comportamiento anterior.
+- **Claim parcial (Free con cupo M < N):** `{"claimed_count": 2, "claimed_ticket_ids": [201,202], "message": "2 boletos reclamados. 3 restantes no pudieron reclamarse (límite de 5 en plan gratuito)."}` — status **200**, sin campo nuevo de no reclamados (el frontend los deriva restando `claimed_ticket_ids` de los enviados).
+- **PRO:** sin límite, `message` genérico. 0 slots → **403**. `claimed_ticket_ids` mantiene el mismo nombre/formato que el fix anterior de claim mixto.

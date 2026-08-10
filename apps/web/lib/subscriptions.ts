@@ -16,10 +16,12 @@ export interface Subscription {
   id: number
   plan: SubscriptionPlan
   status: SubscriptionStatus
+  created_at?: string | null
   current_period_end: string
   trial_ends_at?: string | null
   recurrence_enabled?: boolean | null
   last_transaction?: LastSubscriptionTransaction | null
+  refund_eligible: boolean
 }
 
 export interface ActivationResponse extends Subscription {
@@ -61,4 +63,8 @@ export async function activateSubscription(
 
 export async function cancelSubscription(): Promise<ApiResult<Subscription>> {
   return apiFetch<Subscription>(`${API_BASE}/api/v1/subscriptions/cancel`, { method: 'POST' })
+}
+
+export async function requestRefund(): Promise<ApiResult<Subscription>> {
+  return apiFetch<Subscription>(`${API_BASE}/api/v1/subscriptions/refund`, { method: 'POST' })
 }

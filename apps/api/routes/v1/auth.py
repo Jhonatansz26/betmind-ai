@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -61,6 +62,7 @@ async def register(
         full_name=user_in.full_name,
         is_active=True,
         is_pro=False,
+        age_confirmed_at=datetime.now(timezone.utc),
     )
     session.add(user)
     await session.flush()   # populate user.id without committing

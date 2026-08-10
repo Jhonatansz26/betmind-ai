@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from apps.api.config import settings
-from apps.api.dependencies import get_async_session
+from apps.api.dependencies import get_async_session, require_admin_key
 from apps.api.models.match import Match
 from apps.api.models.league import League
 from apps.api.models.team import Team
@@ -218,6 +218,7 @@ async def sync_league_matches(
     season: int = datetime.now().year,
     last_matches: int = 50,
     db: AsyncSession = Depends(get_async_session),
+    _admin: str = Depends(require_admin_key),
 ):
     """
     Sincroniza datos de una liga desde API-Football.
@@ -276,6 +277,7 @@ async def sync_league_matches(
 async def sync_all_target_leagues(
     season: int = datetime.now().year,
     db: AsyncSession = Depends(get_async_session),
+    _admin: str = Depends(require_admin_key),
 ):
     """
     Sincroniza todas las ligas objetivo: Premier League, LaLiga, Liga BetPlay.

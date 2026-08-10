@@ -13,6 +13,7 @@ import {
   activateSubscription,
   cancelSubscription,
   fetchSubscription,
+  requestRefund,
   refreshAuthSession,
   startSubscriptionTrial,
   type Subscription,
@@ -24,7 +25,7 @@ import { cn } from '@/lib/utils'
 const COMPARISON_ROWS = [
   ['Boletos generados', '2 por día (perfil EDGE)', 'Ilimitados, 3 perfiles'],
   ['Boletos guardados', '5 simultáneos', 'Ilimitados'],
-  ['Mercados por partido', '10 de 56', 'Los 56 completos'],
+  ['Mercados por partido', '10 mercados', 'Catálogo completo'],
   ['Bet Builder', '—', '✅'],
   ['Cartelera, 1X2, Resumen, H2H', '✅', '✅'],
 ] as const
@@ -69,6 +70,8 @@ export default function PlansPage() {
   const [pageError, setPageError] = React.useState<string | null>(null)
   const [cancelOpen, setCancelOpen] = React.useState(false)
   const [cancelLoading, setCancelLoading] = React.useState(false)
+  const [refundOpen, setRefundOpen] = React.useState(false)
+  const [refundLoading, setRefundLoading] = React.useState(false)
   const autoTrialStarted = React.useRef(false)
   const autoActivationOpened = React.useRef(false)
 
@@ -231,7 +234,24 @@ export default function PlansPage() {
     toast.success(`Tu suscripción fue cancelada. Vas a mantener acceso PRO hasta el ${formatDate(result.data.current_period_end)}.`)
   }
 
+  async function handleRefund() {
+    setRefundLoading(true)
+    setPageError(null)
+    const result = await requestRefund()
+    setRefundLoading(false)
+    if (!result.ok) {
+      setPageError(result.error.message)
+      return
+    }
+    setSubscription(result.data)
+    setRefundOpen(false)
+    refreshAuthSession()
+    await refresh()
+    toast.success('Tu acceso PRO fue revocado de inmediato. El reembolso del dinero se procesa por separado y no es instantáneo.')
+  }
+
   const isActive = subscription?.status === 'active'
+  const refundEligible = subscription?.refund_eligible ?? false
   const activationBusy = paymentState === 'submitting' || paymentState === 'polling'
 
   return (
@@ -250,7 +270,7 @@ export default function PlansPage() {
           </div>
         )}
 
-        {user && subscription && <SubscriptionStatusCard subscription={subscription} onCancel={() => setCancelOpen(true)} />}
+         {user && subscription && <SubscriptionStatusCard subscription={subscription} onCancel={() => setCancelOpen(true)} onRefund={() => setRefundOpen(true)} refundEligible={refundEligible} />}
 
         <section aria-label="Planes BetMind PRO" className="grid gap-4 md:grid-cols-2">
           <PlanCard
@@ -327,11 +347,26 @@ export default function PlansPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Solicitar reembolso?</DialogTitle>
+            <DialogDescription>
+              Esta acción revoca tu acceso PRO de inmediato. La solicitud de devolución del dinero se procesa por separado y puede tardar; no es un reembolso instantáneo.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button type="button" onClick={() => setRefundOpen(false)} disabled={refundLoading} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border px-3 text-xs font-semibold text-foreground transition-colors hover:bg-surface disabled:opacity-50">Volver</button>
+            <button type="button" onClick={() => void handleRefund()} disabled={refundLoading} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-negative px-3 text-xs font-semibold text-white transition-[transform,opacity] duration-150 hover:opacity-90 active:scale-[0.98] disabled:opacity-50">{refundLoading ? 'Solicitando…' : 'Sí, solicitar reembolso'}</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   )
 }
 
-function SubscriptionStatusCard({ subscription, onCancel }: { subscription: Subscription; onCancel: () => void }) {
+function SubscriptionStatusCard({ subscription, onCancel, onRefund, refundEligible }: { subscription: Subscription; onCancel: () => void; onRefund: () => void; refundEligible: boolean }) {
   const isTrial = subscription.status === 'trial'
   const periodLabel = isTrial ? 'Fin de la prueba' : 'Próxima renovación / fin de período'
   return (
@@ -345,7 +380,10 @@ function SubscriptionStatusCard({ subscription, onCancel }: { subscription: Subs
             <p className="mt-1 text-sm text-muted-foreground">{periodLabel}: {formatDate(isTrial ? subscription.trial_ends_at : subscription.current_period_end)}</p>
           </div>
         </div>
-        {subscription.status === 'active' && <button type="button" onClick={onCancel} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-negative/30 px-3 text-xs font-semibold text-negative transition-colors hover:bg-negative/10">Cancelar suscripción</button>}
+        {subscription.status === 'active' && <div className="flex flex-wrap gap-2">
+          {refundEligible && <button type="button" onClick={onRefund} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-negative/30 px-3 text-xs font-semibold text-negative transition-colors hover:bg-negative/10">Solicitar reembolso</button>}
+          <button type="button" onClick={onCancel} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border px-3 text-xs font-semibold text-muted-foreground transition-colors hover:bg-surface hover:text-foreground">Cancelar suscripción</button>
+        </div>}
       </div>
     </section>
   )

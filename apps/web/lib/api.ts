@@ -277,7 +277,7 @@ export async function fetchTickets(
     body.league_keys = leagueKeys
   }
   if (selectionCount) body.selection_count = selectionCount
-  if (markets?.length) body.markets = markets
+  if (markets !== undefined) body.markets = markets
 
   const result = await apiFetch<BackendResponse>(url.toString(), {
     method: 'POST',
@@ -660,6 +660,7 @@ interface BackendPrediction {
     combined_odds: number
     combined_probability: number
   }>
+  total_markets: number
 }
 
 export interface EnrichedMatch extends Match {
@@ -702,6 +703,7 @@ export interface EnrichedMatch extends Match {
     combined_odds: number
     combined_probability: number
   }>
+  totalMarkets: number
 }
 
 export interface MatchFormRecord {
@@ -776,6 +778,7 @@ function mapBackendPrediction(raw: BackendPrediction, baseMatch: Match): Enriche
       data_completeness_score: raw.tactical_analysis.data_completeness_score,
     } : null,
     betBuilder: raw.bet_builder ?? [],
+    totalMarkets: raw.total_markets,
   }
 }
 
@@ -800,6 +803,7 @@ export async function fetchMatchPrediction(matchId: string): Promise<ApiResult<E
         evAnalysis: [], confidenceScore: 0, riskLevel: 'MEDIUM',
         tacticalNarrative: '', tacticalHeadline: '', llmModelUsed: 'none',
         tacticalAnalysis: null, betBuilder: [],
+        totalMarkets: 0,
       },
     }
   }

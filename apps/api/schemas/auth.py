@@ -3,13 +3,20 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     full_name: Optional[str] = None
+    age_confirmed: bool = False
+
+    @model_validator(mode="after")
+    def check_age_confirmed(self) -> "UserCreate":
+        if not self.age_confirmed:
+            raise ValueError("Debés confirmar que sos mayor de 18 años.")
+        return self
 
 
 class UserLogin(BaseModel):
