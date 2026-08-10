@@ -7,6 +7,7 @@ from apps.api.models.referee_profile import RefereeProfile
 from apps.api.models.league import League
 from apps.api.models.match import Match
 from apps.api.models.prediction import Prediction
+from apps.api.models.prediction_outcome import PredictionOutcome
 from apps.api.models.tactical_analysis import TacticalAnalysis
 from apps.api.models.team import Team
 from apps.api.models.user import User
@@ -16,6 +17,6 @@ from apps.api.models.subscription import Subscription, SubscriptionTransaction
 __all__ = [
     "Base", "TimestampMixin", "Bankroll", "BankrollMovement", "BookmakerOdd",
     "MatchEvent", "MatchAdvancedStats", "RefereeProfile", "League", "Match",
-    "Prediction", "TacticalAnalysis", "Team", "User", "SavedTicket",
+    "Prediction", "PredictionOutcome", "TacticalAnalysis", "Team", "User", "SavedTicket",
     "Subscription", "SubscriptionTransaction",
 ]

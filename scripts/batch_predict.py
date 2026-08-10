@@ -4,7 +4,9 @@ Batch prediction script — 5-capas de resiliencia para predicciones.
 Capa 1: Motor Poisson (siempre calcula, nunca depende de LLM)
 Capa 2: Cascada Groq -> Gemini -> Fallback Sintético
 Capa 3: Prompts optimizados (max 400 tokens, JSON estricto)
-Capa 4: Idempotencia (omitir partidos ya analizados)
+Capa 4: Idempotencia sobre EV (omitir solo partidos con análisis táctico válido
+        Y predicción con expected_value calculado; si la predicción quedó sin EV,
+        ej. primera corrida sin cuotas, se recomputa al aparecer cuotas)
 Capa 5: Lotes de 5 con delay de 2s entre lotes
 
 Usage:
@@ -91,10 +93,9 @@ def _deduped_matches(matches: list) -> list:
     return deduped
 
 
-async def _has_narrative(session, match_id: int) -> bool:
-    """Capa 4: verifica si el partido ya tiene análisis táctico no-nulo."""
+async def _has_valid_tactical_narrative(session, match_id: int) -> bool:
+    """Capa 4: verifica si el partido ya tiene análisis táctico LLM válido (no fallback)."""
     from sqlalchemy import select
-    from apps.api.models.prediction import Prediction
     from apps.api.models.tactical_analysis import TacticalAnalysis as TacticalAnalysisModel
 
     tactical_stmt = (
@@ -107,16 +108,42 @@ async def _has_narrative(session, match_id: int) -> bool:
         .limit(1)
     )
     tactical_result = await session.execute(tactical_stmt)
-    if tactical_result.first() is not None:
-        return True
+    return tactical_result.first() is not None
+
+
+async def _has_predictions_with_ev(session, match_id: int) -> bool:
+    """
+    Capa 4: verifica si el partido ya tiene una predicción persistida con AL MENOS
+    un mercado con expected_value no nulo en markets_json. Una fila sin EV
+    (ej: generada en una corrida sin cuotas sincronizadas) NO cuenta como
+    analizada: debe recomputarse cuando haya cuotas disponibles.
+    """
+    import json
+
+    from sqlalchemy import select
+    from apps.api.models.prediction import Prediction
 
     pred_stmt = (
-        select(Prediction.id)
+        select(Prediction.markets_json)
         .where(Prediction.match_id == match_id)
         .limit(1)
     )
     pred_result = await session.execute(pred_stmt)
-    return pred_result.first() is not None
+    row = pred_result.first()
+    if row is None or row.markets_json is None:
+        return False
+
+    try:
+        markets = json.loads(row.markets_json)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(markets, list):
+        return False
+
+    return any(
+        isinstance(m, dict) and m.get("expected_value") is not None
+        for m in markets
+    )
 
 
 async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool = False) -> dict:
@@ -220,7 +247,23 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
                         away_name = match.away_team.name if match.away_team else "?"
                         league_name = match.league.name if match.league else "?"
 
-                        if not force and include_tactical and await _has_narrative(session, match.id):
+                        match_odds_rows = odds_grouped.get(match.id, [])
+                        odds_available = bool(match_odds_rows)
+
+                        # Capa 4: idempotencia sobre EV. Se saltea solo si el partido
+                        # está completo (análisis táctico válido Y predicción con EV),
+                        # o si no hay cuotas para poder recalcular el EV perdido.
+                        tactical_valid = (
+                            not force
+                            and include_tactical
+                            and await _has_valid_tactical_narrative(session, match.id)
+                        )
+                        predictions_have_ev = (
+                            not force
+                            and await _has_predictions_with_ev(session, match.id)
+                        )
+
+                        if tactical_valid and (predictions_have_ev or not odds_available):
                             stats["skipped"] += 1
                             logger.info(
                                 "[%d/%d] SKIP %s vs %s (%s) — ya analizado",
@@ -228,16 +271,19 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
                             )
                             continue
 
-                        match_odds_rows = odds_grouped.get(match.id, [])
+                        # Si la predicción quedó persistida sin EV (primera corrida sin
+                        # cuotas) y ahora hay cuotas, SIEMPRE se recomputa la parte
+                        # cuantitativa; pero no se regastan tokens del análisis táctico
+                        # LLM si ya existe uno válido.
+                        include_tactical_analysis = include_tactical and not tactical_valid
+
                         odds_input = None
                         if match_odds_rows:
+                            # odds_map trae TODOS los mercados del partido
+                            # (1X2, goles, BTTS, córneres, tarjetas, remates);
+                            # OddsInput.from_market_dict los mapea todos.
                             odds_map = {o.market_name: o.odds_value for o in match_odds_rows}
-                            odds_input = OddsInput(
-                                home_win=odds_map.get("1X2_HOME"),
-                                draw=odds_map.get("1X2_DRAW"),
-                                away_win=odds_map.get("1X2_AWAY"),
-                                over_2_5=odds_map.get("OVER_2_5"),
-                            )
+                            odds_input = OddsInput.from_market_dict(odds_map)
 
                         match_time = match.match_date.strftime("%Y-%m-%d %H:%M") if match.match_date else "?"
 
@@ -249,7 +295,7 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
                         prediction = await orchestrator.get_prediction(
                             match_id=match.id,
                             odds=odds_input,
-                            include_tactical_analysis=include_tactical,
+                            include_tactical_analysis=include_tactical_analysis,
                         )
 
                         stats["success"] += 1

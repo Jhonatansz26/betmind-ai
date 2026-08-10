@@ -5,7 +5,6 @@ from apps.api.engine.kelly import (
     calculate_kelly_percentage,
     get_staking_suggestion,
     MAX_KELLY_STAKE,
-    MIN_KELLY_STAKE,
 )
 from apps.api.engine.ticket_builder import (
     _is_high_variance_league,
@@ -22,18 +21,28 @@ from betmind_ml.schemas.prediction_output import MarketProbability, PredictionVe
 class TestQuarterKelly:
     def test_stake_is_bounded_by_institutional_limits(self):
         assert calculate_quarter_kelly(0.90, 8.0) == MAX_KELLY_STAKE
-        assert calculate_quarter_kelly(0.501, 2.01) >= MIN_KELLY_STAKE
         assert calculate_quarter_kelly(0.90, 8.0) <= 0.02
 
-    def test_ev_threshold_is_single_half_percent_contract(self):
-        assert EV_POSITIVE_THRESHOLD == 0.005
+    def test_stake_below_minimum_is_not_forced_up(self):
+        # Kelly real ~0.17% < MIN_KELLY_STAKE (0.25%): ya no se infla al piso,
+        # ahora devuelve 0.0 (edge demasiado chico para apostar).
+        assert calculate_quarter_kelly(0.501, 2.01) == 0.0
+
+    def test_stake_above_minimum_passes_through(self):
+        # p=0.54, odds=1.90 -> quarter kelly = 0.0072 > MIN -> sin inflar.
+        assert calculate_quarter_kelly(0.54, 1.90) == 0.0072
+
+    def test_ev_threshold_is_three_percent_temporal_default(self):
+        # Umbral temporal conservador (3%), sin backtest todavía — sujeto a
+        # recalibración cuando el loop de evaluación tenga suficientes datos.
+        assert EV_POSITIVE_THRESHOLD == 0.03
 
     def test_fair_probability_never_falls_back_to_raw_implied_probability(self):
         assert _compute_fair_probability("BTTS_YES", 1.80, {}) is None
         assert calculate_ev_metrics(0.60, 1.80, {}, "BTTS_YES") == (None, None, None)
 
-    def test_ev_threshold_accepts_exact_half_percent(self):
-        market = MarketProbability(market_name="OVER_2_5", our_probability=0.5025)
+    def test_ev_threshold_accepts_exact_three_percent(self):
+        market = MarketProbability(market_name="OVER_2_5", our_probability=0.515)
         enriched = enrich_market_with_ev(market, 2.0, fair_implied_prob=0.5)
         assert enriched.expected_value == EV_POSITIVE_THRESHOLD
         assert enriched.verdict is PredictionVerdict.POSITIVE_EV

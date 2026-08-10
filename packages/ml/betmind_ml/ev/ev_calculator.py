@@ -9,8 +9,10 @@ FUNDAMENTO MATEMÁTICO:
     Edge = P_real - P_implicita
          = P_real - (1 / cuota)
 
-    Si EV >= 0.005 (0.5% de margen) → apuesta con valor real
-    Si EV > 0 pero < 0.005 → zona gris
+    Si EV >= 0.03 (3% de margen) → apuesta con valor real
+        (umbral temporal conservador sin backtest todavía; ver
+        EV_POSITIVE_THRESHOLD en config.py — sujeto a recalibración)
+    Si EV > 0 pero < 0.03 → zona gris
     Si EV < -0.10 → evitar activamente
 
 NOTA SOBRE EL MARGEN DEL BOOKMAKER (overround):
@@ -87,6 +89,18 @@ def _compute_fair_probability(
         opposite = "BTTS_NO"
     elif market_name == "BTTS_NO":
         opposite = "BTTS_YES"
+    else:
+        # Familias con prefijo de mercado (córneres, tarjetas, remates):
+        # "CORNERS_OVER_8_5" -> opuesto "CORNERS_UNDER_8_5". El OVER_/UNDER_
+        # no está al inicio del nombre, así que se busca el marcador.
+        for marker in ("OVER_", "UNDER_"):
+            idx = market_name.find(marker)
+            if idx > 0:
+                swapped = "UNDER_" if marker == "OVER_" else "OVER_"
+                opposite = (
+                    market_name[:idx] + swapped + market_name[idx + len(marker):]
+                )
+                break
 
     if opposite:
         opposite_odds = odds_dict.get(opposite)
@@ -136,8 +150,8 @@ def enrich_market_with_ev(
 
     ev = (market.our_probability * bookmaker_odds) - 1.0
     # Normalize the binary floating-point result before classifying the edge.
-    # This keeps the inclusive 0.5% boundary stable for values such as
-    # ``0.5025 * 2.0 - 1.0`` that can evaluate just below 0.005 in Python.
+    # This keeps the inclusive 3% boundary stable for values such as
+    # ``0.515 * 2.0 - 1.0`` that can evaluate just below 0.03 in Python.
     ev_for_verdict = round(ev, 6)
 
     if ev_for_verdict >= EV_POSITIVE_THRESHOLD:

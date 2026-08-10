@@ -13,12 +13,20 @@ Mercados implementados:
     - Tarjetas: Over/Under 3.5, 4.5, 5.5 (Poisson + MTI)
     - Remates a Puerta: Over/Under 6.5, 7.5, 8.5, 9.5 (Poisson)
     - Marcador exacto más probable
+
+Córneres, tarjetas y remates se personalizan por partido con los promedios
+reales del equipo (home_*_avg / away_*_avg, decay 0.85, pasados por el
+orquestador desde get_team_stats_averages). Cuando un equipo no tiene
+historial, esos promedios caen al promedio de liga hardcodeado
+(CORNERS_LEAGUE_AVG / CARDS_LINE_BY_LEAGUE / SHOTS_OT_LEAGUE_AVG) como
+fallback legítimo — ya NO es el único camino de cálculo.
 """
 import logging
 import math
 
 from scipy.stats import nbinom, poisson as scipy_poisson
 
+from betmind_ml.config import CARDS_LINE_BY_LEAGUE
 from betmind_ml.schemas.prediction_output import MarketProbability, PredictionVerdict
 
 logger = logging.getLogger(__name__)
@@ -34,14 +42,8 @@ CORNERS_LEAGUE_AVG: dict[str, float] = {
     "default": 9.5,
 }
 
-CARDS_LINE_BY_LEAGUE: dict[str, float] = {
-    "liga_betplay": 5.5, "liga_profesional_arg": 5.5, "serie_a_bra": 5.0,
-    "liga_mx": 4.5, "primera_chile": 5.0, "liga_pro_ecu": 5.0,
-    "liga_1_peru": 5.0, "premier_league": 3.5, "laliga": 4.0,
-    "bundesliga": 3.5, "serie_a": 4.0, "mls": 4.0,
-    "allsvenskan": 3.5, "superliga_den": 3.5, "super_league_sui": 3.5,
-    "default": 4.0,
-}
+# CARDS_LINE_BY_LEAGUE se importa desde betmind_ml.config (única fuente de
+# verdad) — incluye la clave "default" usada como fallback de ligas sin línea.
 
 SHOTS_OT_LEAGUE_AVG: dict[str, float] = {
     "premier_league": 9.2, "laliga": 8.4, "bundesliga": 9.6,

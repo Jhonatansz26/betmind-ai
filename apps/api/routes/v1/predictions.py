@@ -100,12 +100,9 @@ async def get_match_prediction(
             odds_service = OddsService(session)
             db_odds = await odds_service.get_odds_for_match(match_id)
             if db_odds:
-                odds_input = OddsInput(
-                    home_win=db_odds.get("1X2_HOME"),
-                    draw=db_odds.get("1X2_DRAW"),
-                    away_win=db_odds.get("1X2_AWAY"),
-                    over_2_5=db_odds.get("OVER_2_5"),
-                )
+                # db_odds trae todos los mercados sincronizados (1X2, goles,
+                # BTTS, córneres, tarjetas, remates) — se mapean todos.
+                odds_input = OddsInput.from_market_dict(db_odds)
         except Exception:
             pass
 

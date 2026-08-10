@@ -38,6 +38,7 @@ from apps.api.services.subscription_service import effective_pro, is_effectively
 from apps.api.models.user import User
 from betmind_ml.ev.ev_calculator import calculate_ev_metrics
 from betmind_ml.config import EV_POSITIVE_THRESHOLD
+from betmind_ml.models.poisson_engine import build_score_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +359,24 @@ def _prediction_rows(
             markets = _stored_market_rows(match, odds_map)
             if not markets:
                 continue
+            prediction = match.predictions[0] if match.predictions else None
+
+            # Matriz conjunta de goles reconstruida desde los lambdas
+            # persistidos (build_score_matrix = misma matriz que usó el
+            # pipeline). Se pasa al builder de tickets para calcular el EV
+            # real del parlay con la dependencia entre mercados del mismo partido.
+            score_matrix = None
+            if prediction is not None and prediction.lambda_home is not None and prediction.lambda_away is not None:
+                try:
+                    score_matrix = build_score_matrix(
+                        prediction.lambda_home, prediction.lambda_away
+                    ).matrix
+                except Exception:
+                    logger.warning(
+                        "No se pudo reconstruir score_matrix para match_id=%s",
+                        match.id, exc_info=True,
+                    )
+
             rows.append({
                 "match_id": match.id,
                 "home_team": match.home_team.name,
@@ -371,9 +390,10 @@ def _prediction_rows(
                     None,
                 ),
                 "match_time_cot": _format_cot_time(match.match_date),
-                "xg_home": getattr(match.predictions[0], "lambda_home", None),
-                "xg_away": getattr(match.predictions[0], "lambda_away", None),
-                "reasoning": getattr(match.predictions[0], "reasoning", None),
+                "xg_home": getattr(prediction, "lambda_home", None) if prediction else None,
+                "xg_away": getattr(prediction, "lambda_away", None) if prediction else None,
+                "reasoning": getattr(prediction, "reasoning", None) if prediction else None,
+                "score_matrix": score_matrix,
                 "markets": markets,
             })
         except Exception:

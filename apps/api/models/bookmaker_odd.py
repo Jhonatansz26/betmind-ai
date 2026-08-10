@@ -18,6 +18,15 @@ class BookmakerOdd(TimestampMixin, Base):
     market_name: Mapped[str] = mapped_column(String(50), nullable=False)
     bookmaker_name: Mapped[str] = mapped_column(String(100), nullable=False, default="api_football")
     odds_value: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Línea de apertura verdadera: se escribe UNA sola vez en el primer insert
+    # de (match_id, market_name, bookmaker_name). Los upserts posteriores solo
+    # actualizan odds_value — nunca estos dos campos.
+    opening_odds_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    opening_odds_captured_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     external_fixture_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     fetched_at: Mapped[datetime] = mapped_column(

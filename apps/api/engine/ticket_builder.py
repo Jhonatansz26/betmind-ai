@@ -127,6 +127,115 @@ def calculate_average_ev(legs: list[TicketLegSchema]) -> float:
     return round(sum(leg.expected_value for leg in legs) / len(legs), 4)
 
 
+def _parse_goals_threshold(value: str) -> float | None:
+    """Convierte un sufijo de mercado de goles ('2_5') a umbral numérico (2.5)."""
+    try:
+        return float(value.replace("_", "."))
+    except ValueError:
+        return None
+
+
+def _score_matrix_market_condition(market_name: str):
+    """
+    Devuelve la condición (goles_local i, goles_visitante j) -> bool que un
+    mercado impone sobre las celdas de la matriz conjunta de goles, o None si
+    el mercado NO es derivable de esa matriz (córneres, tarjetas, remates).
+
+    Mercados cubiertos (mismos que market_calculator.py calcula desde la
+    matriz de score): 1X2, Over/Under de goles, BTTS, Double Chance y DNB.
+    """
+    name = market_name.strip().upper()
+
+    conditions = {
+        "1X2_HOME": lambda i, j: i > j,
+        "1X2_DRAW": lambda i, j: i == j,
+        "1X2_AWAY": lambda i, j: i < j,
+        "BTTS_YES": lambda i, j: i >= 1 and j >= 1,
+        "BTTS_NO": lambda i, j: i == 0 or j == 0,
+        "DOUBLE_1X": lambda i, j: i >= j,
+        "DOUBLE_X2": lambda i, j: i <= j,
+        "DOUBLE_12": lambda i, j: i != j,
+        "DNB_HOME": lambda i, j: i > j,
+        "DNB_AWAY": lambda i, j: i < j,
+    }
+    if name in conditions:
+        return conditions[name]
+
+    if name.startswith("OVER_"):
+        threshold = _parse_goals_threshold(name[len("OVER_"):])
+        if threshold is not None:
+            return lambda i, j, t=threshold: i + j > t
+    if name.startswith("UNDER_"):
+        threshold = _parse_goals_threshold(name[len("UNDER_"):])
+        if threshold is not None:
+            return lambda i, j, t=threshold: i + j <= t
+
+    return None
+
+
+def calculate_true_combined_probability(
+    legs: list[TicketLegSchema],
+    match_score_matrices: dict[int, list[list[float]]],
+) -> float:
+    """
+    Probabilidad real de que TODAS las patas ganen juntas (P del parlay).
+
+    Patas del MISMO partido derivables de la matriz conjunta de goles
+    (1X2, OVER_/UNDER_, BTTS, DOUBLE_, DNB) se evalúan en conjunto: se
+    recorren las celdas [i][j] de la matriz de score y se suman las
+    probabilidades donde TODAS sus condiciones se cumplen simultáneamente
+    (ej. 1X2_HOME + OVER_1_5 = celdas con i>j Y i+j>1.5), capturando la
+    dependencia real entre mercados del mismo partido.
+
+    TODO(iteración futura): las patas restantes se multiplican como
+    INDEPENDIENTES — patas de partidos distintos, y córneres/tarjetas/remates
+    del mismo partido. Asumir independencia entre córneres/tarjetas/remates y
+    goles es una simplificación conocida y aceptable para MVP: no son
+    completamente independientes en la realidad, pero sus distribuciones
+    separadas no alcanzan para la conjunta sin un modelo más completo.
+
+    Args:
+        legs: patas seleccionadas del boleto.
+        match_score_matrices: {match_id: matrix} con matrix[i][j] =
+            P(local marca i goles, visitante marca j goles).
+
+    Returns:
+        Probabilidad conjunta del boleto (0..1).
+    """
+    if not legs:
+        return 0.0
+
+    total_prob = 1.0
+    for match_id in {leg.match_id for leg in legs}:
+        match_legs = [leg for leg in legs if leg.match_id == match_id]
+        matrix = match_score_matrices.get(match_id)
+
+        matrix_legs = [
+            leg for leg in match_legs
+            if matrix is not None
+            and _score_matrix_market_condition(leg.market_name) is not None
+        ]
+        matrix_leg_ids = {id(leg) for leg in matrix_legs}
+        independent_legs = [leg for leg in match_legs if id(leg) not in matrix_leg_ids]
+
+        if matrix_legs:
+            conditions = [
+                _score_matrix_market_condition(leg.market_name)
+                for leg in matrix_legs
+            ]
+            joint_prob = 0.0
+            for i, row in enumerate(matrix):
+                for j, cell_prob in enumerate(row):
+                    if all(cond(i, j) for cond in conditions):
+                        joint_prob += cell_prob
+            total_prob *= joint_prob
+
+        for leg in independent_legs:
+            total_prob *= leg.our_probability
+
+    return round(total_prob, 6)
+
+
 def swap_ticket_leg(ticket: GeneratedTicket, leg_index: int) -> GeneratedTicket:
     """Replace one leg from the prevalidated pool and recalculate ticket metrics."""
     if not 0 <= leg_index < len(ticket.legs) or not ticket.replacement_candidates:
@@ -412,11 +521,21 @@ def build_ticket_for_mode(
     if len(selected) > 1 and not (target_min <= combined <= target_max):
         return None
 
-    avg_ev = calculate_average_ev(selected)
+    match_score_matrices: dict[int, list[list[float]]] = {
+        pred["match_id"]: pred["score_matrix"]
+        for pred in available_predictions
+        if pred.get("score_matrix") is not None
+    }
+
+    # EV real del parlay: P(todas las patas juntas) * cuota_combinada - 1.
+    # La probabilidad conjunta usa la matriz de score para patas del mismo
+    # partido y asume independencia en el resto (ver calculate_true_combined_probability).
+    combined_prob = calculate_true_combined_probability(selected, match_score_matrices)
+    real_ev = round(combined_prob * combined - 1, 4)
     corr_bonus = get_correlation_bonus(selected_market_names)
     combined_kelly = _calculate_combined_kelly(selected, config["max_ticket_exposure"])
     base_confidence = min(
-        round(avg_ev * 400 + corr_bonus * 20 + len(selected) * 5), 95
+        max(round(real_ev * 400 + corr_bonus * 20 + len(selected) * 5), 0), 95
     )
 
     correlation_status = "positive" if corr_bonus > 0.5 else "independent"
@@ -432,16 +551,16 @@ def build_ticket_for_mode(
         mode_label=_build_mode_label(mode),
         legs=selected,
         combined_odds=combined,
-        average_ev=avg_ev,
+        average_ev=real_ev,
         kelly_stake=combined_kelly,
         confidence_score=base_confidence,
         correlation_validated=True,
         tactical_summary=(
-            f"{len(selected)} selecciones con +EV promedio {avg_ev*100:.1f}%. "
+            f"{len(selected)} selecciones con EV combinado real {real_ev*100:.1f}%. "
             f"Correlación: {correlation_status}."
         ),
-        pros=_build_pros(mode, selected, avg_ev, combined),
-        cons=_build_cons(selected, avg_ev, combined),
+        pros=_build_pros(mode, selected, real_ev, combined),
+        cons=_build_cons(selected, real_ev, combined),
         staking_suggestion=staking,
         replacement_candidates=[
             candidate for candidate in candidates

@@ -16,6 +16,7 @@ from apps.api.models.league import League
 from apps.api.models.prediction import Prediction
 from apps.api.services.team_normalizer import canonical_team_name, team_name_similarity
 from apps.api.core.exceptions import MatchNotFoundException
+from betmind_ml.config import DECAY_FACTOR, STRENGTH_WINDOW
 
 logger = logging.getLogger(__name__)
 
@@ -113,12 +114,90 @@ class MatchRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_team_stats_averages(
+        self,
+        team_id: int,
+        window: int = STRENGTH_WINDOW,
+    ) -> dict[str, float | None]:
+        """
+        Promedios ponderados (decay 0.85, ventana STRENGTH_WINDOW) de córneres,
+        tarjetas amarillas y remates a puerta de un equipo, calculados SOLO
+        sobre partidos FINISHED con esos campos no nulos.
+
+        Misma convención que strength_calculator: peso[k] = DECAY_FACTOR ** k
+        con k=0 el partido más reciente. Si una métrica no tiene ningún valor
+        válido (SofaScore/ESPN no trajeron el dato), retorna None para esa
+        métrica y el pipeline cae al promedio de liga (fallback de hoy).
+        """
+        stmt = (
+            select(Match)
+            .where(
+                and_(
+                    (Match.home_team_id == team_id) | (Match.away_team_id == team_id),
+                    Match.status == "FINISHED",
+                    Match.regulation_time_only == True,  # noqa: E712
+                )
+            )
+            .order_by(Match.match_date.desc())
+            .limit(window)
+        )
+        result = await self._session.execute(stmt)
+        matches = list(result.scalars().all())
+
+        corners_for: list[float] = []
+        corners_against: list[float] = []
+        yellows: list[float] = []
+        sot_for: list[float] = []
+        sot_against: list[float] = []
+
+        for match in matches:
+            is_home = match.home_team_id == team_id
+            if is_home:
+                if match.home_corners is not None:
+                    corners_for.append(float(match.home_corners))
+                if match.away_corners is not None:
+                    corners_against.append(float(match.away_corners))
+                if match.home_yellows is not None:
+                    yellows.append(float(match.home_yellows))
+                if match.home_shots_on_target is not None:
+                    sot_for.append(float(match.home_shots_on_target))
+                if match.away_shots_on_target is not None:
+                    sot_against.append(float(match.away_shots_on_target))
+            else:
+                if match.away_corners is not None:
+                    corners_for.append(float(match.away_corners))
+                if match.home_corners is not None:
+                    corners_against.append(float(match.home_corners))
+                if match.away_yellows is not None:
+                    yellows.append(float(match.away_yellows))
+                if match.away_shots_on_target is not None:
+                    sot_for.append(float(match.away_shots_on_target))
+                if match.home_shots_on_target is not None:
+                    sot_against.append(float(match.home_shots_on_target))
+
+        def _weighted(values: list[float]) -> float | None:
+            if not values:
+                return None
+            weights = [DECAY_FACTOR ** k for k in range(len(values))]
+            weight_total = sum(weights)
+            if weight_total <= 0:
+                return None
+            weighted_sum = sum(v * w for v, w in zip(values, weights))
+            return round(weighted_sum / weight_total, 4)
+
+        return {
+            "corners_for_avg": _weighted(corners_for),
+            "corners_against_avg": _weighted(corners_against),
+            "yellows_avg": _weighted(yellows),
+            "shots_on_target_for_avg": _weighted(sot_for),
+            "shots_on_target_against_avg": _weighted(sot_against),
+        }
+
     async def get_h2h(
         self,
         home_team_id: int,
         away_team_id: int,
-        last_n: int = 6,
-    ) -> list[Match]:
+        last_n: int = 6,    ) -> list[Match]:
         """Head-to-Head: enfrentamientos directos entre dos equipos."""
         stmt = (
             select(Match)

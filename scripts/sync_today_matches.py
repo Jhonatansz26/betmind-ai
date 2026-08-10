@@ -21,7 +21,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy import select, and_
 
 from apps.api.config import settings, FEATURED_LEAGUES, KNOCKOUT_CUP_LEAGUE_IDS
-from apps.api.services.scrapers.match_fixture_scraper import MatchFixtureScraper
+# TODO(espn-sync): MatchFixtureScraper fue ELIMINADO del repo (commit d160ffc).
+# Investigación del reemplazo:
+#   - EspnSummaryScraper (apps/api/services/scrapers/espn_summary_scraper.py,
+#     Plan B) solo expone fetch_fixtures_for_date(slug, date) -> list[RawFixture]
+#     para UNA liga; NO tiene fetch_all_leagues_fixtures(days_ahead) ni devuelve
+#     dicts con home_team/away_team/external_id como espera este script.
+#   - DeterministicLeagueScraperProvider (providers/deterministic_scraper_provider.py)
+#     es un wrapper fino y SOLO cubre ligas colombianas (col.1, col.copa), no las
+#     ~25 ligas de FEATURED_LEAGUES.
+#   - El mapeo league_key -> slug de ESPN vivía dentro del archivo eliminado.
+# Ninguno cubre exactamente la misma función => no se reimplementa acá. Mientras
+# tanto el sync ESPN queda desactivado y el script continúa con el fallback
+# API-Football (sección "SINCRONIZACION DE MARCADORES") para no matar el cron.
+# from apps.api.services.scrapers.match_fixture_scraper import MatchFixtureScraper
 from apps.api.services.odds_service import OddsService
 from apps.api.services.api_football import APIFootballService
 from apps.api.repositories.league_repository import LeagueRepository
@@ -144,8 +157,6 @@ async def sync_upcoming_matches():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    scraper = MatchFixtureScraper()
-
     total_leagues = 0
     total_teams = 0
     total_matches = 0
@@ -157,11 +168,26 @@ async def sync_upcoming_matches():
     tomorrow_cot = today_cot + timedelta(days=1)
 
     print(f"Consultando ESPN Scoreboard API para {today_cot} y {tomorrow_cot}...")
-    all_fixtures = await scraper.fetch_all_leagues_fixtures(days_ahead=1)
+
+    # TODO(espn-sync): MatchFixtureScraper fue eliminado y no hay reemplazo
+    # directo (ver comentario del import arriba). Se loguea el error y se
+    # continúa con el fallback API-Football para que el cron nunca muera sin
+    # procesar los datos que ya existan en la DB.
+    all_fixtures: dict[str, list] = {}
+    logger.error(
+        "MatchFixtureScraper no disponible (fue eliminado del repo): se omite "
+        "la sincronización ESPN de fixtures y de cuotas. Continuando solo con "
+        "el fallback API-Football para no interrumpir el pipeline."
+    )
 
     odds_to_sync: list[dict] = []
 
     for league_key, league_info in FEATURED_LEAGUES.items():
+        # Sin scraper ESPN (all_fixtures vacío) no hay fixtures que procesar:
+        # se omite el loop de ligas y se sigue con el fallback API-Football.
+        if not all_fixtures:
+            break
+
         league_name = league_info["name"]
         country = league_info["country"]
         external_league_id = league_info["api_football_id"]
@@ -307,6 +333,11 @@ async def sync_upcoming_matches():
             error_msg = f"Odds sync: {str(e)}"
             errors.append(error_msg)
             logger.error(f"Error sincronizando cuotas: {e}")
+    elif not all_fixtures:
+        logger.error(
+            "Sin cuotas a sincronizar: la cola de odds depende de los fixtures "
+            "de MatchFixtureScraper (eliminado). Se omite el sync de cuotas."
+        )
 
     # ── API-Football score fallback + missing leagues ──────────────────
     print("\n" + "=" * 80)

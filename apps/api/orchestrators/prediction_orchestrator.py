@@ -295,23 +295,45 @@ class PredictionOrchestrator:
         )
 
     def _build_bookmaker_odds(self, odds: OddsInput | None) -> dict[str, float] | None:
-        """Convierte las cuotas de la API al formato del pipeline ML."""
+        """Convierte las cuotas de la API al formato del pipeline ML.
+
+        Usa OddsInput.FIELD_TO_MARKET (única fuente de verdad): cubre 1X2,
+        Over/Under de goles, BTTS y las líneas más usadas de córneres,
+        tarjetas y remates a puerta.
+        """
         if odds is None:
             return None
         result = {}
-        if odds.home_win:
-            result["1X2_HOME"] = odds.home_win
-        if odds.draw:
-            result["1X2_DRAW"] = odds.draw
-        if odds.away_win:
-            result["1X2_AWAY"] = odds.away_win
-        if odds.over_2_5:
-            result["OVER_2_5"] = odds.over_2_5
+        for field, market_name in OddsInput.FIELD_TO_MARKET.items():
+            value = getattr(odds, field)
+            if value is not None:
+                result[market_name] = value
         return result if result else None
 
     def _get_league_key(self, league) -> str:
         """Obtiene la clave de la liga para el pipeline ML."""
         return LEAGUE_EXTERNAL_ID_TO_KEY.get(league.external_id, "default")
+
+    def _get_referee_strictness(self, match: Match, league_key: str) -> float:
+        """
+        Índice de estrictez del árbitro asignado, desde el perfil real de
+        SofaScore (referee_profiles): amarillas por partido del árbitro /
+        línea base de tarjetas de la liga. 1.0 = promedio de la liga,
+        > 1.0 = más estricto. Solo si el perfil es confiable (>= 5 partidos,
+        mismo umbral que is_reliable del schema); sin árbitro o sin datos
+        vuelve a 1.0.
+        """
+        referee = match.referee
+        if referee is None or referee.matches_count < 5 or referee.yellow_cards_avg <= 0:
+            return 1.0
+
+        from betmind_ml.models.market_calculator import CARDS_LINE_BY_LEAGUE
+
+        league_line = CARDS_LINE_BY_LEAGUE.get(league_key, CARDS_LINE_BY_LEAGUE["default"])
+        if not league_line or league_line <= 0:
+            return 1.0
+        strictness = referee.yellow_cards_avg / league_line
+        return round(min(max(strictness, 0.5), 1.5), 4)
 
     async def _persist_tactical_analysis(
         self,
@@ -536,6 +558,19 @@ class PredictionOrchestrator:
         # Construir cuotas
         bookmaker_odds = self._build_bookmaker_odds(odds)
 
+        # Promedios reales del equipo (córneres, amarillas, remates a puerta)
+        # sobre partidos FINISHED con decay 0.85 — personalizan los mercados
+        # auxiliares en vez de caer siempre al promedio de liga hardcodeado.
+        # Métricas sin datos vuelven None y el pipeline usa el fallback de liga.
+        home_stats = await self._match_repo.get_team_stats_averages(match.home_team_id)
+        away_stats = await self._match_repo.get_team_stats_averages(match.away_team_id)
+
+        league_key = self._get_league_key(match.league)
+        referee_strictness = self._get_referee_strictness(match, league_key)
+        # cards_mti queda en 1.0: el contexto del partido (derby/descenso/
+        # duelo por clasificación) no está persistido por partido en la DB.
+        cards_mti = 1.0
+
         # Ejecutar solo Fase 3
         quant_output = run_prediction(
             match_id=match.id,
@@ -544,13 +579,25 @@ class PredictionOrchestrator:
             away_team_id=match.away_team_id,
             away_team_name=match.away_team.name,
             league_id=match.league_id,
-            league_key=self._get_league_key(match.league),
+            league_key=league_key,
             season=match.match_date.year,
             home_matches=home_matches,
             away_matches=away_matches,
             all_league_matches=all_league_matches,
             h2h_matches=h2h_matches,
             bookmaker_odds=bookmaker_odds,
+            home_corners_for_avg=home_stats["corners_for_avg"],
+            away_corners_for_avg=away_stats["corners_for_avg"],
+            home_corners_against_avg=home_stats["corners_against_avg"],
+            away_corners_against_avg=away_stats["corners_against_avg"],
+            home_yellows_avg=home_stats["yellows_avg"] or 0.0,
+            away_yellows_avg=away_stats["yellows_avg"] or 0.0,
+            cards_mti=cards_mti,
+            referee_strictness=referee_strictness,
+            home_sot_for_avg=home_stats["shots_on_target_for_avg"],
+            away_sot_for_avg=away_stats["shots_on_target_for_avg"],
+            home_sot_against_avg=home_stats["shots_on_target_against_avg"],
+            away_sot_against_avg=away_stats["shots_on_target_against_avg"],
         )
         
         return quant_output

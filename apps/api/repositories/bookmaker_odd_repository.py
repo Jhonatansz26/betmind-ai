@@ -36,6 +36,9 @@ class BookmakerOddsRepository:
             existing = result.scalar_one_or_none()
 
             if existing:
+                # UPDATE in-place: se refresca la cuota actual pero NUNCA se
+                # toca la línea de apertura (opening_odds_value y
+                # opening_odds_captured_at se escriben una sola vez, al crear).
                 existing.odds_value = odds_value
                 existing.external_fixture_id = external_fixture_id
                 existing.fetched_at = datetime.now(timezone.utc)
@@ -46,6 +49,9 @@ class BookmakerOddsRepository:
                     bookmaker_name=bookmaker_name,
                     odds_value=odds_value,
                     external_fixture_id=external_fixture_id,
+                    # Línea de apertura verdadera: solo el primer insert.
+                    opening_odds_value=odds_value,
+                    opening_odds_captured_at=datetime.now(timezone.utc),
                 )
                 self._session.add(new_odd)
             count += 1
@@ -65,6 +71,30 @@ class BookmakerOddsRepository:
                 and_(
                     BookmakerOdd.match_id == match_id,
                     BookmakerOdd.bookmaker_name == bookmaker_name,
+                )
+            )
+            .order_by(BookmakerOdd.market_name)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_opening_odds_for_match(
+        self,
+        match_id: int,
+        bookmaker_name: str = "api_football",
+    ) -> list[BookmakerOdd]:
+        """
+        Línea de apertura verdadera por mercado: filas con
+        opening_odds_value no nulo (primer sync de cada (match_id, market)).
+        Filas creadas antes de la migración 021 quedan con NULL y se omiten.
+        """
+        stmt = (
+            select(BookmakerOdd)
+            .where(
+                and_(
+                    BookmakerOdd.match_id == match_id,
+                    BookmakerOdd.bookmaker_name == bookmaker_name,
+                    BookmakerOdd.opening_odds_value.is_not(None),
                 )
             )
             .order_by(BookmakerOdd.market_name)

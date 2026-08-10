@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -146,10 +147,21 @@ class OddsService:
         """
         Sincroniza cuotas desde API-Football para una lista de partidos.
 
+        Los partidos se agrupan por (league_external_id, temporada) y por cada
+        grupo se hace UNA llamada a get_fixtures_by_date_range() acotada a esa
+        liga y al rango de fechas del grupo (antes: una llamada global por
+        fecha que traía TODOS los fixtures del mundo). El matching de equipos
+        queda restringido a fixtures de la MISMA liga, reduciendo el riesgo de
+        fuzzy-match cruzado entre ligas que contaminaría el EV con la cuota de
+        otro partido.
+
+        Partidos sin `league_external_id`: fallback al comportamiento viejo
+        (get_fixtures_by_date global por fecha) SOLO para esos partidos.
+
         Args:
             matches: Lista de dicts con keys:
                 - match_id: int (internal DB id)
-                - league_external_id: int (API-Football league id)
+                - league_external_id: int (API-Football league id; opcional)
                 - match_date_str: str (YYYY-MM-DD)
                 - home_team_name: str
                 - away_team_name: str
@@ -159,24 +171,81 @@ class OddsService:
         """
         total_odds = 0
 
-        dates: set[str] = set()
+        # 1. Agrupar por (liga, temporada). La temporada es el año del partido
+        #    (misma convención que el resto del código: match_date.year).
+        #    Partidos sin league_external_id caen en el fallback global.
+        league_groups: dict[tuple[int, int], list[dict[str, Any]]] = {}
+        fallback_matches: list[dict[str, Any]] = []
         for m in matches:
-            dates.add(m["match_date_str"])
+            league_id = m.get("league_external_id")
+            if not league_id:
+                fallback_matches.append(m)
+                continue
+            date_str = m.get("match_date_str") or ""
+            year = date_str[:4] if len(date_str) >= 4 and date_str[:4].isdigit() else None
+            season = int(year) if year else datetime.now().year
+            league_groups.setdefault((int(league_id), season), []).append(m)
 
-        all_fixtures: list[dict[str, Any]] = []
-        for date_str in sorted(dates):
+        if fallback_matches:
+            logger.warning(
+                f"{len(fallback_matches)} partido(s) sin league_external_id: "
+                "se usarán fixtures globales por fecha (fallback, con riesgo "
+                "de fuzzy-match cruzado entre ligas)"
+            )
+
+        # 2. Una llamada acotada por (liga, temporada) con el rango de fechas
+        #    del grupo. El fixture map resultante solo contiene equipos de ESA liga.
+        league_fixture_maps: dict[int, dict[str, dict[str, Any]]] = {}
+        for (league_id, season), group in league_groups.items():
+            dates = sorted({m["match_date_str"] for m in group if m.get("match_date_str")})
+            if not dates:
+                continue
+            try:
+                fixtures = await self._api.get_fixtures_by_date_range(
+                    league=league_id,
+                    season=season,
+                    date_from=dates[0],
+                    date_to=dates[-1],
+                )
+                league_fixture_maps.setdefault(league_id, {}).update(
+                    self._build_fixture_map(fixtures)
+                )
+                logger.info(
+                    f"Fetched {len(fixtures)} fixtures for league {league_id} "
+                    f"season {season} ({dates[0]} -> {dates[-1]})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error fetching fixtures for league {league_id} season {season}: {e}"
+                )
+                continue
+
+        # 3. Fallback por fecha global (comportamiento viejo) para los partidos
+        #    sin league_external_id.
+        fallback_fixture_map: dict[str, dict[str, Any]] = {}
+        fallback_dates = sorted({
+            m["match_date_str"] for m in fallback_matches if m.get("match_date_str")
+        })
+        for date_str in fallback_dates:
             try:
                 fixtures = await self._api.get_fixtures_by_date(date_str=date_str)
-                all_fixtures.extend(fixtures)
-                logger.info(f"Fetched {len(fixtures)} fixtures from API-Football for {date_str}")
+                fallback_fixture_map.update(self._build_fixture_map(fixtures))
+                logger.info(
+                    f"Fetched {len(fixtures)} fixtures from API-Football for "
+                    f"{date_str} (fallback sin liga)"
+                )
             except Exception as e:
                 logger.error(f"Error fetching fixtures for {date_str}: {e}")
                 continue
 
-        fixture_map = self._build_fixture_map(all_fixtures)
-
         for match in matches:
             try:
+                league_id = match.get("league_external_id")
+                fixture_map = (
+                    league_fixture_maps.get(int(league_id), {})
+                    if league_id
+                    else fallback_fixture_map
+                )
                 api_fixture = self._find_api_fixture(match, fixture_map)
                 if not api_fixture:
                     logger.debug(
@@ -246,8 +315,44 @@ class OddsService:
 
         for fmap_key, fixture in fixture_map.items():
             fmap_home, fmap_away = fmap_key.split("|")
-            if self._fuzzy_team_match(home, fmap_home) and self._fuzzy_team_match(away, fmap_away):
+            home_strength = self._team_match_strength(home, fmap_home)
+            away_strength = self._team_match_strength(away, fmap_away)
+            if home_strength is not None and away_strength is not None:
+                if "tokens" in (home_strength, away_strength):
+                    # Fallback más débil del matching (solape de tokens): dejar
+                    # rastro auditable por si el match cruzó de liga o partido.
+                    logger.warning(
+                        "Match difuso por fallback de TOKENS: local '%s' vs '%s' (%s), "
+                        "visitante '%s' vs '%s' (%s) — verificar liga/partido",
+                        match["home_team_name"], fmap_home, home_strength,
+                        match["away_team_name"], fmap_away, away_strength,
+                    )
                 return fixture
+
+        return None
+
+    @staticmethod
+    def _team_match_strength(name_a: str, name_b: str) -> str | None:
+        """
+        Fuerza del match entre dos nombres de equipo.
+
+        Returns:
+            "exact"     → igualdad exacta (normalizada)
+            "substring" → uno contiene al otro
+            "tokens"    → solape de tokens (fallback MÁS débil)
+            None        → no hay match
+        """
+        if name_a == name_b:
+            return "exact"
+        if name_a in name_b or name_b in name_a:
+            return "substring"
+
+        tokens_a = set(name_a.replace(".", "").replace("-", " ").split())
+        tokens_b = set(name_b.replace(".", "").replace("-", " ").split())
+        if len(tokens_a) >= 2 and len(tokens_b) >= 2:
+            overlap = tokens_a & tokens_b
+            if len(overlap) >= min(len(tokens_a), len(tokens_b)) - 1:
+                return "tokens"
 
         return None
 
@@ -257,19 +362,7 @@ class OddsService:
         Matching difuso de nombres de equipos.
         Retorna True si los nombres son suficientemente similares.
         """
-        if name_a == name_b:
-            return True
-        if name_a in name_b or name_b in name_a:
-            return True
-
-        tokens_a = set(name_a.replace(".", "").replace("-", " ").split())
-        tokens_b = set(name_b.replace(".", "").replace("-", " ").split())
-        if len(tokens_a) >= 2 and len(tokens_b) >= 2:
-            overlap = tokens_a & tokens_b
-            if len(overlap) >= min(len(tokens_a), len(tokens_b)) - 1:
-                return True
-
-        return False
+        return OddsService._team_match_strength(name_a, name_b) is not None
 
     async def _fetch_and_parse_odds(
         self, fixture_id: int
@@ -407,8 +500,27 @@ class OddsService:
         return result
 
     async def get_opening_odds_for_match(self, match_id: int) -> dict[str, float]:
-        """Línea de apertura persistida en bookmaker_odds (dict {market: odds})."""
-        return await self.get_odds_for_match(match_id)
+        """
+        Línea de apertura verdadera (dict {market: odds}).
+
+        Lee opening_odds_value — el primer valor persistido de cada mercado,
+        no el último sync (odds_value puede haber sido sobrescrita muchas
+        veces desde que se creó la fila). Mercados sin apertura capturada
+        (NULL, incluye filas pre-migración 021) se omiten.
+        """
+        odds = await self._odds_repo.get_opening_odds_for_match(match_id)
+        result = {}
+        for odd in odds:
+            if odd.opening_odds_value is None:
+                continue
+            if odd.market_name == "1X2_DRAW" and odd.opening_odds_value < 2.10:
+                logger.debug(
+                    "Filtered anomalous opening draw odds @ %s for match %s",
+                    odd.opening_odds_value, match_id,
+                )
+                continue
+            result[odd.market_name] = odd.opening_odds_value
+        return result
 
     async def fetch_closing_odds_for_match(
         self,

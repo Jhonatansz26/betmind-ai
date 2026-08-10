@@ -76,8 +76,14 @@ FORM_WEIGHT = 0.25
 
 # ── Umbrales de EV ────────────────────────────────────────────────────────────
 
-# EV mínimo para clasificar como POSITIVE_EV (5% de margen conservador)
-EV_POSITIVE_THRESHOLD = 0.005
+# EV mínimo para clasificar como POSITIVE_EV (3% de margen conservador)
+#
+# NOTA: este valor es una estimación conservadora SIN backtest todavía.
+# Antes era 0.005 (0.5%) — apenas por encima de breakeven, lo que dejaba pasar
+# mercados marginales; se subió a 0.03 (3%) como default temporal.
+# Sujeto a recalibración cuando el loop de evaluación de predicciones (P1-3,
+# prediction_outcomes + reporte Brier/calibración) tenga suficientes datos.
+EV_POSITIVE_THRESHOLD = 0.03
 
 # EV por debajo del cual clasificamos como AVOID
 EV_AVOID_THRESHOLD = -0.10
@@ -108,6 +114,9 @@ CARDS_LINE_BY_LEAGUE: dict[str, float] = {
     "allsvenskan": 3.5,
     "superliga_den": 3.5,
     "super_league_sui": 3.5,
+    # Fallback usado por market_calculator (calculate_cards_markets) para
+    # ligas sin línea conocida — el orquestador pasa league_key="default".
+    "default": 4.0,
 }
 
 
