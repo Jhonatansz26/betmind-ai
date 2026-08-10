@@ -137,17 +137,24 @@ export async function fetchMe(): Promise<UserMe | null> {
   } catch {
     return null
   }
-  const res = await fetch(`${API_BASE}/api/v1/users/me`, {
-    headers: { Authorization: `Bearer ${access_token}` },
-  })
-  if (res.status === 401) {
-    clearToken() // expired or invalid — clear session immediately
-    return null
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 12_000)
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/users/me`, {
+      headers: { Authorization: `Bearer ${access_token}` },
+      signal: controller.signal,
+    })
+    if (res.status === 401) {
+      clearToken() // expired or invalid — clear session immediately
+      return null
+    }
+    if (!res.ok) throw await parseApiError(res)
+    const data = await res.json() as UserMe
+    setCachedIsPro(data.is_pro)
+    return data
+  } finally {
+    clearTimeout(timeout)
   }
-  if (!res.ok) throw await parseApiError(res)
-  const data = await res.json() as UserMe
-  setCachedIsPro(data.is_pro)
-  return data
 }
 
 /* ── Pro Status Cache ────────────────────────────────────────────────── */

@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Awaitable, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +13,7 @@ from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.team_repository import TeamRepository
 from apps.api.services.api_football import APIFootballService
 from apps.api.services.providers.base_provider import DataProviderPort, RawFixture, RawTeam
-from apps.api.services.providers.provider_registry import get_provider_for_league
+from apps.api.services.providers.provider_registry import get_provider, get_provider_for_league
 from apps.api.services.providers.espn_provider import ESPN_LEAGUE_SLUGS
 
 logger = logging.getLogger(__name__)
@@ -81,13 +82,75 @@ class DataIngestionService:
 
         return None, None
 
+    def _resolve_official_chain(self, league_id: int) -> list[tuple[DataProviderPort, str]]:
+        """Plan A: proveedores oficiales en orden (ESPN, football-data.org)."""
+        chain: list[tuple[DataProviderPort, str]] = []
+        if league_id in ESPN_LEAGUE_SLUGS:
+            provider = get_provider("espn")
+            if provider:
+                chain.append((provider, str(league_id)))
+        code = API_FOOTBALL_TO_FOOTBALL_DATA.get(league_id)
+        if code:
+            provider = get_provider("football-data.org")
+            if provider:
+                chain.append((provider, code))
+        return chain
+
+    def _resolve_deterministic_chain(self, league_id: int) -> list[tuple[DataProviderPort, str]]:
+        """Plan B: scraper determinista (ESPN Summary) — cero IA."""
+        provider = get_provider("espn_summary_scraper")
+        return [(provider, str(league_id))] if provider else []
+
+    def _resolve_ai_chain(self, league_id: int) -> list[tuple[DataProviderPort, str]]:
+        """Plan C: Agente IA — SOLO como último recurso."""
+        provider = get_provider("ai_search_agent")
+        if not provider:
+            return []
+        code = "liga_betplay" if league_id == 239 else str(league_id)
+        return [(provider, code)]
+
+    async def _run_cascade(
+        self,
+        league_id: int,
+        factories: list[tuple[str, Callable[[], Awaitable[list]]]],
+    ) -> list:
+        """Ejecuta la cascada en orden estricto; devuelve el primer resultado no vacío."""
+        for name, factory in factories:
+            try:
+                result = await factory()
+            except Exception as exc:  # noqa: BLE001 — un proveedor roto no tumba la cadena
+                logger.error("[cascade] %s failed for league %s: %s", name, league_id, exc)
+                continue
+            if result:
+                logger.info("[cascade] league %s populated by %s (%s items)", league_id, name, len(result))
+                return result
+            logger.warning("[cascade] %s returned empty for league %s; trying next source", name, league_id)
+        return []
+
     async def sync_league(self, external_league_id: int) -> League | None:
-        provider, league_code = self._resolve_provider(external_league_id)
+        factories: list[tuple[str, Callable[[], Awaitable[League | None]]]] = []
+        for provider, league_code in self._resolve_official_chain(external_league_id):
+            factories.append((
+                provider.provider_name,
+                lambda p=provider, c=league_code: self._sync_league_from_provider(p, external_league_id, c),
+            ))
+        factories.append(("api-football", lambda: self._sync_league_from_api_football(external_league_id)))
+        for provider, league_code in self._resolve_deterministic_chain(external_league_id):
+            factories.append((
+                provider.provider_name,
+                lambda p=provider, c=league_code: self._sync_league_from_provider(p, external_league_id, c),
+            ))
+        for provider, league_code in self._resolve_ai_chain(external_league_id):
+            factories.append((
+                provider.provider_name,
+                lambda p=provider, c=league_code: self._sync_league_from_provider(p, external_league_id, c),
+            ))
 
-        if provider and league_code:
-            return await self._sync_league_from_provider(provider, external_league_id, league_code)
-
-        return await self._sync_league_from_api_football(external_league_id)
+        result = await self._run_cascade(external_league_id, factories)
+        if not result:
+            logger.warning("League %s could not be synced by any source", external_league_id)
+            return None
+        return result
 
     async def _sync_league_from_provider(
         self,
@@ -149,12 +212,19 @@ class DataIngestionService:
     async def sync_teams_for_league(
         self, league_id: int, season: int
     ) -> list[Team]:
-        provider, league_code = self._resolve_provider(league_id)
-
-        if provider and league_code:
-            return await self._sync_teams_from_provider(provider, league_id, league_code, season)
-
-        return await self._sync_teams_from_api_football(league_id, season)
+        factories: list[tuple[str, Callable[[], Awaitable[list[Team]]]]] = []
+        for provider, league_code in self._resolve_official_chain(league_id):
+            factories.append((
+                provider.provider_name,
+                lambda p=provider, c=league_code: self._sync_teams_from_provider(p, league_id, c, season),
+            ))
+        factories.append(("api-football", lambda: self._sync_teams_from_api_football(league_id, season)))
+        for provider, league_code in self._resolve_deterministic_chain(league_id) + self._resolve_ai_chain(league_id):
+            factories.append((
+                provider.provider_name,
+                lambda p=provider, c=league_code: self._sync_teams_from_provider(p, league_id, c, season),
+            ))
+        return await self._run_cascade(league_id, factories)
 
     async def _sync_teams_from_provider(
         self,
@@ -218,14 +288,27 @@ class DataIngestionService:
     async def sync_matches_for_league(
         self, league_id: int, season: int, last_n: int = 50
     ) -> list[Match]:
-        provider, league_code = self._resolve_provider(league_id)
-
-        if provider and league_code:
-            return await self._sync_matches_from_provider(
-                provider, league_id, league_code, season, last_n
-            )
-
-        return await self._sync_matches_from_api_football(league_id, season, last_n)
+        factories: list[tuple[str, Callable[[], Awaitable[list[Match]]]]] = []
+        # Plan A — proveedores oficiales (ESPN, football-data.org, API-Football)
+        for provider, league_code in self._resolve_official_chain(league_id):
+            factories.append((
+                provider.provider_name,
+                lambda p=provider, c=league_code: self._sync_matches_from_provider(p, league_id, c, season, last_n),
+            ))
+        factories.append(("api-football", lambda: self._sync_matches_from_api_football(league_id, season, last_n)))
+        # Plan B — scraper determinista (cero IA)
+        for provider, league_code in self._resolve_deterministic_chain(league_id):
+            factories.append((
+                provider.provider_name,
+                lambda p=provider, c=league_code: self._sync_matches_from_provider(p, league_id, c, season, last_n),
+            ))
+        # Plan C — Agente IA SOLO si A y B fallaron
+        for provider, league_code in self._resolve_ai_chain(league_id):
+            factories.append((
+                provider.provider_name,
+                lambda p=provider, c=league_code: self._sync_matches_from_provider(p, league_id, c, season, last_n),
+            ))
+        return await self._run_cascade(league_id, factories)
 
     async def _sync_matches_from_provider(
         self,

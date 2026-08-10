@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
 
 from sqlalchemy import select
 
-from apps.api.config import settings
 from apps.api.db.database import async_session_factory
 from apps.api.models.subscription import Subscription, SubscriptionTransaction
 from apps.api.models.user import User
@@ -38,7 +36,7 @@ async def renew_due_subscriptions() -> dict[str, int]:
         for subscription in subscriptions:
             if subscription.status == "past_due":
                 period_end = as_utc(subscription.current_period_end)
-                if now >= period_end + timedelta(days=settings.SUBSCRIPTION_GRACE_DAYS):
+                if now >= period_end:
                     user_result = await session.execute(
                         select(User).where(User.id == subscription.user_id).with_for_update()
                     )
@@ -88,10 +86,8 @@ async def renew_due_subscriptions() -> dict[str, int]:
             except (WompiAPIError, WompiConfigurationError) as exc:
                 logger.error("Renewal failed for subscription_id=%s: %s", subscription.id, exc)
                 subscription.status = "past_due"
-                user.is_pro = True
-                user.pro_expires_at = max(as_utc(subscription.current_period_end), now) + timedelta(
-                    days=settings.SUBSCRIPTION_GRACE_DAYS
-                )
+                user.is_pro = False
+                user.pro_expires_at = now
                 past_due += 1
                 continue
 

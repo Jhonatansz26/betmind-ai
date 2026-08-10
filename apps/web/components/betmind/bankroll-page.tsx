@@ -70,8 +70,8 @@ function Paywall() {
         </div>
         <p className="mt-6 text-xs font-semibold uppercase tracking-[0.24em] text-brand">BetMind PRO</p>
         <h1 className="mt-3 font-serif text-3xl leading-tight tracking-tight text-foreground sm:text-5xl">Gestioná tu bankroll real con PRO</h1>
-        <p className="mx-auto mt-4 max-w-lg text-sm leading-7 text-muted-foreground">Convertí el % de Kelly en pesos exactos, seguí la evolución de tu capital y elegí tu perfil de riesgo. 7 días gratis.</p>
-        <Link href="/planes" className="mt-7 inline-flex min-h-11 items-center justify-center rounded-xl bg-brand px-5 text-sm font-bold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">Probar PRO gratis →</Link>
+        <p className="mx-auto mt-4 max-w-lg text-sm leading-7 text-muted-foreground">Convertí el % de Kelly en pesos exactos, seguí la evolución de tu capital y elegí tu perfil de riesgo. El cálculo VIP se desbloquea con PRO.</p>
+        <Link href="/planes" className="mt-7 inline-flex min-h-11 items-center justify-center rounded-xl bg-brand px-5 text-sm font-bold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">Desbloquear PRO →</Link>
       </section>
     </div>
   )

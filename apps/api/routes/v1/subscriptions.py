@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
-import logging
 from datetime import timedelta
-from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.config import settings
-from apps.api.db.database import async_session_factory, get_async_session
+from apps.api.db.database import get_async_session
 from apps.api.dependencies import get_current_user_id
 from apps.api.models.subscription import Subscription, SubscriptionTransaction
 from apps.api.models.user import User
@@ -24,7 +19,6 @@ from apps.api.schemas.subscription import (
     LastSubscriptionTransactionResponse,
 )
 from apps.api.services.subscription_service import (
-    apply_transaction_status,
     as_utc,
     effective_pro,
     period_delta,
@@ -38,9 +32,7 @@ from apps.api.services.wompi_service import (
     recurrence_enabled_from_transaction,
 )
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
-webhook_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 REFUND_WINDOW_DAYS = 7
 
@@ -88,7 +80,7 @@ async def _compute_refund_eligibility(subscription_id: int, session: AsyncSessio
     sub = sub_result.scalar_one_or_none()
     if sub is None:
         return False
-    if sub.status in ("trial", "cancelled", "refund_requested"):
+    if sub.status in ("cancelled", "refund_requested"):
         return False
     txn_result = await session.execute(
         select(SubscriptionTransaction)
@@ -116,7 +108,7 @@ async def get_subscription(
         raise HTTPException(status_code=404, detail="El usuario no tiene una suscripción.")
     response = SubscriptionTrialResponse.model_validate(subscription)
     response.last_transaction = await _last_transaction(subscription.id, session)
-    response.refund_eligible = _compute_refund_eligibility(subscription.id, session)
+    response.refund_eligible = await _compute_refund_eligibility(subscription.id, session)
     return response
 
 
@@ -132,47 +124,6 @@ async def get_wompi_tokenization_key(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except WompiAPIError as exc:
         raise _wompi_http_error(exc) from exc
-
-
-@router.post("/trial", response_model=SubscriptionTrialResponse)
-async def start_trial(
-    user_id: int = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_async_session),
-) -> SubscriptionTrialResponse:
-    user = await _get_user(user_id, session)
-    result = await session.execute(
-        select(Subscription).where(Subscription.user_id == user_id).with_for_update()
-    )
-    subscription = result.scalar_one_or_none()
-    now = utc_now()
-
-    if subscription is not None:
-        if subscription.status == "trial" and subscription.trial_ends_at and as_utc(subscription.trial_ends_at) > now:
-            response = SubscriptionTrialResponse.model_validate(subscription)
-            response.last_transaction = await _last_transaction(subscription.id, session)
-            return response
-        if subscription.trial_ends_at is not None or subscription.status in {
-            "active", "pending_payment", "past_due", "refund_requested"
-        }:
-            raise HTTPException(status_code=409, detail="La prueba gratis ya fue utilizada o existe una suscripción.")
-    else:
-        subscription = Subscription(user_id=user_id)
-        session.add(subscription)
-
-    trial_end = now + timedelta(days=7)
-    subscription.plan = "mensual"
-    subscription.status = "trial"
-    subscription.current_period_end = trial_end
-    subscription.trial_ends_at = trial_end
-    subscription.wompi_payment_source_id = None
-    subscription.initial_transaction_id = None
-    subscription.recurrence_enabled = None
-    user.is_pro = True
-    user.pro_expires_at = trial_end
-    await session.commit()
-    response = SubscriptionTrialResponse.model_validate(subscription)
-    response.last_transaction = await _last_transaction(subscription.id, session)
-    return response
 
 
 @router.post(
@@ -322,76 +273,3 @@ async def request_refund(
     # TODO: cuando se confirme el endpoint real de reembolsos de Wompi, automatizar este paso.
     await session.commit()
     return SubscriptionRefundResponse.model_validate(subscription)
-
-
-def _lookup_path(data: dict[str, Any], path: str) -> Any:
-    current: Any = data
-    for segment in path.split("."):
-        if not isinstance(current, dict):
-            return None
-        current = current.get(segment)
-    return current
-
-
-def _valid_event_signature(payload: dict[str, Any], header_checksum: str | None) -> bool:
-    if not settings.WOMPI_EVENTS_SECRET:
-        return False
-    signature = payload.get("signature") or {}
-    properties = signature.get("properties")
-    timestamp = payload.get("timestamp")
-    if not isinstance(properties, list) or timestamp is None:
-        return False
-    event_data = payload.get("data") or {}
-    values = [_lookup_path(event_data, str(path)) for path in properties]
-    raw = "".join("" if value is None else str(value) for value in values)
-    raw += str(timestamp) + settings.WOMPI_EVENTS_SECRET
-    calculated = hashlib.sha256(raw.encode("utf-8")).hexdigest().lower()
-    body_checksum = signature.get("checksum")
-    provided = [value.lower() for value in (header_checksum, body_checksum) if isinstance(value, str)]
-    return bool(provided) and all(hmac.compare_digest(calculated, value) for value in provided)
-
-
-async def process_wompi_event(payload: dict[str, Any]) -> None:
-    if payload.get("event") != "transaction.updated":
-        return
-    transaction_data = ((payload.get("data") or {}).get("transaction") or {})
-    wompi_id = transaction_data.get("id")
-    if not wompi_id:
-        return
-    async with async_session_factory() as session:
-        result = await session.execute(
-            select(SubscriptionTransaction).where(
-                SubscriptionTransaction.wompi_transaction_id == str(wompi_id)
-            )
-        )
-        transaction = result.scalar_one_or_none()
-        if transaction is None:
-            logger.warning("Ignoring Wompi event for unknown transaction_id=%s", wompi_id)
-            return
-        changed = await apply_transaction_status(
-            session,
-            transaction,
-            str(transaction_data.get("status", "")),
-            transaction_data,
-        )
-        if changed:
-            await session.commit()
-
-
-@webhook_router.post("/wompi")
-async def wompi_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks,
-):
-    if not settings.WOMPI_EVENTS_SECRET:
-        raise HTTPException(status_code=503, detail="Wompi events secret is not configured.")
-    try:
-        payload = await request.json()
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid JSON webhook payload.") from exc
-    if not isinstance(payload, dict) or not _valid_event_signature(
-        payload, request.headers.get("X-Event-Checksum")
-    ):
-        raise HTTPException(status_code=400, detail="Invalid Wompi event signature.")
-    background_tasks.add_task(process_wompi_event, payload)
-    return {"status": "accepted"}

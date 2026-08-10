@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Check, CircleAlert, Clock3, CreditCard, Sparkles } from 'lucide-react'
+import { Check, CircleAlert, CreditCard, Loader2, Sparkles } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 
@@ -15,7 +15,6 @@ import {
   fetchSubscription,
   requestRefund,
   refreshAuthSession,
-  startSubscriptionTrial,
   type Subscription,
   type SubscriptionPlan,
 } from '@/lib/subscriptions'
@@ -35,7 +34,7 @@ const PLAN_LABELS: Record<SubscriptionPlan, string> = {
   anual: 'Anual',
 }
 
-type PaymentState = 'idle' | 'submitting' | 'polling' | 'success' | 'rejected' | 'timeout'
+type PaymentState = 'idle' | 'submitting' | 'success' | 'rejected'
 
 function formatDate(value: string | null | undefined) {
   if (!value) return 'sin fecha definida'
@@ -43,20 +42,16 @@ function formatDate(value: string | null | undefined) {
 }
 
 function statusLabel(subscription: Subscription) {
-  if (subscription.status === 'trial') return 'Prueba gratis activa'
   if (subscription.status === 'pending_payment') return 'Pago pendiente de confirmación'
   if (subscription.status === 'active') return 'Suscripción activa'
   if (subscription.status === 'past_due') return 'Pago pendiente'
   if (subscription.status === 'cancelled') return 'Cancelada'
-  return 'Reembolso solicitado'
+  if (subscription.status === 'refund_requested') return 'Reembolso solicitado'
+  return 'Acceso PRO en verificación'
 }
 
 function getErrorMessage(message: string) {
   return message || 'No se pudo completar la operación.'
-}
-
-function wait(milliseconds: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
 
 export default function PlansPage() {
@@ -64,7 +59,6 @@ export default function PlansPage() {
   const { user, isLoading: authLoading, refresh } = useAuthSession()
   const [subscription, setSubscription] = React.useState<Subscription | null>(null)
   const [subscriptionLoading, setSubscriptionLoading] = React.useState(true)
-  const [trialLoading, setTrialLoading] = React.useState(false)
   const [activationPlan, setActivationPlan] = React.useState<SubscriptionPlan | null>(null)
   const [paymentState, setPaymentState] = React.useState<PaymentState>('idle')
   const [pageError, setPageError] = React.useState<string | null>(null)
@@ -72,8 +66,12 @@ export default function PlansPage() {
   const [cancelLoading, setCancelLoading] = React.useState(false)
   const [refundOpen, setRefundOpen] = React.useState(false)
   const [refundLoading, setRefundLoading] = React.useState(false)
-  const autoTrialStarted = React.useRef(false)
   const autoActivationOpened = React.useRef(false)
+  const redirectTimerRef = React.useRef<number | null>(null)
+
+  React.useEffect(() => () => {
+    if (redirectTimerRef.current !== null) window.clearTimeout(redirectTimerRef.current)
+  }, [])
 
   React.useEffect(() => {
     if (authLoading) return
@@ -104,48 +102,12 @@ export default function PlansPage() {
   }, [authLoading, user])
 
   React.useEffect(() => {
-    if (authLoading || !user || autoTrialStarted.current) return
-    const action = new URLSearchParams(window.location.search).get('action')
-    if (action !== 'trial') return
-    autoTrialStarted.current = true
-    void handleStartTrial()
-  }, [authLoading, user])
-
-  React.useEffect(() => {
     if (authLoading || !user || autoActivationOpened.current) return
     const plan = new URLSearchParams(window.location.search).get('activate')
     if (plan !== 'mensual' && plan !== 'anual') return
     autoActivationOpened.current = true
     setActivationPlan(plan)
   }, [authLoading, user])
-
-  function redirectToTrialAfterAuth() {
-    const redirect = encodeURIComponent('/planes?action=trial')
-    router.push(`/cuenta/login?redirect=${redirect}`)
-  }
-
-  async function handleStartTrial() {
-    setPageError(null)
-    if (authLoading) return
-    if (!user) {
-      redirectToTrialAfterAuth()
-      return
-    }
-
-    setTrialLoading(true)
-    const result = await startSubscriptionTrial()
-    if (!result.ok) {
-      setPageError(getErrorMessage(result.error.message))
-      setTrialLoading(false)
-      return
-    }
-
-    setSubscription(result.data)
-    refreshAuthSession()
-    await refresh()
-    toast.success('Tu prueba PRO está activa durante 7 días.')
-    router.push('/')
-  }
 
   function openActivation(plan: SubscriptionPlan) {
     setPageError(null)
@@ -172,50 +134,22 @@ export default function PlansPage() {
     if (!result.ok) {
       setPaymentState('rejected')
       setPageError(getErrorMessage(result.error.message))
+      toast.error(getErrorMessage(result.error.message))
       return
     }
 
     setSubscription(result.data)
-    setPaymentState('polling')
-    await pollPaymentStatus()
-  }
-
-  async function pollPaymentStatus() {
-    const deadline = Date.now() + 30_000
-    while (Date.now() < deadline) {
-      await wait(2_500)
-      const result = await fetchSubscription()
-      if (!result.ok) {
-        setPaymentState('rejected')
-        setPageError(result.error.message)
-        return
-      }
-
-      setSubscription(result.data)
-      if (result.data.status === 'active') {
-        setPaymentState('success')
-        refreshAuthSession()
-        await refresh()
-        toast.success('Tu suscripción PRO ya está activa.')
-        router.push('/')
-        return
-      }
-
-      const transaction = result.data.last_transaction
-      const transactionRejected = transaction && ['DECLINED', 'ERROR', 'VOIDED'].includes(transaction.status)
-      if (result.data.status !== 'pending_payment' || transactionRejected) {
-        setPaymentState('rejected')
-        const message = transaction?.status_message?.trim()
-        const code = transaction?.processor_response_code?.trim()
-        setPageError(message
-          ? `El pago fue rechazado: ${message}${code ? ` (código ${code})` : ''}`
-          : 'Wompi rechazó el pago y no entregó un motivo adicional.')
-        return
-      }
+    // La sesión es best-effort: el pago ya quedó registrado en PENDING y el
+    // webhook de Wompi confirmará la suscripción. Un fallo del refresh (red,
+    // timeout) no debe dejar la UI congelada en "Procesando pago...".
+    try {
+      refreshAuthSession()
+      await refresh()
+    } catch {
+      // Ignorado a propósito: la activación ya fue confirmada por la API.
     }
-
-    setPaymentState('timeout')
-    setPageError('Tu pago está tardando en confirmarse. Revisa /planes más tarde; el estado se actualizará cuando Wompi confirme la operación.')
+    setPaymentState('success')
+    redirectTimerRef.current = window.setTimeout(() => router.push('/'), 2_500)
   }
 
   async function handleCancel() {
@@ -252,7 +186,6 @@ export default function PlansPage() {
 
   const isActive = subscription?.status === 'active'
   const refundEligible = subscription?.refund_eligible ?? false
-  const activationBusy = paymentState === 'submitting' || paymentState === 'polling'
 
   return (
     <AppShell>
@@ -260,7 +193,7 @@ export default function PlansPage() {
         <section className="mx-auto max-w-3xl text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand">BetMind PRO</p>
           <h1 className="mt-4 font-serif text-4xl leading-tight tracking-tight text-foreground sm:text-6xl">Apuesta con la misma información que la casa.</h1>
-          <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-muted-foreground">7 días gratis, sin tarjeta. Cancelá cuando quieras.</p>
+          <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-muted-foreground">Acceso free con límites claros. Desbloqueá el terminal completo cuando estés listo.</p>
         </section>
 
         {pageError && (
@@ -278,10 +211,10 @@ export default function PlansPage() {
             plan="mensual"
             price="COP 29.900 /mes"
             description="Facturación mensual, cancelá cuando quieras."
-            onStart={handleStartTrial}
+            cta="Desbloquear Terminal VIP - COP 29.900/mes"
             onActivate={openActivation}
             subscription={subscription}
-            loading={trialLoading || subscriptionLoading}
+            loading={subscriptionLoading}
           />
           <PlanCard
             recommended
@@ -290,10 +223,10 @@ export default function PlansPage() {
             price="COP 249.900 /año"
             description="Facturación anual, mismo acceso PRO completo."
             detail="equivalente a COP 20.825/mes"
-            onStart={handleStartTrial}
+            cta="Desbloquear VIP Anual - COP 249.900 (Ahorra 2 meses)"
             onActivate={openActivation}
             subscription={subscription}
-            loading={trialLoading || subscriptionLoading}
+            loading={subscriptionLoading}
           />
         </section>
 
@@ -303,26 +236,30 @@ export default function PlansPage() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Activación segura</p>
                 <h2 id="payment-title" className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Activar plan {PLAN_LABELS[activationPlan]}</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">Tu tarjeta se tokeniza directamente con Wompi. El cobro se confirma después de que el banco procese la operación.</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">Los datos de tu tarjeta se capturan en los elementos seguros de Wompi (PCI DSS). El cobro se confirma cuando Wompi procesa la operación.</p>
               </div>
-              {!activationBusy && <button type="button" onClick={() => setActivationPlan(null)} className="text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground">Cerrar</button>}
+              {paymentState === 'idle' && <button type="button" onClick={() => setActivationPlan(null)} className="text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground">Cerrar</button>}
             </div>
 
-            {paymentState === 'polling' || paymentState === 'submitting' ? (
+            {paymentState === 'submitting' ? (
               <div className="flex items-center gap-3 rounded-xl border border-brand/20 bg-brand/5 px-4 py-4 text-sm font-semibold text-foreground">
-                <Clock3 className="size-5 animate-pulse text-brand" aria-hidden="true" />
-                {paymentState === 'submitting' ? 'Registrando tu pago...' : 'Confirmando tu pago...'}
+                <Loader2 className="size-5 animate-spin text-brand" aria-hidden="true" />
+                Procesando pago...
               </div>
-            ) : paymentState === 'timeout' ? (
-              <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-4 text-sm text-foreground">Revisa esta página más tarde para ver el estado final de tu pago.</div>
+            ) : paymentState === 'success' ? (
+              <div className="flex flex-col items-center gap-4 rounded-xl border border-positive/25 bg-positive/5 px-6 py-10 text-center">
+                <Loader2 className="size-6 animate-spin text-brand" aria-hidden="true" />
+                <p className="text-sm font-semibold text-foreground">Transacción en proceso. Tu terminal VIP se activará en breve.</p>
+                <p className="text-xs leading-5 text-muted-foreground">Te redirigimos al dashboard en unos segundos.</p>
+              </div>
             ) : (
-              <WompiCardForm onTokenized={handleTokenizedCard} disabled={paymentState === 'success'} />
+              <WompiCardForm plan={activationPlan} onTokenized={handleTokenizedCard} />
             )}
           </section>
         )}
 
-        {!user && <p className="mx-auto max-w-xl text-center text-xs leading-5 text-subtle">Para activar una suscripción necesitás una cuenta. El trial se inicia después de iniciar sesión o crearla.</p>}
-        <p className="mx-auto max-w-3xl text-center text-xs leading-5 text-subtle">Sin tarjeta durante los 7 días de prueba. Si decidís continuar y no te convence, te devolvemos tu dinero dentro de los primeros 7 días de pago.</p>
+        {!user && <p className="mx-auto max-w-xl text-center text-xs leading-5 text-subtle">Para activar una suscripción necesitás una cuenta. El checkout de Wompi se abre después de iniciar sesión o crearla.</p>}
+        <p className="mx-auto max-w-3xl text-center text-xs leading-5 text-subtle">Sin permanencia. Si te suscribís y no te convence, te devolvemos tu dinero dentro de los primeros 7 días de pago.</p>
 
         <section aria-labelledby="comparison-title" className="flex flex-col gap-4">
           <div className="text-center"><h2 id="comparison-title" className="text-xl font-semibold text-foreground">Todo lo que desbloqueás</h2><p className="mt-1 text-sm text-muted-foreground">Empezá gratis y pasá a PRO cuando quieras más profundidad.</p></div>
@@ -367,8 +304,7 @@ export default function PlansPage() {
 }
 
 function SubscriptionStatusCard({ subscription, onCancel, onRefund, refundEligible }: { subscription: Subscription; onCancel: () => void; onRefund: () => void; refundEligible: boolean }) {
-  const isTrial = subscription.status === 'trial'
-  const periodLabel = isTrial ? 'Fin de la prueba' : 'Próxima renovación / fin de período'
+  const periodLabel = 'Próxima renovación / fin de período'
   return (
     <section aria-labelledby="subscription-status-title" className="rounded-2xl border border-positive/25 bg-positive/5 p-5 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -377,7 +313,7 @@ function SubscriptionStatusCard({ subscription, onCancel, onRefund, refundEligib
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-positive">Tu suscripción</p>
             <h2 id="subscription-status-title" className="mt-1 text-lg font-semibold text-foreground">{statusLabel(subscription)} · {PLAN_LABELS[subscription.plan]}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{periodLabel}: {formatDate(isTrial ? subscription.trial_ends_at : subscription.current_period_end)}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{periodLabel}: {formatDate(subscription.current_period_end)}</p>
           </div>
         </div>
         {subscription.status === 'active' && <div className="flex flex-wrap gap-2">
@@ -389,7 +325,7 @@ function SubscriptionStatusCard({ subscription, onCancel, onRefund, refundEligib
   )
 }
 
-function PlanCard({ title, plan, price, description, detail, recommended = false, onStart, onActivate, subscription, loading }: { title: string; plan: SubscriptionPlan; price: string; description: string; detail?: string; recommended?: boolean; onStart: () => void; onActivate: (plan: SubscriptionPlan) => void; subscription: Subscription | null; loading: boolean }) {
+function PlanCard({ title, plan, price, description, detail, cta, recommended = false, onActivate, subscription, loading }: { title: string; plan: SubscriptionPlan; price: string; description: string; detail?: string; cta: string; recommended?: boolean; onActivate: (plan: SubscriptionPlan) => void; subscription: Subscription | null; loading: boolean }) {
   const isActive = subscription?.status === 'active'
   const isPending = subscription?.status === 'pending_payment'
   return (
@@ -399,8 +335,7 @@ function PlanCard({ title, plan, price, description, detail, recommended = false
       <p className="mt-4 text-2xl font-bold tracking-tight text-foreground">{price}</p>
       {detail && <p className="mt-1 text-xs text-brand">{detail}</p>}
       <p className="mt-3 min-h-10 text-sm leading-6 text-muted-foreground">{description}</p>
-      <button type="button" onClick={onStart} disabled={loading || isActive || isPending} className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-primary-foreground transition-[transform,opacity] duration-150 hover:opacity-90 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50"><Check size={16} aria-hidden="true" /> {isActive ? 'Plan activo' : isPending ? 'Pago pendiente' : 'Empezar prueba gratis'}</button>
-      {!isActive && !isPending && <button type="button" onClick={() => onActivate(plan)} disabled={loading} className="mt-2 inline-flex min-h-10 items-center justify-center rounded-xl border border-border px-4 text-xs font-semibold text-muted-foreground transition-[transform,color] duration-150 hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">{subscription?.status === 'trial' ? `Activar ${title}` : `Pagar ${title} directamente`}</button>}
+      <button type="button" onClick={() => onActivate(plan)} disabled={loading || isActive || isPending} className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-primary-foreground transition-[transform,opacity] duration-150 hover:opacity-90 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50"><Check size={16} aria-hidden="true" /> {isActive ? 'Plan activo' : isPending ? 'Pago pendiente' : cta}</button>
     </article>
   )
 }

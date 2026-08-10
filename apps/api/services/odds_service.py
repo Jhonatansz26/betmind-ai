@@ -406,6 +406,48 @@ class OddsService:
             result[odd.market_name] = odd.odds_value
         return result
 
+    async def get_opening_odds_for_match(self, match_id: int) -> dict[str, float]:
+        """Línea de apertura persistida en bookmaker_odds (dict {market: odds})."""
+        return await self.get_odds_for_match(match_id)
+
+    async def fetch_closing_odds_for_match(
+        self,
+        match: dict[str, Any],
+        dates: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Plan A del CLV: cuotas finales desde API-Football SIN escribir en
+        bookmaker_odds (no debe pisar la línea de apertura).
+
+        Args:
+            match: dict con match_id, league_external_id, match_date_str,
+                   home_team_name, away_team_name (mismo formato que
+                   sync_odds_for_matches).
+            dates: fechas a consultar (default: {match_date_str}).
+
+        Returns:
+            Lista de dicts {market_name, odds_value, external_fixture_id}.
+        """
+        target_dates = dates or {match["match_date_str"]}
+        all_fixtures: list[dict[str, Any]] = []
+        for date_str in sorted(target_dates):
+            try:
+                fixtures = await self._api.get_fixtures_by_date(date_str=date_str)
+                all_fixtures.extend(fixtures)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("CLV: fixtures unavailable for %s: %s", date_str, exc)
+
+        fixture_map = self._build_fixture_map(all_fixtures)
+        api_fixture = self._find_api_fixture(match, fixture_map)
+        if api_fixture is None:
+            return []
+
+        fixture_id = api_fixture["fixture"]["id"]
+        odds_data = await self._fetch_and_parse_odds(fixture_id)
+        for entry in odds_data:
+            entry["external_fixture_id"] = fixture_id
+        return odds_data
+
     async def get_odds_for_matches(self, match_ids: list[int]) -> dict[int, dict[str, float]]:
         """
         Obtiene cuotas almacenadas para múltiples partidos.

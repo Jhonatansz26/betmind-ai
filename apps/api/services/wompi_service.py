@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -52,6 +54,105 @@ def recurrence_enabled_from_transaction(data: dict[str, Any]) -> bool | None:
         if isinstance(value, bool):
             return value
     return None
+
+
+def _lookup_path(data: dict[str, Any], path: str) -> Any:
+    current: Any = data
+    for segment in path.split("."):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(segment)
+    return current
+
+
+def compute_wompi_event_checksum(payload: dict[str, Any], secret: str) -> str | None:
+    """Recompute the Wompi event checksum from the signed properties.
+
+    Wompi v1 signs webhook events by concatenating the values of
+    `signature.properties` (resolved against `data`), the event `timestamp`
+    and the configured `WOMPI_EVENTS_SECRET`, then hashing with SHA-256.
+    Returns None when the payload is missing the pieces required to sign.
+    """
+    signature = payload.get("signature")
+    if not isinstance(signature, dict):
+        return None
+    properties = signature.get("properties")
+    timestamp = payload.get("timestamp")
+    if not isinstance(properties, list) or timestamp is None:
+        return None
+    event_data = payload.get("data") or {}
+    values = [_lookup_path(event_data, str(path)) for path in properties]
+    raw = "".join("" if value is None else str(value) for value in values)
+    raw += str(timestamp) + secret
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest().lower()
+
+
+def is_valid_wompi_event_signature(
+    payload: dict[str, Any],
+    header_checksum: str | None,
+    *,
+    secret: str | None = None,
+) -> bool:
+    """Constant-time validation of the Wompi event signature.
+
+    Accepts the checksum delivered in the `X-Event-Checksum` header, in the
+    body's `signature.checksum`, or both. A missing WOMPI_EVENTS_SECRET makes
+    validation fail closed so events are never trusted by default.
+    """
+    effective_secret = settings.WOMPI_EVENTS_SECRET if secret is None else secret
+    if not effective_secret:
+        return False
+    computed = compute_wompi_event_checksum(payload, effective_secret)
+    if computed is None:
+        return False
+    signature = payload.get("signature") or {}
+    body_checksum = signature.get("checksum")
+    provided = [
+        value.lower()
+        for value in (header_checksum, body_checksum)
+        if isinstance(value, str) and value
+    ]
+    return bool(provided) and all(hmac.compare_digest(computed, value) for value in provided)
+
+
+# Ventana máxima de aceptación de un evento Wompi (segundos).
+WOMPI_EVENT_MAX_AGE_SECONDS = 300
+
+
+def is_wompi_event_fresh(
+    payload: dict[str, Any],
+    *,
+    max_age_seconds: int = WOMPI_EVENT_MAX_AGE_SECONDS,
+    now: float | None = None,
+) -> bool:
+    """Rechaza eventos antiguos interceptados (protección contra replay).
+
+    Compara el `timestamp` del payload (epoch Unix; soporta milisegundos si
+    el valor > 1e12) contra el reloj del servidor. Un evento con
+    |now - timestamp| > max_age_seconds se considera expirado.
+    """
+    raw_timestamp = payload.get("timestamp")
+    if raw_timestamp is None:
+        return False
+    try:
+        event_time = float(str(raw_timestamp))
+    except (TypeError, ValueError):
+        return False
+    if event_time > 1e12:
+        event_time /= 1000.0
+    now_seconds = time.time() if now is None else now
+    return abs(now_seconds - event_time) <= max_age_seconds
+
+
+def extract_wompi_event_transaction(payload: dict[str, Any]) -> dict[str, Any]:
+    """Pull the `transaction` object from a `transaction.updated` event."""
+    if payload.get("event") != "transaction.updated":
+        return {}
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return {}
+    transaction = data.get("transaction")
+    return transaction if isinstance(transaction, dict) else {}
 
 
 class WompiClient:

@@ -7,7 +7,6 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.config import settings
 from apps.api.models.subscription import Subscription, SubscriptionTransaction
 from apps.api.models.user import User
 
@@ -83,20 +82,8 @@ async def apply_transaction_status(
             # payment made with the stored source proves COF worked.
             subscription.recurrence_enabled = True
     elif status in {"DECLINED", "ERROR", "VOIDED"}:
-        if transaction.kind == "renewal":
-            subscription.status = "past_due"
-            grace_end = max(as_utc(subscription.current_period_end), now) + timedelta(
-                days=settings.SUBSCRIPTION_GRACE_DAYS
-            )
-            user.is_pro = True
-            user.pro_expires_at = grace_end
-        elif subscription.trial_ends_at and as_utc(subscription.trial_ends_at) > now:
-            subscription.status = "trial"
-            user.is_pro = True
-            user.pro_expires_at = subscription.trial_ends_at
-        else:
-            subscription.status = "cancelled"
-            user.is_pro = False
-            user.pro_expires_at = now
+        subscription.status = "past_due" if transaction.kind == "renewal" else "cancelled"
+        user.is_pro = False
+        user.pro_expires_at = now
 
     return True

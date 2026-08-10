@@ -1,6 +1,10 @@
 
 python -m uvicorn apps.api.main:app --reload --port 8000
 
+cerrar uvicorn
+taskkill /IM python.exe /F
+
+
 cd apps/web
 npm run dev
 

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from apps.api.models.base import Base, TimestampMixin
@@ -45,6 +46,14 @@ class Match(TimestampMixin, Base):
     # para el MISMO partido real. JSON array de enteros. Alimentado por la
     # deduplicación multi-proveedor (ventana de 2h por pareja de equipos).
     alternate_external_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Monitoreo de CLV (Closing Line Value): cuota de cierre capturada 5-10 min
+    # antes del kickoff y delta contra la línea de apertura (bookmaker_odds).
+    closing_odds: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    clv_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    closing_odds_captured_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     
     league: Mapped["League"] = relationship("League", lazy="noload")
     home_team: Mapped["Team"] = relationship("Team", foreign_keys=[home_team_id], lazy="noload")

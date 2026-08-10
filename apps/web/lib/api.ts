@@ -36,9 +36,10 @@ function getStoredAuthToken(): string | null {
 export async function apiFetch<T>(
   input: RequestInfo | URL,
   init: RequestInit = {},
+  timeoutMs: number = API_TIMEOUT_MS,
 ): Promise<ApiResult<T>> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     const headers = new Headers(init.headers)

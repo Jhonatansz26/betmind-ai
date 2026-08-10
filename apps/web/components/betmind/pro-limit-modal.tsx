@@ -9,7 +9,7 @@ import { PRO_LIMIT_REACHED_EVENT } from '@/lib/subscription'
 const COPY = {
   generations: {
     title: 'Ya generaste tus 2 boletos gratis de hoy',
-    body: 'Con PRO generás boletos ilimitados en los 3 perfiles de riesgo. Empezá con 7 días gratis, sin tarjeta.',
+    body: 'Con PRO generás boletos ilimitados en los 3 perfiles de riesgo. Desbloquealo cuando estés listo.',
     secondary: 'Entendido, vuelvo mañana',
   },
   saved: {
@@ -29,7 +29,7 @@ export function ProLimitModal({ kind, onClose }: { kind: keyof typeof COPY; onCl
         <p className="mt-3 text-sm leading-6 text-muted-foreground">{copy.body}</p>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button type="button" onClick={onClose} className="order-2 min-h-10 rounded-lg border border-border px-4 text-xs font-semibold text-muted-foreground hover:bg-surface-raised sm:order-1">{copy.secondary}</button>
-          <Link href="/planes" onClick={onClose} className="order-1 inline-flex min-h-10 items-center justify-center rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground hover:opacity-90 sm:order-2">Probar PRO gratis →</Link>
+          <Link href="/planes" onClick={onClose} className="order-1 inline-flex min-h-10 items-center justify-center rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground hover:opacity-90 sm:order-2">Desbloquear PRO →</Link>
         </div>
       </section>
     </div>

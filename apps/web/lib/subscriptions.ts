@@ -35,10 +35,6 @@ export function refreshAuthSession() {
   }
 }
 
-export async function startSubscriptionTrial(): Promise<ApiResult<Subscription>> {
-  return apiFetch<Subscription>(`${API_BASE}/api/v1/subscriptions/trial`, { method: 'POST' })
-}
-
 export async function fetchSubscription(): Promise<ApiResult<Subscription>> {
   return apiFetch<Subscription>(`${API_BASE}/api/v1/subscriptions/me`)
 }
@@ -49,6 +45,8 @@ export async function activateSubscription(
   acceptanceToken: string,
   acceptPersonalAuth: string,
 ): Promise<ApiResult<ActivationResponse>> {
+  // La activación hace 2 round-trips con Wompi en el backend; necesita más
+  // presupuesto que el timeout general de 12s para no abortar tras el commit.
   return apiFetch<ActivationResponse>(`${API_BASE}/api/v1/subscriptions/activate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -58,7 +56,7 @@ export async function activateSubscription(
       acceptance_token: acceptanceToken,
       accept_personal_auth: acceptPersonalAuth,
     }),
-  })
+  }, 30_000)
 }
 
 export async function cancelSubscription(): Promise<ApiResult<Subscription>> {
