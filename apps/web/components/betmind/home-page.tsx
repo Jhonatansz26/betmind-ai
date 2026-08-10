@@ -3,8 +3,9 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 
-import type { Match, Ticket } from '@/lib/betmind'
-import { fetchMatches, fetchTickets } from '@/lib/api'
+import type { Ticket } from '@/lib/betmind'
+import { fetchTickets } from '@/lib/api'
+import { useMatches } from '@/lib/hooks/use-matches'
 
 import { AppShell } from './app-shell'
 import { HomeView } from './home'
@@ -23,14 +24,14 @@ function greeting() {
 export function HomePage() {
   const router = useRouter()
   const [tickets, setTickets] = React.useState<Ticket[]>([])
-  const [matches, setMatches] = React.useState<Match[]>([])
   const [ticketsLoading, setTicketsLoading] = React.useState(true)
-  const [matchesLoading, setMatchesLoading] = React.useState(true)
   const [ticketsError, setTicketsError] = React.useState(false)
-  const [matchesError, setMatchesError] = React.useState(false)
   const [ticketRetryKey, setTicketRetryKey] = React.useState(0)
-  const [matchesRetryKey, setMatchesRetryKey] = React.useState(0)
   const [ticketCount, setTicketCount] = React.useState<number | null>(null)
+
+  // useMatches shares the cache with MatchesPage and GeneratorPage —
+  // if any of them already fetched today's matches, no new request is made.
+  const { matches, isLoading: matchesLoading, error: matchesError, revalidate: retryMatches } = useMatches('today')
 
   React.useEffect(() => {
     let cancelled = false
@@ -53,24 +54,6 @@ export function HomePage() {
     return () => { cancelled = true }
   }, [ticketRetryKey])
 
-  React.useEffect(() => {
-    let cancelled = false
-    async function load() {
-      setMatchesLoading(true)
-      setMatchesError(false)
-      const result = await fetchMatches('today')
-      if (cancelled) return
-      if (result.ok) setMatches(result.data)
-      else {
-        setMatches([])
-        setMatchesError(true)
-      }
-      setMatchesLoading(false)
-    }
-    void load()
-    return () => { cancelled = true }
-  }, [matchesRetryKey])
-
   return (
     <AppShell>
       <HomeView
@@ -84,7 +67,7 @@ export function HomePage() {
         matches={matches}
         matchesLoading={matchesLoading}
         matchesError={matchesError}
-        onRetryMatches={() => setMatchesRetryKey((key) => key + 1)}
+        onRetryMatches={retryMatches}
         onOpenTickets={() => router.push('/senales')}
         onOpenGenerator={() => router.push('/generador')}
         onOpenMatches={() => router.push('/partidos')}

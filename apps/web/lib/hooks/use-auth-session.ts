@@ -1,30 +1,62 @@
 'use client'
 
-import * as React from 'react'
+import useSWR, { mutate as globalMutate } from 'swr'
+import { useEffect } from 'react'
 import { fetchMe, hasSession, type UserMe } from '@/lib/auth'
+import { invalidateBankroll } from '@/lib/hooks/use-bankroll'
 
+/** Stable SWR key for the current user session. */
+export const AUTH_SESSION_KEY = '/users/me'
+
+async function sessionFetcher(): Promise<UserMe | null> {
+  if (!hasSession()) return null
+  return fetchMe()
+}
+
+/**
+ * useAuthSession — backed by SWR so all components that call this hook
+ * share a single request and a single cached result.
+ *
+ * The original interface is preserved:
+ *   { user, isLoading, isAuthenticated, refresh }
+ *
+ * The hook registers a window listener for the "betmind:auth-changed" event
+ * and revalidates the SWR cache when it fires, so login/logout/register
+ * propagate to every consumer automatically.
+ */
 export function useAuthSession() {
-  const [user, setUser] = React.useState<UserMe | null>(null)
-  const [isLoading, setIsLoading] = React.useState(true)
+  const { data: user = null, isLoading, mutate } = useSWR<UserMe | null>(
+    AUTH_SESSION_KEY,
+    sessionFetcher,
+    {
+      revalidateOnFocus: false,
+      keepPreviousData: true,
+    },
+  )
 
-  const refresh = React.useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const me = hasSession() ? await fetchMe() : null
-      setUser(me)
-    } catch {
-      // Network error during refresh — don't clear the session,
-      // just leave the previous user state intact.
-    } finally {
-      setIsLoading(false)
+  // Revalidate on auth events (login, register, logout, subscription change).
+  useEffect(() => {
+    function handleAuthChanged() {
+      void mutate()
+      void invalidateBankroll()
     }
-  }, [])
+    window.addEventListener('betmind:auth-changed', handleAuthChanged)
+    return () => window.removeEventListener('betmind:auth-changed', handleAuthChanged)
+  }, [mutate])
 
-  React.useEffect(() => {
-    void refresh()
-    window.addEventListener('betmind:auth-changed', refresh)
-    return () => window.removeEventListener('betmind:auth-changed', refresh)
-  }, [refresh])
+  return {
+    user,
+    isLoading,
+    isAuthenticated: !!user,
+    /** Force a re-fetch — useful after login / logout. */
+    refresh: () => mutate(),
+  }
+}
 
-  return { user, isLoading, isAuthenticated: !!user, refresh }
+/**
+ * Invalidate the session cache from outside a React component — call after
+ * login, register, logout, or subscription changes.
+ */
+export function invalidateSession() {
+  return globalMutate(AUTH_SESSION_KEY)
 }

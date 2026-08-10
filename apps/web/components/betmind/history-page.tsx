@@ -11,6 +11,7 @@ import { formatCOP, formatCOTDate, formatEV, formatOdds } from '@/lib/formatters
 import { saveTrackedTickets, summarizeTrackedTickets, type TrackStatus } from '@/lib/tracking'
 import { cn } from '@/lib/utils'
 import { useAuthSession } from '@/lib/hooks/use-auth-session'
+import { invalidateBankroll } from '@/lib/hooks/use-bankroll'
 
 import { AppShell } from './app-shell'
 import { StatDisclaimer } from './stat-disclaimer'
@@ -66,7 +67,7 @@ export function HistoryPage() {
     if (isAuthenticated && current?.remote && /^\d+$/.test(id)) {
       const result = await updateTicketStatus(Number(id), status)
       if (!result.ok) {
-        setEntries((previous) => previous.map((entry) => entry.id === id ? current : entry))
+        if (current) setEntries(entries.map((entry) => entry.id === id ? current : entry))
         if (result.error.code === 'HTTP_409') {
           toast.error('Este boleto ya fue liquidado y no se puede cambiar de estado. Si fue un error, ajustá tu bankroll manualmente desde /bankroll.')
         } else {
@@ -79,6 +80,7 @@ export function HistoryPage() {
         if (movement.amount > 0) toast.success(`Tu bankroll subió ${formatCOP(movement.amount)}`)
         else if (movement.amount < 0) toast.success(`Tu bankroll bajó ${formatCOP(Math.abs(movement.amount))}`)
         else toast.success('Tu bankroll no cambió: boleto anulado.')
+        void invalidateBankroll()
       }
     } else {
       saveTrackedTickets(next)

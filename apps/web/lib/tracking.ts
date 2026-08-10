@@ -1,6 +1,7 @@
 import { claimAnonymousTickets, saveTicket, type SavedTicketRecord, type SavedTicketStatus } from './api'
 import type { Mode, Ticket } from './betmind'
 import { announceProLimit, isProUser } from './subscription'
+import { invalidateTicketHistory } from './hooks/use-ticket-history'
 
 export type TrackStatus = SavedTicketStatus
 
@@ -86,6 +87,7 @@ export async function addToTracking(
       remote: true,
     }
     saveTrackedTickets([entry, ...existing.filter((item) => item.id !== entry.id)].slice(0, 10))
+    void invalidateTicketHistory()
     return { saved: true }
   }
 
@@ -103,6 +105,7 @@ export async function addToTracking(
     remote: false,
   }
   saveTrackedTickets([entry, ...existing].slice(0, 10))
+  void invalidateTicketHistory()
   return { saved: true }
 }
 

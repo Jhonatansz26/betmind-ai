@@ -1,182 +1,182 @@
-# ðŸ§  BetMind AI â€” BitÃ¡cora de Desarrollo y Arquitectura
+# 🧠 BetMind AI — Bitácora de Desarrollo y Arquitectura
 
-## ðŸ“Œ 1. VisiÃ³n General del Producto
-**BetMind AI** es una plataforma web y aplicaciÃ³n mÃ³vil SaaS para analÃ­tica avanzada de apuestas deportivas basada en ciencia de datos y aprendizaje automÃ¡tico.
+## 📌 1. Visión General del Producto
+**BetMind AI** es una plataforma web y aplicación móvil SaaS para analítica avanzada de apuestas deportivas basada en ciencia de datos y aprendizaje automático.
 
-- **Diferencial Clave ("Viveza TÃ¡ctica"):** El sistema NO predice favoritos guiÃ¡ndose por cuotas bajas. Calcula la probabilidad real del evento evaluando tendencias cuantitativas y cualitativas para encontrar apuestas con **Valor Esperado Positivo (+EV)**.
-- **Regla Estricta de 90 Minutos:** Todos los anÃ¡lisis y modelos estadÃ­sticos consideran exclusivamente el tiempo reglamentario de 90 minutos (excluyendo prÃ³rrogas/tiempos extra).
-- **MÃ³dulo Estrella:** EscÃ¡ner / AuditorÃ­a de tiquetes mediante IA de VisiÃ³n (Gemini Vision) para auditar combinadas y detectar "apuestas trampa".
-- **Ligas Objetivo Iniciales:** Liga BetPlay (Colombia), Premier League (Inglaterra) y LaLiga (EspaÃ±a).
+- **Diferencial Clave ("Viveza Táctica"):** El sistema NO predice favoritos guiándose por cuotas bajas. Calcula la probabilidad real del evento evaluando tendencias cuantitativas y cualitativas para encontrar apuestas con **Valor Esperado Positivo (+EV)**.
+- **Regla Estricta de 90 Minutos:** Todos los análisis y modelos estadísticos consideran exclusivamente el tiempo reglamentario de 90 minutos (excluyendo prórrogas/tiempos extra).
+- **Módulo Estrella:** Escáner / Auditoría de tiquetes mediante IA de Visión (Gemini Vision) para auditar combinadas y detectar "apuestas trampa".
+- **Ligas Objetivo Iniciales:** Liga BetPlay (Colombia), Premier League (Inglaterra) y LaLiga (España).
 
 ---
 
-## ðŸ—ï¸ 2. Arquitectura de Software y Patrones
+## 🏗️ 2. Arquitectura de Software y Patrones
 - **Estructura:** Monorepo (`apps/api`, `apps/web`, `apps/mobile`, `packages/ml`).
 - **Backend:** FastAPI (Python) corriendo bajo servidores Uvicorn.
-- **Frontend / Mobile:** Next.js (Web) y React Native con Expo (App MÃ³vil Play Store).
-- **Base de Datos & CachÃ©:** PostgreSQL + Redis.
-- **Patrones de DiseÃ±o Implementados:**
-  - **Clean Architecture Enterprise:** SeparaciÃ³n estricta en 7 capas (`core`, `schemas`, `models`, `repositories`, `services`, `engine`, `orchestrators`, `routes`).
-  - **SDD (Schema-Driven Development):** Contratos de datos estrictos en Pydantic antes de la lÃ³gica.
-  - **SRP (Single Responsibility Principle):** Cada clase/mÃ³dulo cumple una sola funciÃ³n.
-  - **Result Pattern (`Ok` / `Err`):** Manejo explÃ­cito de errores de dominio sin lanzar excepciones no controladas.
-  - **Motor Predictivo Bivariado:** Modelo de Poisson para distribuciÃ³n de goles + cÃ¡lculo dinÃ¡mico de +EV.
+- **Frontend / Mobile:** Next.js (Web) y React Native con Expo (App Móvil Play Store).
+- **Base de Datos & Caché:** PostgreSQL + Redis.
+- **Patrones de Diseño Implementados:**
+  - **Clean Architecture Enterprise:** Separación estricta en 7 capas (`core`, `schemas`, `models`, `repositories`, `services`, `engine`, `orchestrators`, `routes`).
+  - **SDD (Schema-Driven Development):** Contratos de datos estrictos en Pydantic antes de la lógica.
+  - **SRP (Single Responsibility Principle):** Cada clase/módulo cumple una sola función.
+  - **Result Pattern (`Ok` / `Err`):** Manejo explícito de errores de dominio sin lanzar excepciones no controladas.
+  - **Motor Predictivo Bivariado:** Modelo de Poisson para distribución de goles + cálculo dinámico de +EV.
 
 ---
 
-## ðŸ“ 3. Historial de Cambios y Estado Actual
+## 📝 3. Historial de Cambios y Estado Actual
 
-### ðŸŸ¢ Fase 0: Estructura e IntegraciÃ³n Inicial (Completado)
-1. **CreaciÃ³n del Monorepo:** Se generÃ³ la estructura de 65+ archivos abarcando el backend de FastAPI y los paquetes compartidos.
-2. **IntegraciÃ³n del Dominio Gold Standard:** Se reemplazaron y configuraron los 7 archivos nÃºcleo:
+### 🟢 Fase 0: Estructura e Integración Inicial (Completado)
+1. **Creación del Monorepo:** Se generó la estructura de 65+ archivos abarcando el backend de FastAPI y los paquetes compartidos.
+2. **Integración del Dominio Gold Standard:** Se reemplazaron y configuraron los 7 archivos núcleo:
    - `core/result.py` & `core/exceptions.py` (Dominio de errores y Result pattern).
    - `schemas/prediction.py` (Contratos Pydantic SDD).
-   - `engine/value_calculator.py` (Motor de Poisson y cÃ¡lculo +EV puro).
+   - `engine/value_calculator.py` (Motor de Poisson y cálculo +EV puro).
    - `repositories/match_repository.py` (Acceso a datos con filtro reglamentario de 90 min).
-   - `orchestrators/prediction_orchestrator.py` (Coordinador con soporte para cachÃ©).
-   - `routes/v1/predictions.py` (Endpoints versiÃ³n 1 del API).
-3. **ReparaciÃ³n de Soporte:** Se ajustaron importaciones relativas, se integraron los modelos ORM (`Match`, `Team`, `League`) y se configuraron los proveedores de dependencias.
-4. **ConexiÃ³n AsÃ­ncrona a Base de Datos:**
-   - Se creÃ³ `db/database.py` con motor asÃ­ncrono centralizado (`create_async_engine` + `async_sessionmaker`).
-   - Se implementÃ³ `init_db()` que crea automÃ¡ticamente todas las tablas registradas en `models/` al arrancar la app.
-   - Se agregÃ³ fallback a SQLite (`aiosqlite`) para desarrollo local sin PostgreSQL.
-   - Se configurÃ³ `lifespan` en FastAPI para inicializar la DB al startup y hacer dispose al shutdown.
-   - Se creÃ³ endpoint de diagnÃ³stico `GET /api/v1/health/db` que verifica conexiÃ³n y lista tablas creadas.
-   - **ConfiguraciÃ³n inteligente de `.env`:** `config.py` busca automÃ¡ticamente `.env` en `apps/api/.env` y `betmind-ai/.env` (raÃ­z del monorepo) usando rutas absolutas.
-   - **NormalizaciÃ³n automÃ¡tica de PostgreSQL:** URLs con `postgres://` o `postgresql://` se convierten automÃ¡ticamente a `postgresql+asyncpg://` para compatibilidad con driver asÃ­ncrono.
-5. **VerificaciÃ³n Actual:**
+   - `orchestrators/prediction_orchestrator.py` (Coordinador con soporte para caché).
+   - `routes/v1/predictions.py` (Endpoints versión 1 del API).
+3. **Reparación de Soporte:** Se ajustaron importaciones relativas, se integraron los modelos ORM (`Match`, `Team`, `League`) y se configuraron los proveedores de dependencias.
+4. **Conexión Asíncrona a Base de Datos:**
+   - Se creó `db/database.py` con motor asíncrono centralizado (`create_async_engine` + `async_sessionmaker`).
+   - Se implementó `init_db()` que crea automáticamente todas las tablas registradas en `models/` al arrancar la app.
+   - Se agregó fallback a SQLite (`aiosqlite`) para desarrollo local sin PostgreSQL.
+   - Se configuró `lifespan` en FastAPI para inicializar la DB al startup y hacer dispose al shutdown.
+   - Se creó endpoint de diagnóstico `GET /api/v1/health/db` que verifica conexión y lista tablas creadas.
+   - **Configuración inteligente de `.env`:** `config.py` busca automáticamente `.env` en `apps/api/.env` y `betmind-ai/.env` (raíz del monorepo) usando rutas absolutas.
+   - **Normalización automática de PostgreSQL:** URLs con `postgres://` o `postgresql://` se convierten automáticamente a `postgresql+asyncpg://` para compatibilidad con driver asíncrono.
+5. **Verificación Actual:**
     - Server status: `200 OK` en `/health`.
     - DB status: `200 OK` en `/api/v1/health/db` con ping exitoso y 5 tablas creadas (`teams`, `leagues`, `matches`, `predictions`, `users`).
     - Swagger UI: Activo en `/docs`.
-    - Pruebas unitarias del motor de Poisson y +EV: Superadas con Ã©xito.
+    - Pruebas unitarias del motor de Poisson y +EV: Superadas con éxito.
 
-### ðŸŸ¡ Fase 1: Ingesta de Datos desde API-Football (Completado)
+### 🟡 Fase 1: Ingesta de Datos desde API-Football (Completado)
 1. **Cliente API-Football (`services/api_football.py`):**
-   - Se implementÃ³ `APIFootballService` completo con `httpx` asÃ­ncrono.
-   - MÃ©todos implementados:
-     - `get_leagues()` â€” Obtiene todas las ligas disponibles.
-     - `get_target_leagues()` â€” Filtra Premier League (39), LaLiga (140), Liga BetPlay (239).
-     - `get_teams_by_league(league_id, season)` â€” Obtiene equipos de una liga/temporada.
-     - `get_recent_finished_matches(league_id, season, last_n)` â€” Obtiene Ãºltimos N partidos finalizados.
-     - `get_fixtures()`, `get_standings()`, `get_h2h()` â€” MÃ©todos adicionales.
-   - Manejo robusto de errores: rate limiting, timeouts, validaciÃ³n de API key.
-   - MÃ©todo `parse_fixture_to_match_data()` que convierte respuestas externas al formato interno.
+   - Se implementó `APIFootballService` completo con `httpx` asíncrono.
+   - Métodos implementados:
+     - `get_leagues()` — Obtiene todas las ligas disponibles.
+     - `get_target_leagues()` — Filtra Premier League (39), LaLiga (140), Liga BetPlay (239).
+     - `get_teams_by_league(league_id, season)` — Obtiene equipos de una liga/temporada.
+     - `get_recent_finished_matches(league_id, season, last_n)` — Obtiene últimos N partidos finalizados.
+     - `get_fixtures()`, `get_standings()`, `get_h2h()` — Métodos adicionales.
+   - Manejo robusto de errores: rate limiting, timeouts, validación de API key.
+   - Método `parse_fixture_to_match_data()` que convierte respuestas externas al formato interno.
    - **Regla de 90 minutos:** Todos los partidos se marcan con `regulation_time_only=True`.
 
 2. **Repositorios Nuevos:**
-   - `repositories/league_repository.py` â€” CRUD para ligas con mÃ©todo `upsert()`.
-   - `repositories/team_repository.py` â€” CRUD para equipos con mÃ©todo `upsert()`.
-   - `repositories/match_repository.py` â€” Actualizado con `upsert_match()` para sincronizaciÃ³n.
+   - `repositories/league_repository.py` — CRUD para ligas con método `upsert()`.
+   - `repositories/team_repository.py` — CRUD para equipos con método `upsert()`.
+   - `repositories/match_repository.py` — Actualizado con `upsert_match()` para sincronización.
 
 3. **Servicio de Ingesta (`services/data_ingestion.py`):**
-   - `DataIngestionService` orquesta la sincronizaciÃ³n completa.
-   - MÃ©todos:
-     - `sync_league()` â€” Sincroniza una liga especÃ­fica.
-     - `sync_teams_for_league()` â€” Sincroniza equipos de una liga.
-     - `sync_matches_for_league()` â€” Sincroniza partidos finalizados.
-     - `full_sync_league()` â€” SincronizaciÃ³n completa (liga + equipos + partidos).
-     - `sync_all_target_leagues()` â€” Sincroniza las 3 ligas objetivo.
-   - `SyncResult` dataclass para reportar resultados de sincronizaciÃ³n.
+   - `DataIngestionService` orquesta la sincronización completa.
+   - Métodos:
+     - `sync_league()` — Sincroniza una liga específica.
+     - `sync_teams_for_league()` — Sincroniza equipos de una liga.
+     - `sync_matches_for_league()` — Sincroniza partidos finalizados.
+     - `full_sync_league()` — Sincronización completa (liga + equipos + partidos).
+     - `sync_all_target_leagues()` — Sincroniza las 3 ligas objetivo.
+   - `SyncResult` dataclass para reportar resultados de sincronización.
 
-4. **Endpoints de SincronizaciÃ³n (`routes/v1/matches.py`):**
-   - `POST /api/v1/matches/sync/{league_id}` â€” Sincroniza una liga especÃ­fica.
-     - ParÃ¡metros: `season` (default: aÃ±o actual), `last_matches` (default: 50).
-   - `POST /api/v1/matches/sync-all` â€” Sincroniza todas las ligas objetivo.
-   - ValidaciÃ³n de API key configurada antes de ejecutar sincronizaciÃ³n.
+4. **Endpoints de Sincronización (`routes/v1/matches.py`):**
+   - `POST /api/v1/matches/sync/{league_id}` — Sincroniza una liga específica.
+     - Parámetros: `season` (default: año actual), `last_matches` (default: 50).
+   - `POST /api/v1/matches/sync-all` — Sincroniza todas las ligas objetivo.
+   - Validación de API key configurada antes de ejecutar sincronización.
 
-5. **DiagnÃ³stico y Logging Avanzado:**
+5. **Diagnóstico y Logging Avanzado:**
    - Logging detallado en `APIFootballService._request()` con URL, params y status de respuesta.
    - Logging en `get_recent_finished_matches()` con 3 intentos de fallback:
      1. `league + season + status=FT`
      2. `league + season` (sin filtro status, captura FT/AET/PEN)
-     3. `league + last` (sin season, Ãºltimos partidos de cualquier temporada)
+     3. `league + last` (sin season, últimos partidos de cualquier temporada)
    - Logging en `DataIngestionService.sync_matches_for_league()` muestra:
-     - CuÃ¡ntos fixtures se reciben de la API
-     - CuÃ¡ntos se procesan exitosamente
-     - CuÃ¡ntos se guardan en la base de datos
-     - Errores especÃ­ficos por fixture (equipos no encontrados, etc.)
-   - Script de diagnÃ³stico: `test_api_football.py` para pruebas directas con Premier League y Liga BetPlay.
+     - Cuántos fixtures se reciben de la API
+     - Cuántos se procesan exitosamente
+     - Cuántos se guardan en la base de datos
+     - Errores específicos por fixture (equipos no encontrados, etc.)
+   - Script de diagnóstico: `test_api_football.py` para pruebas directas con Premier League y Liga BetPlay.
 
 6. **IDs de Ligas Configurados:**
    ```python
    LEAGUE_IDS = {
        "premier_league": 39,    # Premier League (Inglaterra)
-       "laliga": 140,           # LaLiga (EspaÃ±a)
+       "laliga": 140,           # LaLiga (España)
        "liga_betplay": 239,     # Liga BetPlay (Colombia)
    }
    ```
 
 ---
 
-## ðŸŸ¡ Fase 1.5: Capa de AbstracciÃ³n de Proveedores de Datos (Completado)
+## 🟡 Fase 1.5: Capa de Abstracción de Proveedores de Datos (Completado)
 1. **Interfaz Base y DTOs (`services/providers/base_provider.py`):**
-   - Se creÃ³ `DataProviderPort` como clase abstracta (ABC) con mÃ©todos:
-     - `get_finished_matches(league_code, season, limit)` â€” Partidos finalizados.
-     - `get_teams(league_code, season)` â€” Equipos de una liga/temporada.
-     - `get_upcoming_matches(league_code, season, limit)` â€” Partidos prÃ³ximos.
-     - `get_leagues()` â€” Ligas disponibles.
+   - Se creó `DataProviderPort` como clase abstracta (ABC) con métodos:
+     - `get_finished_matches(league_code, season, limit)` — Partidos finalizados.
+     - `get_teams(league_code, season)` — Equipos de una liga/temporada.
+     - `get_upcoming_matches(league_code, season, limit)` — Partidos próximos.
+     - `get_leagues()` — Ligas disponibles.
    - Se definieron DTOs unificados:
-     - `RawFixture` â€” Formato estÃ¡ndar para partidos. Incluye `went_to_extra_time: bool` y `regulation_time_only: bool = True` (regla estricta de 90 minutos).
-     - `RawTeam` â€” Formato estÃ¡ndar para equipos.
+     - `RawFixture` — Formato estándar para partidos. Incluye `went_to_extra_time: bool` y `regulation_time_only: bool = True` (regla estricta de 90 minutos).
+     - `RawTeam` — Formato estándar para equipos.
    - Ambos DTOs son `dataclass(frozen=True)` para inmutabilidad.
 
-2. **ImplementaciÃ³n Football-Data.org (`services/providers/football_data_provider.py`):**
-   - Se creÃ³ `FootballDataProvider` heredando de `DataProviderPort`.
+2. **Implementación Football-Data.org (`services/providers/football_data_provider.py`):**
+   - Se creó `FootballDataProvider` heredando de `DataProviderPort`.
    - Usa `httpx.AsyncClient` apuntando a `https://api.football-data.org/v4`.
-   - AutenticaciÃ³n mediante header `X-Auth-Token`.
-   - Mapeo de cÃ³digos de liga:
-     - `PL` â†’ Premier League (Inglaterra)
-     - `PD` â†’ LaLiga (EspaÃ±a)
+   - Autenticación mediante header `X-Auth-Token`.
+   - Mapeo de códigos de liga:
+     - `PL` → Premier League (Inglaterra)
+     - `PD` → LaLiga (España)
    - Parser `_parse_match()` convierte respuestas JSON a `RawFixture`:
      - Extrae `score.fullTime` para goles de tiempo reglamentario (90 min).
      - Detecta `score.extraTime` para flag `went_to_extra_time`.
-     - `regulation_time_only` siempre `True` (los goles de prÃ³rroga NO se incluyen).
+     - `regulation_time_only` siempre `True` (los goles de prórroga NO se incluyen).
    - Manejo robusto de errores: 429 (rate limit), 403 (forbidden), timeouts.
 
-3. **ConfiguraciÃ³n (`config.py`):**
-   - Se agregÃ³ `FOOTBALL_DATA_KEY: str | None = None` en `Settings`.
-   - Carga automÃ¡tica desde variable de entorno `FOOTBALL_DATA_KEY` en `.env`.
+3. **Configuración (`config.py`):**
+   - Se agregó `FOOTBALL_DATA_KEY: str | None = None` en `Settings`.
+   - Carga automática desde variable de entorno `FOOTBALL_DATA_KEY` en `.env`.
 
 4. **Registro de Proveedores (`services/providers/provider_registry.py`):**
-   - FunciÃ³n `get_provider(name)` â€” Obtiene un proveedor por nombre.
-   - FunciÃ³n `get_provider_for_league(league_code)` â€” Obtiene el proveedor adecuado segÃºn la liga.
-   - FunciÃ³n `list_providers()` â€” Lista proveedores registrados.
-   - InicializaciÃ³n lazy (solo se instancian al primer uso).
+   - Función `get_provider(name)` — Obtiene un proveedor por nombre.
+   - Función `get_provider_for_league(league_code)` — Obtiene el proveedor adecuado según la liga.
+   - Función `list_providers()` — Lista proveedores registrados.
+   - Inicialización lazy (solo se instancian al primer uso).
 
 5. **Estructura de Archivos:**
    ```
    apps/api/services/providers/
-   â”œâ”€â”€ __init__.py              # Exportaciones pÃºblicas
-   â”œâ”€â”€ base_provider.py         # DataProviderPort + DTOs (RawFixture, RawTeam)
-   â”œâ”€â”€ football_data_provider.py # ImplementaciÃ³n football-data.org
-   â””â”€â”€ provider_registry.py     # Factory/Registry de proveedores
+   ├── __init__.py              # Exportaciones públicas
+   ├── base_provider.py         # DataProviderPort + DTOs (RawFixture, RawTeam)
+   ├── football_data_provider.py # Implementación football-data.org
+   └── provider_registry.py     # Factory/Registry de proveedores
    ```
 
 ---
 
-## ðŸŸ¡ Fase 1.6: IntegraciÃ³n de DataIngestionService con ProviderRegistry (Completado)
+## 🟡 Fase 1.6: Integración de DataIngestionService con ProviderRegistry (Completado)
 1. **Mapeo de Ligas (`services/data_ingestion.py`):**
-   - Se creÃ³ `API_FOOTBALL_TO_FOOTBALL_DATA: dict[int, str]` para mapear IDs de API-Football a cÃ³digos de football-data.org:
-     - `39` â†’ `PL` (Premier League)
-     - `140` â†’ `PD` (LaLiga)
+   - Se creó `API_FOOTBALL_TO_FOOTBALL_DATA: dict[int, str]` para mapear IDs de API-Football a códigos de football-data.org:
+     - `39` → `PL` (Premier League)
+     - `140` → `PD` (LaLiga)
    - Liga BetPlay (`239`) mantiene fallback a API-Football.
 
 2. **DataIngestionService Refactorizado:**
-   - MÃ©todo `_resolve_provider(league_id)` determina si usar `FootballDataProvider` o `APIFootballService`.
-   - MÃ©todos divididos en dos rutas:
+   - Método `_resolve_provider(league_id)` determina si usar `FootballDataProvider` o `APIFootballService`.
+   - Métodos divididos en dos rutas:
      - `_sync_league_from_provider()` / `_sync_league_from_api_football()`
      - `_sync_teams_from_provider()` / `_sync_teams_from_api_football()`
      - `_sync_matches_from_provider()` / `_sync_matches_from_api_football()`
    - Consumo de DTOs unificados:
-     - `RawFixture` â†’ campos: `external_id`, `home_team`, `away_team`, `home_score`, `away_score`, `went_to_extra_time`, `regulation_time_only=True`
-     - `RawTeam` â†’ campos: `external_id`, `name`, `logo_url`, `country`
+     - `RawFixture` → campos: `external_id`, `home_team`, `away_team`, `home_score`, `away_score`, `went_to_extra_time`, `regulation_time_only=True`
+     - `RawTeam` → campos: `external_id`, `name`, `logo_url`, `country`
 
-3. **Flujo de SincronizaciÃ³n para Temporada 2026:**
+3. **Flujo de Sincronización para Temporada 2026:**
    - `sync_all_target_leagues(season=2026)` ahora:
-     - Premier League (39) â†’ `FootballDataProvider` con cÃ³digo `PL`
-     - LaLiga (140) â†’ `FootballDataProvider` con cÃ³digo `PD`
-     - Liga BetPlay (239) â†’ `APIFootballService` (fallback)
-   - Logging detallado muestra quÃ© proveedor se usa para cada liga.
+     - Premier League (39) → `FootballDataProvider` con código `PL`
+     - LaLiga (140) → `FootballDataProvider` con código `PD`
+     - Liga BetPlay (239) → `APIFootballService` (fallback)
+   - Logging detallado muestra qué proveedor se usa para cada liga.
 
 4. **Compatibilidad con ORM:**
    - Los DTOs `RawFixture` y `RawTeam` se mapean directamente a los repositorios existentes:
@@ -185,17 +185,17 @@
      - `MatchRepository.upsert_match()`
    - Regla de 90 minutos preservada: `regulation_time_only=True` en todos los partidos.
 
-5. **VerificaciÃ³n:**
-    - Importaciones: âœ… OK
-    - ResoluciÃ³n de proveedores: âœ… PLâ†’football-data.org, PDâ†’football-data.org, 239â†’API-Football
-    - FastAPI startup: âœ… Sin errores
+5. **Verificación:**
+    - Importaciones: ✅ OK
+    - Resolución de proveedores: ✅ PL→football-data.org, PD→football-data.org, 239→API-Football
+    - FastAPI startup: ✅ Sin errores
 
 ---
 
-## ðŸŸ¢ Fase 1.7: VerificaciÃ³n de SincronizaciÃ³n con Supabase - Temporada 2026 (Completado)
+## 🟢 Fase 1.7: Verificación de Sincronización con Supabase - Temporada 2026 (Completado)
 
 ### 1. Estado de la Base de Datos (Antes de la Prueba)
-- **ConexiÃ³n a Supabase:** âœ… Exitosa
+- **Conexión a Supabase:** ✅ Exitosa
 - **Registros iniciales:**
   - Leagues: 3
   - Teams: 60
@@ -203,16 +203,16 @@
 
 ### 2. Prueba de Ingesta en Vivo (Premier League 2026)
 - **Proveedor utilizado:** `FootballDataProvider` (football-data.org)
-- **Liga:** Premier League (ID: 39, cÃ³digo: PL)
+- **Liga:** Premier League (ID: 39, código: PL)
 - **Temporada:** 2026
 
-#### Resultados de la SincronizaciÃ³n:
-- âœ… **Liga sincronizada:** Premier League (England)
-- âœ… **Equipos sincronizados:** 20 equipos de Premier League 2026
-- âœ… **Partidos sincronizados:** 0 (la temporada 2026 aÃºn no tiene partidos finalizados)
-- âœ… **Errores:** 0
+#### Resultados de la Sincronización:
+- ✅ **Liga sincronizada:** Premier League (England)
+- ✅ **Equipos sincronizados:** 20 equipos de Premier League 2026
+- ✅ **Partidos sincronizados:** 0 (la temporada 2026 aún no tiene partidos finalizados)
+- ✅ **Errores:** 0
 
-#### Equipos Sincronizados (Ãºltimos 10):
+#### Equipos Sincronizados (últimos 10):
 1. Newcastle United FC
 2. Hull City AFC
 3. Everton FC
@@ -224,76 +224,76 @@
 9. Fulham FC
 10. Leeds United FC
 
-### 3. AuditorÃ­a de Datos
+### 3. Auditoría de Datos
 - **Registros finales en BD:**
   - Leagues: 3
   - Teams: 77 (60 previos + 20 nuevos - 3 duplicados actualizados)
   - Matches: 50 (sin cambios, temporada 2026 sin partidos finalizados)
-- **Integridad referencial:** âœ… Todos los equipos y partidos correctamente asociados
-- **Regla de 90 minutos:** âœ… `regulation_time_only=True` en todos los partidos
+- **Integridad referencial:** ✅ Todos los equipos y partidos correctamente asociados
+- **Regla de 90 minutos:** ✅ `regulation_time_only=True` en todos los partidos
 
-### 4. ConfiguraciÃ³n de ConexiÃ³n
+### 4. Configuración de Conexión
 - **Problema resuelto:** pgbouncer con prepared statements
-- **SoluciÃ³n:** `statement_cache_size=0` en la configuraciÃ³n de asyncpg
-- **URL de conexiÃ³n:** `postgresql+asyncpg://postgres.sruhpmucytkaksdtkrsi:***@aws-1-us-east-2.pooler.supabase.com:6543/postgres`
+- **Solución:** `statement_cache_size=0` en la configuración de asyncpg
+- **URL de conexión:** `postgresql+asyncpg://postgres.sruhpmucytkaksdtkrsi:***@aws-1-us-east-2.pooler.supabase.com:6543/postgres`
 
 ### 5. Resumen Final
-| MÃ©trica | Valor |
+| Métrica | Valor |
 |---------|-------|
-| Estado de conexiÃ³n | âœ… Conectado |
+| Estado de conexión | ✅ Conectado |
 | Equipos persistidos 2026 | 20 |
 | Partidos persistidos 2026 | 0 (temporada no iniciada) |
-| Errores durante ejecuciÃ³n | 0 |
+| Errores durante ejecución | 0 |
 | Proveedor utilizado | football-data.org |
-| Regla de 90 minutos | âœ… Respetada |
+| Regla de 90 minutos | ✅ Respetada |
 
-**ConclusiÃ³n:** La integraciÃ³n con `FootballDataProvider` funciona correctamente. El sistema estÃ¡ listo para sincronizar partidos cuando la temporada 2026 comience.
+**Conclusión:** La integración con `FootballDataProvider` funciona correctamente. El sistema está listo para sincronizar partidos cuando la temporada 2026 comience.
 
 ---
 
-## ðŸŸ¡ Fase 2.0: Agente de IA para Liga BetPlay 2026 - Infraestructura Base (Completado)
+## 🟡 Fase 2.0: Agente de IA para Liga BetPlay 2026 - Infraestructura Base (Completado)
 
 ### 1. Dependencias Instaladas
-- `duckduckgo-search` â€” BÃºsquedas web gratuitas (sin API key)
-- `crawl4ai` â€” Web scraping con LLM support
-- `instructor` â€” ExtracciÃ³n estructurada con Pydantic
-- `langgraph` â€” OrquestaciÃ³n de grafos de agentes
-- `anthropic` â€” Cliente para Claude API
-- `pydantic` â€” ValidaciÃ³n de datos (ya instalado)
+- `duckduckgo-search` — Búsquedas web gratuitas (sin API key)
+- `crawl4ai` — Web scraping con LLM support
+- `instructor` — Extracción estructurada con Pydantic
+- `langgraph` — Orquestación de grafos de agentes
+- `anthropic` — Cliente para Claude API
+- `pydantic` — Validación de datos (ya instalado)
 
 ### 2. Estructura del Agente
 ```
 apps/api/services/providers/ai_agent/
-â”œâ”€â”€ __init__.py                    # Exportaciones pÃºblicas
-â”œâ”€â”€ schemas/
-â”‚   â”œâ”€â”€ __init__.py
-â”‚   â”œâ”€â”€ agent_state.py             # Estado del grafo (AgentState)
-â”‚   â””â”€â”€ raw_web_data.py            # DTOs Pydantic (WebExtractedMatch, WebExtractionResult)
-â”œâ”€â”€ nodes/
-â”‚   â”œâ”€â”€ __init__.py
-â”‚   â””â”€â”€ search_node.py             # Nodo de bÃºsqueda con DuckDuckGo
-â””â”€â”€ prompts/
-    â””â”€â”€ __init__.py
+├── __init__.py                    # Exportaciones públicas
+├── schemas/
+│   ├── __init__.py
+│   ├── agent_state.py             # Estado del grafo (AgentState)
+│   └── raw_web_data.py            # DTOs Pydantic (WebExtractedMatch, WebExtractionResult)
+├── nodes/
+│   ├── __init__.py
+│   └── search_node.py             # Nodo de búsqueda con DuckDuckGo
+└── prompts/
+    └── __init__.py
 ```
 
 ### 3. Schemas Implementados
 
 #### AgentState (dataclass)
 Controla el estado del grafo de LangGraph:
-- `league_key` â€” CÃ³digo de la liga (ej: "liga_betplay")
-- `season` â€” Temporada (2026)
-- `search_queries` â€” Consultas de bÃºsqueda
-- `search_results` â€” Resultados de DuckDuckGo
-- `scraped_content` â€” Contenido extraÃ­do de webs
-- `raw_extracted` â€” Datos extraÃ­dos sin validar
-- `validated_fixtures` â€” Partidos validados con Pydantic
-- `errors` â€” Lista de errores
-- `current_node` â€” Nodo actual del grafo
-- `metadata` â€” Metadatos adicionales
+- `league_key` — Código de la liga (ej: "liga_betplay")
+- `season` — Temporada (2026)
+- `search_queries` — Consultas de búsqueda
+- `search_results` — Resultados de DuckDuckGo
+- `scraped_content` — Contenido extraído de webs
+- `raw_extracted` — Datos extraídos sin validar
+- `validated_fixtures` — Partidos validados con Pydantic
+- `errors` — Lista de errores
+- `current_node` — Nodo actual del grafo
+- `metadata` — Metadatos adicionales
 
 #### WebExtractedMatch (Pydantic)
-Modelo para partidos extraÃ­dos de la web:
-- ValidaciÃ³n estricta de nombres de equipos (2-100 caracteres)
+Modelo para partidos extraídos de la web:
+- Validación estricta de nombres de equipos (2-100 caracteres)
 - Campos: `home_team`, `away_team`, `match_date`, `match_time`, `stadium`, `matchday`
 - Status: `SCHEDULED`, `FINISHED`, `LIVE`, `POSTPONED`, `CANCELLED`
 - Goles: `home_score`, `away_score` (0-20, solo si FINISHED)
@@ -302,20 +302,20 @@ Modelo para partidos extraÃ­dos de la web:
 - Fuente: `source_url`
 
 #### WebExtractionResult (Pydantic)
-Contenedor para resultados de extracciÃ³n:
+Contenedor para resultados de extracción:
 - Lista de `WebExtractedMatch`
-- MÃ©tricas: `total_sources`, `successful_extractions`
-- MÃ©todos helper: `get_finished_matches()`, `get_high_confidence_matches()`
+- Métricas: `total_sources`, `successful_extractions`
+- Métodos helper: `get_finished_matches()`, `get_high_confidence_matches()`
 
-### 4. Nodo de BÃºsqueda (search_node)
-- Usa `duckduckgo_search.DDGS` con `asyncio.to_thread()` para ejecuciÃ³n paralela
-- Consultas determinÃ­sticas para Liga BetPlay 2026:
-  1. "Liga BetPlay 2026 prÃ³ximos partidos esta semana"
+### 4. Nodo de Búsqueda (search_node)
+- Usa `duckduckgo_search.DDGS` con `asyncio.to_thread()` para ejecución paralela
+- Consultas determinísticas para Liga BetPlay 2026:
+  1. "Liga BetPlay 2026 próximos partidos esta semana"
   2. "resultados Liga BetPlay 2026"
   3. "calendario Liga BetPlay 2026 Colombia"
   4. "fixture Liga BetPlay 2026"
   5. "partidos Liga BetPlay hoy"
-- DeduplicaciÃ³n automÃ¡tica de URLs
+- Deduplicación automática de URLs
 - Manejo robusto de errores por query
 
 ### 5. Prueba de Funcionamiento
@@ -326,161 +326,161 @@ Contenedor para resultados de extracciÃ³n:
   Errors: 0
 ```
 
-### 6. VerificaciÃ³n
-- Importaciones: âœ… OK
-- Schemas Pydantic: âœ… ValidaciÃ³n correcta
-- FastAPI startup: âœ… Sin errores
-- search_node: âœ… 25 resultados de 5 queries en paralelo
+### 6. Verificación
+- Importaciones: ✅ OK
+- Schemas Pydantic: ✅ Validación correcta
+- FastAPI startup: ✅ Sin errores
+- search_node: ✅ 25 resultados de 5 queries en paralelo
 
-### 7. Prompts de ExtracciÃ³n (`prompts/extraction_prompts.py`)
-- **SEARCH_QUERY_GENERATOR**: Genera queries de bÃºsqueda en espaÃ±ol/inglÃ©s para encontrar partidos
-- **MATCH_EXTRACTOR_SYSTEM**: Prompt anti-alucinaciÃ³n con reglas crÃ­ticas:
-  - Extraer SOLO informaciÃ³n explÃ­cita del texto
+### 7. Prompts de Extracción (`prompts/extraction_prompts.py`)
+- **SEARCH_QUERY_GENERATOR**: Genera queries de búsqueda en español/inglés para encontrar partidos
+- **MATCH_EXTRACTOR_SYSTEM**: Prompt anti-alucinación con reglas críticas:
+  - Extraer SOLO información explícita del texto
   - Usar null si el campo no aparece (nunca inventar)
-  - Goles de tiempo reglamentario (90 min) para partidos con prÃ³rroga/penales
+  - Goles de tiempo reglamentario (90 min) para partidos con prórroga/penales
   - `went_to_extra_time=true` cuando aplique
-- **MATCH_EXTRACTOR_USER**: Template para extracciÃ³n estructurada con JSON schema
-- **LEAGUE_CONTEXTS**: Contexto especÃ­fico por liga (liga_betplay, premier_league, laliga)
+- **MATCH_EXTRACTOR_USER**: Template para extracción estructurada con JSON schema
+- **LEAGUE_CONTEXTS**: Contexto específico por liga (liga_betplay, premier_league, laliga)
 
 ### 8. Nodos de Procesamiento del Agente
 
 #### scrape_node (`nodes/scrape_node.py`)
-- Usa `AsyncWebCrawler` de `crawl4ai` para scraping asÃ­ncrono
+- Usa `AsyncWebCrawler` de `crawl4ai` para scraping asíncrono
 - **Listas de fuentes:**
   - Confiables: sofascore.com, flashscore.com, espn.com, dimayor.com.co, caracol.com.co, futbolred.com, eltiempo.com
   - Bloqueadas: facebook.com, twitter.com, instagram.com, tiktok.com, youtube.com, reddit.com
-- **SemÃ¡foro de concurrencia:** MÃ¡ximo 3 peticiones simultÃ¡neas (`MAX_CONCURRENT_SCRAPES=3`)
-- **LÃ­mite de caracteres:** 50,000 por pÃ¡gina para optimizar tokens
-- **Timeout:** 30 segundos por peticiÃ³n
+- **Semáforo de concurrencia:** Máximo 3 peticiones simultáneas (`MAX_CONCURRENT_SCRAPES=3`)
+- **Límite de caracteres:** 50,000 por página para optimizar tokens
+- **Timeout:** 30 segundos por petición
 - Filtra URLs por dominio confiable antes de scrapear
 
 #### parse_node (`nodes/parse_node.py`)
 - Usa `instructor` con `AsyncAnthropic` (Claude 3.5 Sonnet)
 - **Forzado de schema:** Respuesta estructurada hacia `WebExtractionResult`
-- **DeduplicaciÃ³n:** Por par de equipos normalizados + fecha (`home_team`, `away_team`, `match_date`)
-- **NormalizaciÃ³n de equipos:** Mapeo de variantes (AtlÃ©tico Nacional â†’ Nacional, AmÃ©rica de Cali â†’ America, etc.)
-- **Manejo de errores:** Logging detallado de fallos de extracciÃ³n
+- **Deduplicación:** Por par de equipos normalizados + fecha (`home_team`, `away_team`, `match_date`)
+- **Normalización de equipos:** Mapeo de variantes (Atlético Nacional → Nacional, América de Cali → America, etc.)
+- **Manejo de errores:** Logging detallado de fallos de extracción
 
 #### validate_node (`nodes/validate_node.py`)
-- Transforma `WebExtractedMatch` â†’ `RawFixture` (formato unificado)
-- **Parseo flexible de fechas:** Soporta mÃºltiples formatos (ISO, DD/MM/YYYY, DD-MM-YYYY, etc.) usando `dateutil.parser`
-- **ValidaciÃ³n de 90 minutos:**
-  - Si `went_to_extra_time=true` y no hay goles de tiempo reglamentario â†’ marca como `INVALID_FOR_PREDICTION`
-  - Previene contaminaciÃ³n del modelo predictivo con datos de prÃ³rroga/penales
-- **CÃ¡lculo de confianza:** Basado en presencia de campos (fecha, hora, goles, estadio, fuente)
-- **Metadatos de validaciÃ³n:** Resumen con total extraÃ­dos, vÃ¡lidos, excluidos, confianza promedio
+- Transforma `WebExtractedMatch` → `RawFixture` (formato unificado)
+- **Parseo flexible de fechas:** Soporta múltiples formatos (ISO, DD/MM/YYYY, DD-MM-YYYY, etc.) usando `dateutil.parser`
+- **Validación de 90 minutos:**
+  - Si `went_to_extra_time=true` y no hay goles de tiempo reglamentario → marca como `INVALID_FOR_PREDICTION`
+  - Previene contaminación del modelo predictivo con datos de prórroga/penales
+- **Cálculo de confianza:** Basado en presencia de campos (fecha, hora, goles, estadio, fuente)
+- **Metadatos de validación:** Resumen con total extraídos, válidos, excluidos, confianza promedio
 
-### 9. ConfiguraciÃ³n Actualizada (`config.py`)
+### 9. Configuración Actualizada (`config.py`)
 - Agregado `ANTHROPIC_API_KEY: str | None = None` para el agente de IA
 
 ### 10. Dependencias Adicionales
-- `python-dateutil` â€” Parseo flexible de fechas
+- `python-dateutil` — Parseo flexible de fechas
 
-### 11. VerificaciÃ³n
-- Importaciones: âœ… OK
-- FastAPI startup: âœ… Sin errores
-- Nodos implementados: âœ… search_node, scrape_node, parse_node, validate_node
+### 11. Verificación
+- Importaciones: ✅ OK
+- FastAPI startup: ✅ Sin errores
+- Nodos implementados: ✅ search_node, scrape_node, parse_node, validate_node
 
 ---
 
-## ðŸŸ¢ Fase 2.1: Grafo LangGraph y Proveedor AISearchAgentProvider (Completado)
+## 🟢 Fase 2.1: Grafo LangGraph y Proveedor AISearchAgentProvider (Completado)
 
 ### 1. Grafo de LangGraph (`graph.py`)
-- **StateGraph(AgentState)** con flujo: `search` â†’ `scrape` â†’ `parse` â†’ `validate` â†’ `END`
+- **StateGraph(AgentState)** con flujo: `search` → `scrape` → `parse` → `validate` → `END`
 - **Transiciones condicionales** para manejo de fallos:
   - `_should_continue_after_search`: Si no hay resultados, termina el grafo
   - `_should_continue_after_scrape`: Si no hay contenido scrapeado, termina el grafo
-  - `_should_continue_after_parse`: Si no hay datos extraÃ­dos, termina el grafo
-  - `_should_continue_after_validate`: Siempre termina despuÃ©s de validate
+  - `_should_continue_after_parse`: Si no hay datos extraídos, termina el grafo
+  - `_should_continue_after_validate`: Siempre termina después de validate
 - **Singleton** `get_agent_graph()` que retorna el grafo compilado
 - **Nodos del grafo:** `['__start__', 'search', 'scrape', 'parse', 'validate']`
 
 ### 2. Proveedor AISearchAgentProvider (`agent_provider.py`)
-- Hereda de `DataProviderPort` para integraciÃ³n con el sistema de proveedores
-- **MÃ©todos implementados:**
-  - `get_finished_matches(league_code, season, limit)` â€” Invoca el grafo y filtra por status="FINISHED"
-  - `get_upcoming_matches(league_code, season, limit)` â€” Invoca el grafo y filtra por status="SCHEDULED"
-  - `get_teams(league_code, season)` â€” No soportado (retorna lista vacÃ­a)
-  - `get_leagues()` â€” Retorna informaciÃ³n de ligas soportadas
-- **ConversiÃ³n de resultados:** `_dict_to_raw_fixture()` transforma el estado final a `RawFixture`
-- **Manejo de errores:** Logging detallado y retorno de listas vacÃ­as en caso de fallo
+- Hereda de `DataProviderPort` para integración con el sistema de proveedores
+- **Métodos implementados:**
+  - `get_finished_matches(league_code, season, limit)` — Invoca el grafo y filtra por status="FINISHED"
+  - `get_upcoming_matches(league_code, season, limit)` — Invoca el grafo y filtra por status="SCHEDULED"
+  - `get_teams(league_code, season)` — No soportado (retorna lista vacía)
+  - `get_leagues()` — Retorna información de ligas soportadas
+- **Conversión de resultados:** `_dict_to_raw_fixture()` transforma el estado final a `RawFixture`
+- **Manejo de errores:** Logging detallado y retorno de listas vacías en caso de fallo
 
 ### 3. Registro de Proveedores Actualizado (`provider_registry.py`)
 - **Proveedores registrados:** `['football-data.org', 'ai_search_agent']`
 - **Enrutamiento por liga:**
-  - `PL`, `PD`, `premier_league`, `laliga` â†’ `football-data.org`
-  - `239`, `liga_betplay`, `betplay`, `colombia` â†’ `ai_search_agent`
+  - `PL`, `PD`, `premier_league`, `laliga` → `football-data.org`
+  - `239`, `liga_betplay`, `betplay`, `colombia` → `ai_search_agent`
 - **Funciones exportadas:**
-  - `get_provider(name)` â€” Obtiene proveedor por nombre
-  - `get_provider_for_league(league_code)` â€” Obtiene proveedor segÃºn liga
-  - `list_providers()` â€” Lista proveedores registrados
+  - `get_provider(name)` — Obtiene proveedor por nombre
+  - `get_provider_for_league(league_code)` — Obtiene proveedor según liga
+  - `list_providers()` — Lista proveedores registrados
 
 ### 4. Flujo Completo del Agente
 ```
 DataIngestionService.sync_matches_for_league(league_id=239, season=2026)
-  â†’ _resolve_provider(239) â†’ "liga_betplay"
-  â†’ get_provider_for_league("liga_betplay") â†’ AISearchAgentProvider
-  â†’ provider.get_finished_matches("liga_betplay", 2026)
-    â†’ get_agent_graph().ainvoke(AgentState(...))
-      â†’ search_node: DuckDuckGo search (5 queries paralelas)
-      â†’ scrape_node: crawl4ai scraping (3 concurrentes, fuentes confiables)
-      â†’ parse_node: Claude 3.5 Sonnet extraction (anti-alucinaciÃ³n)
-      â†’ validate_node: TransformaciÃ³n a RawFixture (regla 90 min)
-    â†’ Retorna list[RawFixture] con partidos validados
-  â†’ MatchRepository.upsert_match() â†’ Supabase
+  → _resolve_provider(239) → "liga_betplay"
+  → get_provider_for_league("liga_betplay") → AISearchAgentProvider
+  → provider.get_finished_matches("liga_betplay", 2026)
+    → get_agent_graph().ainvoke(AgentState(...))
+      → search_node: DuckDuckGo search (5 queries paralelas)
+      → scrape_node: crawl4ai scraping (3 concurrentes, fuentes confiables)
+      → parse_node: Claude 3.5 Sonnet extraction (anti-alucinación)
+      → validate_node: Transformación a RawFixture (regla 90 min)
+    → Retorna list[RawFixture] con partidos validados
+  → MatchRepository.upsert_match() → Supabase
 ```
 
-### 5. VerificaciÃ³n
-- Importaciones: âœ… OK
-- Grafo compilado: âœ… `CompiledStateGraph` con 4 nodos
-- Provider registry: âœ… 2 proveedores registrados
-- Enrutamiento: âœ… PLâ†’football-data.org, 239â†’ai_search_agent
-- FastAPI startup: âœ… Sin errores
+### 5. Verificación
+- Importaciones: ✅ OK
+- Grafo compilado: ✅ `CompiledStateGraph` con 4 nodos
+- Provider registry: ✅ 2 proveedores registrados
+- Enrutamiento: ✅ PL→football-data.org, 239→ai_search_agent
+- FastAPI startup: ✅ Sin errores
 
 ---
 
-## ðŸŸ¢ Fase 3: Motor Predictivo Cuantitativo (Completado)
+## 🟢 Fase 3: Motor Predictivo Cuantitativo (Completado)
 
 ### 1. Estructura del Paquete ML
 ```
 packages/ml/
-â”œâ”€â”€ pyproject.toml                    # ConfiguraciÃ³n del paquete
-â”œâ”€â”€ README.md                         # DocumentaciÃ³n
-â””â”€â”€ betmind_ml/
-    â”œâ”€â”€ __init__.py
-    â”œâ”€â”€ config.py                     # Constantes del modelo
-    â”œâ”€â”€ schemas/                      # Contratos de datos (SDD)
-    â”‚   â”œâ”€â”€ team_strength.py          # TeamStrengthProfile
-    â”‚   â”œâ”€â”€ match_input.py            # MatchPredictionInput
-    â”‚   â””â”€â”€ prediction_output.py      # MatchPredictionOutput, MarketProbability, ScoreMatrix
-    â”œâ”€â”€ features/                     # Feature Engineering
-    â”‚   â”œâ”€â”€ strength_calculator.py    # Ãndices de ataque/defensa relativos a la liga
-    â”‚   â””â”€â”€ form_calculator.py        # Forma reciente, H2H, fatiga
-    â”œâ”€â”€ models/                       # Modelos matemÃ¡ticos puros
-    â”‚   â”œâ”€â”€ poisson_engine.py         # DistribuciÃ³n de Poisson bivariada
-    â”‚   â””â”€â”€ market_calculator.py      # 1X2, Over/Under, BTTS desde la matriz
-    â”œâ”€â”€ ev/                           # Expected Value
-    â”‚   â””â”€â”€ ev_calculator.py          # Comparador prob real vs cuota bookmaker
-    â”œâ”€â”€ pipeline/                     # OrquestaciÃ³n del flujo completo
-    â”‚   â””â”€â”€ prediction_pipeline.py    # Entry point: match_id â†’ PredictionOutput
-    â””â”€â”€ backtesting/                  # ValidaciÃ³n del modelo (Fase 4)
+├── pyproject.toml                    # Configuración del paquete
+├── README.md                         # Documentación
+└── betmind_ml/
+    ├── __init__.py
+    ├── config.py                     # Constantes del modelo
+    ├── schemas/                      # Contratos de datos (SDD)
+    │   ├── team_strength.py          # TeamStrengthProfile
+    │   ├── match_input.py            # MatchPredictionInput
+    │   └── prediction_output.py      # MatchPredictionOutput, MarketProbability, ScoreMatrix
+    ├── features/                     # Feature Engineering
+    │   ├── strength_calculator.py    # Índices de ataque/defensa relativos a la liga
+    │   └── form_calculator.py        # Forma reciente, H2H, fatiga
+    ├── models/                       # Modelos matemáticos puros
+    │   ├── poisson_engine.py         # Distribución de Poisson bivariada
+    │   └── market_calculator.py      # 1X2, Over/Under, BTTS desde la matriz
+    ├── ev/                           # Expected Value
+    │   └── ev_calculator.py          # Comparador prob real vs cuota bookmaker
+    ├── pipeline/                     # Orquestación del flujo completo
+    │   └── prediction_pipeline.py    # Entry point: match_id → PredictionOutput
+    └── backtesting/                  # Validación del modelo (Fase 4)
 ```
 
-### 2. Fundamento MatemÃ¡tico
+### 2. Fundamento Matemático
 
-**DistribuciÃ³n de Poisson Bivariada:**
+**Distribución de Poisson Bivariada:**
 ```
 P(X=i, Y=j) = P(X=i) * P(Y=j)
-P(X=i) = (Î»^i * e^(-Î»)) / i!
+P(X=i) = (λ^i * e^(-λ)) / i!
 ```
 
 **Lambdas (Goles Esperados - xG):**
 ```
-Î»_home = attack_home * defense_away * league_avg * home_advantage * form_adj * h2h_adj
-Î»_away = attack_away * defense_home * league_avg * form_adj * h2h_adj
+λ_home = attack_home * defense_away * league_avg * home_advantage * form_adj * h2h_adj
+λ_away = attack_away * defense_home * league_avg * form_adj * h2h_adj
 ```
 
-**Ãndices Relativos:**
+**Índices Relativos:**
 ```
 attack_index  = (goles_marcados_equipo / partidos) / (goles_totales_liga / partidos_liga / 2)
 defense_index = (goles_totales_liga / partidos_liga / 2) / (goles_recibidos_equipo / partidos)
@@ -492,8 +492,8 @@ EV = (P_real * (cuota - 1)) - (1 - P_real)
 Edge = P_real - P_implicita = P_real - (1 / cuota)
 ```
 
-### 3. ConfiguraciÃ³n del Modelo (`config.py`)
-- **MIN_MATCHES_FOR_STRENGTH**: 5 partidos mÃ­nimos para perfil confiable
+### 3. Configuración del Modelo (`config.py`)
+- **MIN_MATCHES_FOR_STRENGTH**: 5 partidos mínimos para perfil confiable
 - **STRENGTH_WINDOW**: 10 partidos para calcular fuerza
 - **FORM_WINDOW**: 5 partidos para forma reciente
 - **HOME_ADVANTAGE_BY_LEAGUE**:
@@ -501,40 +501,40 @@ Edge = P_real - P_implicita = P_real - (1 / cuota)
   - LaLiga: 1.22
   - Liga BetPlay: 1.30 (mayor ventaja local)
 - **MAX_GOALS_MATRIX**: 8 (cubre >99.9% de partidos reales)
-- **FORM_WEIGHT**: 0.25 (peso de forma reciente vs histÃ³rico)
-- **EV_POSITIVE_THRESHOLD**: 0.05 (5% margen mÃ­nimo)
+- **FORM_WEIGHT**: 0.25 (peso de forma reciente vs histórico)
+- **EV_POSITIVE_THRESHOLD**: 0.05 (5% margen mínimo)
 - **EV_AVOID_THRESHOLD**: -0.10 (evitar activamente)
 
 ### 4. Flujo Completo del Pipeline
 ```
 1. calculate_league_averages()
-   â†’ avg_goals_per_team = 1.28 (BetPlay) / 1.35 (Premier)
+   → avg_goals_per_team = 1.28 (BetPlay) / 1.35 (Premier)
 
-2. calculate_team_strength() Ã— 2
-   â†’ attack_index_home = 1.24 (ataca 24% mÃ¡s que el promedio)
-   â†’ defense_index_away = 0.91 (defensa frÃ¡gil, concede 10% mÃ¡s)
+2. calculate_team_strength() × 2
+   → attack_index_home = 1.24 (ataca 24% más que el promedio)
+   → defense_index_away = 0.91 (defensa frágil, concede 10% más)
 
 3. calculate_lambdas()
-   â†’ Î»_home = 1.24 Ã— 0.91 Ã— 1.28 Ã— 1.30 Ã— form_adj = 1.93 xG
-   â†’ Î»_away = 0.85 Ã— 1.12 Ã— 1.28 Ã— form_adj = 1.21 xG
+   → λ_home = 1.24 × 0.91 × 1.28 × 1.30 × form_adj = 1.93 xG
+   → λ_away = 0.85 × 1.12 × 1.28 × form_adj = 1.21 xG
 
 4. build_score_matrix()
-   â†’ P(2-1) = 14.3% â† mÃ¡s probable
-   â†’ P(1-1) = 11.8%
-   â†’ P(2-0) = 10.2%
+   → P(2-1) = 14.3% ← más probable
+   → P(1-1) = 11.8%
+   → P(2-0) = 10.2%
 
 5. build_all_markets()
-   â†’ P(local gana) = 52.3%
-   â†’ P(empate) = 24.1%
-   â†’ P(visita gana) = 23.6%
-   â†’ P(Over 2.5) = 54.7%
-   â†’ P(BTTS) = 48.9%
+   → P(local gana) = 52.3%
+   → P(empate) = 24.1%
+   → P(visita gana) = 23.6%
+   → P(Over 2.5) = 54.7%
+   → P(BTTS) = 48.9%
 
 6. enrich_markets_batch() (si hay cuotas)
-   â†’ OVER_2_5: P_real=54.7% vs P_implied=47.6% â†’ Edge=+7.1% EV=+0.12 âœ… POSITIVE_EV
-   â†’ 1X2_HOME: P_real=52.3% vs P_implied=55.6% â†’ Edge=-3.3% EV=-0.07 âŒ NO_VALUE
+   → OVER_2_5: P_real=54.7% vs P_implied=47.6% → Edge=+7.1% EV=+0.12 ✅ POSITIVE_EV
+   → 1X2_HOME: P_real=52.3% vs P_implied=55.6% → Edge=-3.3% EV=-0.07 ❌ NO_VALUE
 
-7. MatchPredictionOutput â†’ tabla predictions de Supabase
+7. MatchPredictionOutput → tabla predictions de Supabase
 ```
 
 ### 5. Tests Unitarios
@@ -543,85 +543,85 @@ $env:PYTHONPATH = "packages/ml"; python tests/test_poisson_engine.py
 ```
 
 **Resultados:**
-- âœ… Test bÃ¡sico de predicciÃ³n completado
+- ✅ Test básico de predicción completado
   - lambda_home=4.738, lambda_away=3.051
-  - Score mÃ¡s probable: 4-3 (4.1%)
+  - Score más probable: 4-3 (4.1%)
   - Confianza: 80/100
-- âœ… Test de predicciÃ³n con cuotas completado
+- ✅ Test de predicción con cuotas completado
   - Mercados con EV calculado: 5
   - Mercados con verdict: 5
-- âœ… Test de suma de matriz completado: 1.0000
-- âœ… Test de probabilidades 1X2 completado: 1.0000
+- ✅ Test de suma de matriz completado: 1.0000
+- ✅ Test de probabilidades 1X2 completado: 1.0000
   - Home: 56.1%, Draw: 23.1%, Away: 20.8%
 
 ### 6. Dependencias Instaladas
-- `scipy>=1.11.0` â€” DistribuciÃ³n de Poisson
-- `pydantic>=2.0.0` â€” ValidaciÃ³n de datos (ya instalado)
+- `scipy>=1.11.0` — Distribución de Poisson
+- `pydantic>=2.0.0` — Validación de datos (ya instalado)
 
-### 7. VerificaciÃ³n
-- Importaciones: âœ… OK
-- Tests unitarios: âœ… 4/4 pasados
-- Matriz de Poisson: âœ… Suma 1.0000
-- Probabilidades 1X2: âœ… Suma 1.0000
-- FastAPI startup: âœ… Sin errores
+### 7. Verificación
+- Importaciones: ✅ OK
+- Tests unitarios: ✅ 4/4 pasados
+- Matriz de Poisson: ✅ Suma 1.0000
+- Probabilidades 1X2: ✅ Suma 1.0000
+- FastAPI startup: ✅ Sin errores
 
 ---
 
-## ðŸŸ¢ Fase 4: Motor TÃ¡ctico y Narrativo (Cerebro Cualitativo) (Completado)
+## 🟢 Fase 4: Motor Táctico y Narrativo (Cerebro Cualitativo) (Completado)
 
-### 1. Arquitectura del Cerebro TÃ¡ctico
-El Cerebro TÃ¡ctico combina el motor cuantitativo de Poisson (Fase 3) con anÃ¡lisis narrativo cualitativo usando LLMs (Claude) para generar insights tÃ¡cticos estructurados.
+### 1. Arquitectura del Cerebro Táctico
+El Cerebro Táctico combina el motor cuantitativo de Poisson (Fase 3) con análisis narrativo cualitativo usando LLMs (Claude) para generar insights tácticos estructurados.
 
-**Principio de DiseÃ±o:** DegradaciÃ³n elegante â€” si un generador falla, los demÃ¡s continÃºan. El anÃ¡lisis parcial es mejor que ningÃºn anÃ¡lisis.
+**Principio de Diseño:** Degradación elegante — si un generador falla, los demás continúan. El análisis parcial es mejor que ningún análisis.
 
-**EjecuciÃ³n Paralela:** Los generadores de narrativa se ejecutan concurrentemente con `asyncio.gather`, reduciendo latencia de ~12s (secuencial) a ~4-5s (paralelo).
+**Ejecución Paralela:** Los generadores de narrativa se ejecutan concurrentemente con `asyncio.gather`, reduciendo latencia de ~12s (secuencial) a ~4-5s (paralelo).
 
 ### 2. Estructura de Archivos Creados
 ```
 packages/ml/betmind_ml/
-â”œâ”€â”€ schemas/
-â”‚   â”œâ”€â”€ referee.py                # RefereeProfile (Ã¡rbitros)
-â”‚   â”œâ”€â”€ player_props.py           # PlayerProfile, PlayerPropLine, PlayerPosition
-â”‚   â”œâ”€â”€ match_context.py          # MatchContext, MatchImportance
-â”‚   â””â”€â”€ tactical_analysis.py      # TacticalAnalysis, MarketNarrative, ProConPoint, SignalStrength, BetBuilderCombination
-â”‚
-â”œâ”€â”€ narrative/                    # Cerebro TÃ¡ctico Cualitativo
-â”‚   â”œâ”€â”€ __init__.py
-â”‚   â”œâ”€â”€ prompts/                  # Prompts anti-alucinaciÃ³n
-â”‚   â”‚   â”œâ”€â”€ __init__.py
-â”‚   â”‚   â”œâ”€â”€ base_prompt.py        # SYSTEM_BASE (reglas crÃ­ticas)
-â”‚   â”‚   â”œâ”€â”€ goals_prompt.py       # GOALS_ANALYSIS_USER, BOOKMAKER_SECTION_*
-â”‚   â”‚   â”œâ”€â”€ cards_prompt.py       # CARDS_ANALYSIS_USER, REFEREE_DATA_*
-â”‚   â”‚   â”œâ”€â”€ corners_prompt.py     # CORNERS_ANALYSIS_USER
-â”‚   â”‚   â””â”€â”€ bet_builder_prompt.py # BET_BUILDER_USER
-â”‚   â”œâ”€â”€ generators/               # Generadores narrativos
-â”‚   â”‚   â”œâ”€â”€ __init__.py
-â”‚   â”‚   â”œâ”€â”€ goals_narrative.py    # generate_goals_narrative()
-â”‚   â”‚   â”œâ”€â”€ cards_narrative.py    # generate_cards_narrative()
-â”‚   â”‚   â”œâ”€â”€ corners_narrative.py  # generate_corners_narrative()
-â”‚   â”‚   â””â”€â”€ bet_builder.py        # generate_bet_builder()
-â”‚   â””â”€â”€ narrative_orchestrator.py # NarrativeOrchestrator (asyncio.gather)
-â”‚
-â””â”€â”€ pipeline/
-    â””â”€â”€ full_analysis_pipeline.py # run_full_analysis() - Entry point Fase 4
+├── schemas/
+│   ├── referee.py                # RefereeProfile (árbitros)
+│   ├── player_props.py           # PlayerProfile, PlayerPropLine, PlayerPosition
+│   ├── match_context.py          # MatchContext, MatchImportance
+│   └── tactical_analysis.py      # TacticalAnalysis, MarketNarrative, ProConPoint, SignalStrength, BetBuilderCombination
+│
+├── narrative/                    # Cerebro Táctico Cualitativo
+│   ├── __init__.py
+│   ├── prompts/                  # Prompts anti-alucinación
+│   │   ├── __init__.py
+│   │   ├── base_prompt.py        # SYSTEM_BASE (reglas críticas)
+│   │   ├── goals_prompt.py       # GOALS_ANALYSIS_USER, BOOKMAKER_SECTION_*
+│   │   ├── cards_prompt.py       # CARDS_ANALYSIS_USER, REFEREE_DATA_*
+│   │   ├── corners_prompt.py     # CORNERS_ANALYSIS_USER
+│   │   └── bet_builder_prompt.py # BET_BUILDER_USER
+│   ├── generators/               # Generadores narrativos
+│   │   ├── __init__.py
+│   │   ├── goals_narrative.py    # generate_goals_narrative()
+│   │   ├── cards_narrative.py    # generate_cards_narrative()
+│   │   ├── corners_narrative.py  # generate_corners_narrative()
+│   │   └── bet_builder.py        # generate_bet_builder()
+│   └── narrative_orchestrator.py # NarrativeOrchestrator (asyncio.gather)
+│
+└── pipeline/
+    └── full_analysis_pipeline.py # run_full_analysis() - Entry point Fase 4
 ```
 
 ### 3. Schemas Implementados
 
 #### RefereeProfile (`schemas/referee.py`)
-Perfil estadÃ­stico de Ã¡rbitro para mercado de tarjetas:
+Perfil estadístico de árbitro para mercado de tarjetas:
 - `referee_name`, `matches_sample`
 - `avg_yellow_cards`, `avg_red_cards`, `avg_fouls_called`
-- `strictness_index` (1.0 = promedio liga, >1.0 = mÃ¡s estricto)
+- `strictness_index` (1.0 = promedio liga, >1.0 = más estricto)
 - `high_stakes_avg_yellows` (amarillas en derbis/playoffs)
 - `recent_trend` ('increasing' | 'decreasing' | 'stable')
 - `is_reliable` (False si matches_sample < 5)
 
 #### PlayerProfile y PlayerPropLine (`schemas/player_props.py`)
-EstadÃ­sticas de jugadores para props:
+Estadísticas de jugadores para props:
 - `PlayerPosition`: FORWARD, MIDFIELDER, DEFENDER, GOALKEEPER
-- `PlayerProfile`: tiros por 90, precisiÃ³n, tarjetas, faltas, forma reciente
-- `PlayerPropLine`: lÃ­nea de apuesta (ej: "Over 2.5 tiros a puerta"), probabilidades, EV
+- `PlayerProfile`: tiros por 90, precisión, tarjetas, faltas, forma reciente
+- `PlayerPropLine`: línea de apuesta (ej: "Over 2.5 tiros a puerta"), probabilidades, EV
 
 #### MatchContext (`schemas/match_context.py`)
 Contexto cualitativo del partido:
@@ -629,7 +629,7 @@ Contexto cualitativo del partido:
 - `stadium_altitude_masl` (altitud en msnm)
 - `expected_weather`, `expected_temperature_celsius`
 - `is_derby`, `rivalry_intensity` (1-5)
-- `home_position`, `away_position` (posiciÃ³n en tabla)
+- `home_position`, `away_position` (posición en tabla)
 - `home_days_since_last_match`, `away_days_since_last_match` (fatiga)
 - `home_key_players_out`, `away_key_players_out` (bajas confirmadas)
 - `altitude_impact` (property: 'high' >=2500m, 'moderate' >=1500m, 'none')
@@ -642,53 +642,53 @@ Output estructurado del LLM:
 - `BetBuilderCombination`: name, legs (2-4), combined_probability, correlation_rationale, risk_level
 - `TacticalAnalysis`: match_id, goals_narrative, cards_narrative, corners_narrative, bet_builder_suggestions (max 3), overall_confidence (0-100), match_preview_headline, data_completeness_score (0-1)
 
-### 4. Prompts Anti-AlucinaciÃ³n
+### 4. Prompts Anti-Alucinación
 
 #### SYSTEM_BASE (`prompts/base_prompt.py`)
-Reglas crÃ­ticas heredadas por todos los prompts:
-1. **SOLO datos proporcionados** â€” cada afirmaciÃ³n respaldada por nÃºmero explÃ­cito
-2. **Honestidad obligatoria** â€” SIEMPRE al menos 1 cons de la apuesta recomendada
-3. **Probabilidades coherentes** â€” narrativa alineada con Poisson (no decir "muy probable" si P=54%)
-4. **CalibraciÃ³n de lenguaje**:
+Reglas críticas heredadas por todos los prompts:
+1. **SOLO datos proporcionados** — cada afirmación respaldada por número explícito
+2. **Honestidad obligatoria** — SIEMPRE al menos 1 cons de la apuesta recomendada
+3. **Probabilidades coherentes** — narrativa alineada con Poisson (no decir "muy probable" si P=54%)
+4. **Calibración de lenguaje**:
    - 65-100%: "alta probabilidad", "favorecido ampliamente"
    - 55-65%: "ligera ventaja", "levemente favorable"
    - 45-55%: "partido equilibrado", "mercado disputado"
    - <45%: "en contra de la tendencia", "apuesta de riesgo"
-5. **Factores ausentes** â€” si no hay datos del Ã¡rbitro, NO mencionar Ã¡rbitro
-6. **Formato** â€” responder ÃšNICAMENTE con JSON schema, cero texto fuera
+5. **Factores ausentes** — si no hay datos del árbitro, NO mencionar árbitro
+6. **Formato** — responder ÚNICAMENTE con JSON schema, cero texto fuera
 
 #### Prompts Especializados
 - `goals_prompt.py`: Over/Under 2.5 + BTTS con datos de Poisson, forma, H2H, contexto
-- `cards_prompt.py`: Tarjetas con Ã©nfasis en Ã¡rbitro (>40% del anÃ¡lisis)
-- `corners_prompt.py`: CÃ³rneres con estadÃ­sticas tÃ¡cticas (tiros bloqueados, presiÃ³n alta)
-- `bet_builder_prompt.py`: Combinadas con correlaciÃ³n positiva (rechaza correlaciÃ³n negativa)
+- `cards_prompt.py`: Tarjetas con énfasis en árbitro (>40% del análisis)
+- `corners_prompt.py`: Córneres con estadísticas tácticas (tiros bloqueados, presión alta)
+- `bet_builder_prompt.py`: Combinadas con correlación positiva (rechaza correlación negativa)
 
 ### 5. Generadores Narrativos
 
 #### generate_goals_narrative()
 - Extrae probabilidades del motor Poisson (OVER_2_5, BTTS_YES)
-- Construye prompt con Î»_home, Î»_away, forma, H2H, contexto
+- Construye prompt con λ_home, λ_away, forma, H2H, contexto
 - Usa `instructor.from_anthropic()` para forzar schema `MarketNarrative`
 - Retorna `MarketNarrative | None`
 
 #### generate_cards_narrative()
-- Construye secciÃ³n de Ã¡rbitro (disponible/no disponible)
+- Construye sección de árbitro (disponible/no disponible)
 - Si `referee.is_reliable=False`, reduce signal_strength a "weak" o "moderate"
-- Ã‰nfasis en disciplina de equipos + contexto de tensiÃ³n (derby, rivalidad)
+- Énfasis en disciplina de equipos + contexto de tensión (derby, rivalidad)
 
 #### generate_corners_narrative()
-- Usa datos de cÃ³rneres por equipo (a favor, en contra, tiros bloqueados)
-- Factores tÃ¡cticos: presiÃ³n alta, juego por bandas
-- Nota: cÃ³rneres tienen alta varianza, signal_strength raramente "strong"
+- Usa datos de córneres por equipo (a favor, en contra, tiros bloqueados)
+- Factores tácticos: presión alta, juego por bandas
+- Nota: córneres tienen alta varianza, signal_strength raramente "strong"
 
 #### generate_bet_builder()
-- Se ejecuta DESPUÃ‰S de los otros generadores (necesita sus resultados)
-- Genera 2-4 legs por combinada con correlaciÃ³n positiva
-- Rechaza combinadas con correlaciÃ³n negativa (ej: Under goles + Over cÃ³rneres favorito)
+- Se ejecuta DESPUÉS de los otros generadores (necesita sus resultados)
+- Genera 2-4 legs por combinada con correlación positiva
+- Rechaza combinadas con correlación negativa (ej: Under goles + Over córneres favorito)
 
 ### 6. NarrativeOrchestrator
 
-#### EjecuciÃ³n Paralela con asyncio.gather
+#### Ejecución Paralela con asyncio.gather
 ```python
 (goals_result, cards_result, corners_result) = await asyncio.gather(
     generate_goals_narrative(...),
@@ -697,28 +697,28 @@ Reglas crÃ­ticas heredadas por todos los prompts:
     return_exceptions=False,
 )
 ```
-- Tiempo total â‰ˆ mÃ¡ximo de los tiempos individuales (~4-5s vs ~12s secuencial)
+- Tiempo total ≈ máximo de los tiempos individuales (~4-5s vs ~12s secuencial)
 - Si un generador falla, retorna `None` para ese mercado
 
 #### Bet Builder Secuencial
-DespuÃ©s del gather, ejecuta `generate_bet_builder()` con contexto de las narrativas anteriores.
+Después del gather, ejecuta `generate_bet_builder()` con contexto de las narrativas anteriores.
 
-#### CÃ¡lculo de Confianza Global
+#### Cálculo de Confianza Global
 ```python
 base = output.confidence_score  # del motor Poisson
-narrative_bonus = (narratives_count / 3) * 15  # mÃ¡x 15 puntos extra
+narrative_bonus = (narratives_count / 3) * 15  # máx 15 puntos extra
 overall_confidence = min(round(base + narrative_bonus), 100)
 ```
 
 #### Data Completeness Score
-- +0.35 si Ã¡rbitro confiable (`referee.is_reliable=True`)
-- +0.35 si datos de cÃ³rneres disponibles
+- +0.35 si árbitro confiable (`referee.is_reliable=True`)
+- +0.35 si datos de córneres disponibles
 - +0.30 si H2H >= 3 partidos
 
 ### 7. Pipeline Completo (`full_analysis_pipeline.py`)
 
 #### run_full_analysis()
-Entry point Ãºnico que conecta Fase 3 + Fase 4:
+Entry point único que conecta Fase 3 + Fase 4:
 ```python
 async def run_full_analysis(
     # Datos del motor cuantitativo (mismos que run_prediction)
@@ -736,15 +736,15 @@ async def run_full_analysis(
 ```
 
 **Flujo:**
-1. `run_prediction()` â€” Motor cuantitativo Poisson (sÃ­ncrono, ~0.1s)
-2. `_compute_h2h_stats()` â€” EstadÃ­sticas H2H para narrativa
-3. `NarrativeOrchestrator.generate_full_analysis()` â€” Cerebro tÃ¡ctico (asÃ­ncrono, ~4-5s)
+1. `run_prediction()` — Motor cuantitativo Poisson (síncrono, ~0.1s)
+2. `_compute_h2h_stats()` — Estadísticas H2H para narrativa
+3. `NarrativeOrchestrator.generate_full_analysis()` — Cerebro táctico (asíncrono, ~4-5s)
 4. Retorna `(quant_output, tactical_output)`
 
-### 8. ConfiguraciÃ³n Actualizada
+### 8. Configuración Actualizada
 
 #### config.py
-- Agregado `CARDS_LINE_DEFAULT = 3.5` (lÃ­nea de tarjetas por defecto)
+- Agregado `CARDS_LINE_DEFAULT = 3.5` (línea de tarjetas por defecto)
 
 #### pyproject.toml
 - Agregado optional dependency group `narrative`:
@@ -758,7 +758,7 @@ async def run_full_analysis(
 
 #### __init__.py Actualizados
 - `schemas/__init__.py`: Exporta todos los schemas nuevos (RefereeProfile, PlayerProfile, MatchContext, TacticalAnalysis, etc.)
-- `betmind_ml/__init__.py`: Exporta `run_full_analysis` y `TacticalAnalysis`, versiÃ³n actualizada a `1.1.0`
+- `betmind_ml/__init__.py`: Exporta `run_full_analysis` y `TacticalAnalysis`, versión actualizada a `1.1.0`
 
 ### 9. Tests Unitarios
 
@@ -768,10 +768,10 @@ $env:PYTHONPATH = "packages/ml"; python -m pytest tests/test_full_analysis.py -v
 ```
 
 **Tests implementados:**
-1. `test_run_full_analysis_produces_both_outputs` â€” Verifica que `run_full_analysis()` retorna `MatchPredictionOutput` y `TacticalAnalysis` usando mocks para el LLM
-2. `test_compute_h2h_stats_with_data` â€” Verifica cÃ¡lculo de estadÃ­sticas H2H con datos reales
-3. `test_compute_h2h_stats_empty` â€” Verifica manejo de lista vacÃ­a
-4. `test_schemas_import` â€” Verifica importaciÃ³n y validaciÃ³n de todos los schemas nuevos
+1. `test_run_full_analysis_produces_both_outputs` — Verifica que `run_full_analysis()` retorna `MatchPredictionOutput` y `TacticalAnalysis` usando mocks para el LLM
+2. `test_compute_h2h_stats_with_data` — Verifica cálculo de estadísticas H2H con datos reales
+3. `test_compute_h2h_stats_empty` — Verifica manejo de lista vacía
+4. `test_schemas_import` — Verifica importación y validación de todos los schemas nuevos
 
 **Resultados:**
 ```
@@ -793,53 +793,53 @@ Total: 8 passed in 2.65s
 ### 10. Flujo Completo de Datos
 ```
 FastAPI PredictionOrchestrator
-            â”‚
-            â–¼
-    run_full_analysis()          â† Entry point Ãºnico
-       â”‚          â”‚
-       â–¼          â–¼
+            │
+            ▼
+    run_full_analysis()          ← Entry point único
+       │          │
+       ▼          ▼
 run_prediction()  NarrativeOrchestrator.generate_full_analysis()
-(Fase 3 â€” sync)        â”‚
-                        â”œâ”€â”€ generate_goals_narrative()  â”€â”
-                        â”œâ”€â”€ generate_cards_narrative()   â”œâ”€ asyncio.gather (paralelo)
-                        â””â”€â”€ generate_corners_narrative() â”€â”˜
-                                    â”‚
-                                    â–¼ (secuencial, necesita resultados anteriores)
+(Fase 3 — sync)        │
+                        ├── generate_goals_narrative()  ─┐
+                        ├── generate_cards_narrative()   ├─ asyncio.gather (paralelo)
+                        └── generate_corners_narrative() ─┘
+                                    │
+                                    ▼ (secuencial, necesita resultados anteriores)
                             generate_bet_builder()
-                                    â”‚
-                                    â–¼
+                                    │
+                                    ▼
                             TacticalAnalysis (Pydantic)
-                                    â”‚
-                            Supabase â†’ tabla tactical_analyses
-                                    â”‚
-                            FastAPI â†’ App mÃ³vil / Web
+                                    │
+                            Supabase → tabla tactical_analyses
+                                    │
+                            FastAPI → App móvil / Web
 ```
 
 ### 11. Latencia Estimada
 - `asyncio.gather` corre 3 generadores de LLM en paralelo
 - Cada llamada a Claude tarda ~2-4s
 - Total paralelo: ~4-5s (vs ~12s secuencial)
-- Bet Builder aÃ±ade ~2s mÃ¡s
-- **Total: ~6-7s para anÃ¡lisis completo**
+- Bet Builder añade ~2s más
+- **Total: ~6-7s para análisis completo**
 
-### 12. Estrategia de CachÃ©
+### 12. Estrategia de Caché
 - Persistir `TacticalAnalysis` en Supabase con TTL de 6 horas
 - Una vez generado para un partido, servir desde DB
 - Cuotas se recalculan en tiempo real desde `ev_calculator` sin regenerar narrativa
 
-### 13. VerificaciÃ³n
-- Importaciones: âœ… OK
-- Schemas Pydantic: âœ… ValidaciÃ³n correcta
-- Tests unitarios: âœ… 8/8 pasados (4 Fase 3 + 4 Fase 4)
-- NarrativeOrchestrator: âœ… Mockeado con AsyncMock para tests
-- FastAPI startup: âœ… Sin errores
+### 13. Verificación
+- Importaciones: ✅ OK
+- Schemas Pydantic: ✅ Validación correcta
+- Tests unitarios: ✅ 8/8 pasados (4 Fase 3 + 4 Fase 4)
+- NarrativeOrchestrator: ✅ Mockeado con AsyncMock para tests
+- FastAPI startup: ✅ Sin errores
 
 ---
 
-## ðŸŸ¢ Fase 4.1: MigraciÃ³n de Anthropic a Google Gemini (Completado)
+## 🟢 Fase 4.1: Migración de Anthropic a Google Gemini (Completado)
 
-### 1. MotivaciÃ³n
-Migrar el mÃ³dulo narrativo de Anthropic (Claude) a Google Gemini (gratuito) para reducir costos operativos manteniendo la misma funcionalidad.
+### 1. Motivación
+Migrar el módulo narrativo de Anthropic (Claude) a Google Gemini (gratuito) para reducir costos operativos manteniendo la misma funcionalidad.
 
 ### 2. Cambios en Dependencias
 
@@ -852,24 +852,24 @@ narrative = [
 ]
 ```
 
-#### InstalaciÃ³n
+#### Instalación
 ```bash
 pip install google-genai instructor
 ```
 
-### 3. ConfiguraciÃ³n Actualizada (`config.py`)
+### 3. Configuración Actualizada (`config.py`)
 
 ```python
 import os
 
-# â”€â”€ ConfiguraciÃ³n de API Keys â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Configuración de API Keys ─────────────────────────────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# â”€â”€ Modelo Narrativo (LLM) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Modelo Narrativo (LLM) ────────────────────────────────────────────────────
 NARRATIVE_MODEL = "gemini-2.0-flash"
 ```
 
-### 4. AdaptaciÃ³n de Generadores Narrativos
+### 4. Adaptación de Generadores Narrativos
 
 #### Cambios Comunes en los 4 Generadores
 Todos los generadores (`goals_narrative.py`, `cards_narrative.py`, `corners_narrative.py`, `bet_builder.py`) fueron actualizados con los siguientes cambios:
@@ -893,7 +893,7 @@ async def generate_xxx_narrative(..., anthropic_client: AsyncAnthropic):
     )
 ```
 
-**DespuÃ©s (Gemini):**
+**Después (Gemini):**
 ```python
 from google import genai
 import instructor
@@ -910,14 +910,14 @@ async def generate_xxx_narrative(..., gemini_client):
 ```
 
 **Diferencias Clave:**
-1. **ImportaciÃ³n:** `from google import genai` en lugar de `from anthropic import AsyncAnthropic`
-2. **ParÃ¡metro:** `gemini_client` en lugar de `anthropic_client`
+1. **Importación:** `from google import genai` en lugar de `from anthropic import AsyncAnthropic`
+2. **Parámetro:** `gemini_client` en lugar de `anthropic_client`
 3. **System Prompt:** Se concatena con el user prompt (`f"{SYSTEM_BASE}\n\n{user_prompt}"`) porque Gemini no soporta system prompt separado en la API de instructor
 4. **Modelo:** Se configura en el orquestador, no en cada generador
-5. **MÃ©todo:** `chat.completions.create()` en lugar de `messages.create()`
-6. **Sin max_tokens:** Gemini maneja tokens automÃ¡ticamente
+5. **Método:** `chat.completions.create()` en lugar de `messages.create()`
+6. **Sin max_tokens:** Gemini maneja tokens automáticamente
 
-### 5. ActualizaciÃ³n del NarrativeOrchestrator
+### 5. Actualización del NarrativeOrchestrator
 
 **Antes (Anthropic):**
 ```python
@@ -930,7 +930,7 @@ class NarrativeOrchestrator:
         self._client = AsyncAnthropic(api_key=anthropic_api_key)
 ```
 
-**DespuÃ©s (Gemini):**
+**Después (Gemini):**
 ```python
 import instructor
 from google import genai
@@ -950,20 +950,20 @@ class NarrativeOrchestrator:
 2. Envuelve el cliente con `instructor.from_gemini()` pasando el modelo
 3. El cliente resultante se pasa a todos los generadores
 
-### 6. ActualizaciÃ³n del Pipeline (`full_analysis_pipeline.py`)
+### 6. Actualización del Pipeline (`full_analysis_pipeline.py`)
 
-**Cambio de ParÃ¡metro:**
+**Cambio de Parámetro:**
 ```python
 # Antes
 async def run_full_analysis(..., anthropic_api_key: str, ...):
     orchestrator = NarrativeOrchestrator(anthropic_api_key=anthropic_api_key)
 
-# DespuÃ©s
+# Después
 async def run_full_analysis(..., gemini_api_key: str, ...):
     orchestrator = NarrativeOrchator(gemini_api_key=gemini_api_key)
 ```
 
-### 7. ActualizaciÃ³n de Tests (`test_full_analysis.py`)
+### 7. Actualización de Tests (`test_full_analysis.py`)
 
 ```python
 # Antes
@@ -972,7 +972,7 @@ quant_output, tactical_output = await run_full_analysis(
     anthropic_api_key="test-key-fake",
 )
 
-# DespuÃ©s
+# Después
 quant_output, tactical_output = await run_full_analysis(
     ...,
     gemini_api_key="test-key-fake",
@@ -981,15 +981,15 @@ quant_output, tactical_output = await run_full_analysis(
 
 ### 8. Ventajas de Gemini sobre Anthropic
 
-| CaracterÃ­stica | Anthropic (Claude) | Google Gemini |
+| Característica | Anthropic (Claude) | Google Gemini |
 |----------------|-------------------|---------------|
 | **Costo** | Pago por token | Gratuito (tier gratuito) |
 | **Velocidad** | ~2-4s por llamada | ~1-3s por llamada |
-| **Rate Limits** | MÃ¡s restrictivos | MÃ¡s generosos |
-| **Calidad** | Excelente para anÃ¡lisis narrativo | Muy bueno, adecuado para el caso de uso |
-| **Soporte Instructor** | âœ… SÃ­ | âœ… SÃ­ |
+| **Rate Limits** | Más restrictivos | Más generosos |
+| **Calidad** | Excelente para análisis narrativo | Muy bueno, adecuado para el caso de uso |
+| **Soporte Instructor** | ✅ Sí | ✅ Sí |
 
-### 9. ConfiguraciÃ³n de Variables de Entorno
+### 9. Configuración de Variables de Entorno
 
 Agregar al `.env`:
 ```bash
@@ -1001,7 +1001,7 @@ GEMINI_API_KEY=tu_api_key_de_google_aqui
 2. Crear nueva API key
 3. Copiar y pegar en `.env`
 
-### 10. Tests de VerificaciÃ³n
+### 10. Tests de Verificación
 
 ```bash
 $env:PYTHONPATH = "packages/ml"; python -m pytest tests/ -v
@@ -1025,87 +1025,87 @@ tests/test_poisson_engine.py::test_1x2_probabilities_sum PASSED
 
 ### 11. Archivos Modificados
 
-1. `packages/ml/pyproject.toml` â€” Dependencia `google-genai>=2.14.0`
-2. `packages/ml/betmind_ml/config.py` â€” `GEMINI_API_KEY` y `NARRATIVE_MODEL`
-3. `packages/ml/betmind_ml/narrative/generators/goals_narrative.py` â€” Migrado a Gemini
-4. `packages/ml/betmind_ml/narrative/generators/cards_narrative.py` â€” Migrado a Gemini
-5. `packages/ml/betmind_ml/narrative/generators/corners_narrative.py` â€” Migrado a Gemini
-6. `packages/ml/betmind_ml/narrative/generators/bet_builder.py` â€” Migrado a Gemini
-7. `packages/ml/betmind_ml/narrative/narrative_orchestrator.py` â€” InicializaciÃ³n con Gemini
-8. `packages/ml/betmind_ml/pipeline/full_analysis_pipeline.py` â€” ParÃ¡metro `gemini_api_key`
-9. `tests/test_full_analysis.py` â€” Actualizado para usar `gemini_api_key`
+1. `packages/ml/pyproject.toml` — Dependencia `google-genai>=2.14.0`
+2. `packages/ml/betmind_ml/config.py` — `GEMINI_API_KEY` y `NARRATIVE_MODEL`
+3. `packages/ml/betmind_ml/narrative/generators/goals_narrative.py` — Migrado a Gemini
+4. `packages/ml/betmind_ml/narrative/generators/cards_narrative.py` — Migrado a Gemini
+5. `packages/ml/betmind_ml/narrative/generators/corners_narrative.py` — Migrado a Gemini
+6. `packages/ml/betmind_ml/narrative/generators/bet_builder.py` — Migrado a Gemini
+7. `packages/ml/betmind_ml/narrative/narrative_orchestrator.py` — Inicialización con Gemini
+8. `packages/ml/betmind_ml/pipeline/full_analysis_pipeline.py` — Parámetro `gemini_api_key`
+9. `tests/test_full_analysis.py` — Actualizado para usar `gemini_api_key`
 
-### 12. VerificaciÃ³n
-- Importaciones: âœ… OK
-- Tests unitarios: âœ… 8/8 pasados
-- NarrativeOrchestrator: âœ… Inicializa cliente Gemini correctamente
-- Generadores: âœ… Todos adaptados a API nativa de Gemini
-- FastAPI startup: âœ… Sin errores
+### 12. Verificación
+- Importaciones: ✅ OK
+- Tests unitarios: ✅ 8/8 pasados
+- NarrativeOrchestrator: ✅ Inicializa cliente Gemini correctamente
+- Generadores: ✅ Todos adaptados a API nativa de Gemini
+- FastAPI startup: ✅ Sin errores
 
 ---
 
-## ðŸŸ¢ Fase 4.2: Prueba de IntegraciÃ³n End-to-End con Gemini API (Completado)
+## 🟢 Fase 4.2: Prueba de Integración End-to-End con Gemini API (Completado)
 
-### 1. Script de DiagnÃ³stico e IntegraciÃ³n (`tests/test_live_full_analysis.py`)
+### 1. Script de Diagnóstico e Integración (`tests/test_live_full_analysis.py`)
 
-Se creÃ³ un script completo que:
+Se creó un script completo que:
 - Carga `GEMINI_API_KEY` desde `.env`
 - Lista todos los modelos de Gemini disponibles (56 modelos encontrados)
 - Construye datos mock realistas para un partido de Liga BetPlay
 - Ejecuta `run_full_analysis()` con la API real de Gemini
-- Imprime resultados de forma estÃ©tica y organizada
+- Imprime resultados de forma estética y organizada
 
 ### 2. Datos Mock del Partido
 
-**Partido:** AtlÃ©tico Nacional vs Millonarios  
+**Partido:** Atlético Nacional vs Millonarios  
 **Liga:** Liga BetPlay Dimayor 2026  
 **Contexto:** Derby de alta intensidad (rivalidad 5/5)
 
-**ConfiguraciÃ³n:**
-- **Ãrbitro:** Wilmar RoldÃ¡n (4.8 amarillas/partido, strictness_index=1.35)
-- **Altitud:** 1500 msnm (MedellÃ­n)
+**Configuración:**
+- **Árbitro:** Wilmar Roldán (4.8 amarillas/partido, strictness_index=1.35)
+- **Altitud:** 1500 msnm (Medellín)
 - **Bajas:** Jefferson Duque (Nacional), David Macalister (Millonarios)
 - **Cuotas de bookmaker:** Simuladas para todos los mercados
-- **Datos de cÃ³rneres:** EstadÃ­sticas completas de ambos equipos
+- **Datos de córneres:** Estadísticas completas de ambos equipos
 
 ### 3. Modelos de Gemini Disponibles
 
 Se listaron 56 modelos disponibles, incluyendo:
-- `gemini-2.5-flash` (mÃ¡s reciente)
+- `gemini-2.5-flash` (más reciente)
 - `gemini-2.5-pro`
-- `gemini-2.0-flash` (usado en configuraciÃ³n)
+- `gemini-2.0-flash` (usado en configuración)
 - `gemini-2.0-flash-lite`
 - `gemini-3-pro-preview`
 - `gemini-3-flash-preview`
 
-### 4. Resultados de la EjecuciÃ³n
+### 4. Resultados de la Ejecución
 
-**Estado:** âœ… Pipeline ejecutado exitosamente
+**Estado:** ✅ Pipeline ejecutado exitosamente
 
 **Motor Cuantitativo (Fase 3):**
-- Î» Local (xG): 5.084
-- Î» Visitante (xG): 3.789
-- Marcador mÃ¡s probable: 5-3 (3.6%)
+- λ Local (xG): 5.084
+- λ Visitante (xG): 3.789
+- Marcador más probable: 5-3 (3.6%)
 - Confianza del modelo: 88/100
 
-**Cerebro TÃ¡ctico (Fase 4):**
+**Cerebro Táctico (Fase 4):**
 - Tiempo de respuesta: 1.68s
 - Completitud de datos: 100%
 - Confianza global: 88/100
-- Headline generado: "AtlÃ©tico Nacional vs Millonarios: con alto voltaje ofensivo segÃºn el modelo BetMind"
+- Headline generado: "Atlético Nacional vs Millonarios: con alto voltaje ofensivo según el modelo BetMind"
 
 **Nota sobre Generadores LLM:**
-Los generadores narrativos (goles, tarjetas, cÃ³rneres, bet_builder) retornaron `None` debido a que la API key gratuita de Gemini agotÃ³ su quota diario (error 429 RESOURCE_EXHAUSTED). Sin embargo, el sistema demostrÃ³ el principio de **degradaciÃ³n elegante**:
+Los generadores narrativos (goles, tarjetas, córneres, bet_builder) retornaron `None` debido a que la API key gratuita de Gemini agotó su quota diario (error 429 RESOURCE_EXHAUSTED). Sin embargo, el sistema demostró el principio de **degradación elegante**:
 
-- âœ… El pipeline no fallÃ³
-- âœ… Se generÃ³ un `TacticalAnalysis` con datos fallback
-- âœ… El headline determinÃ­stico funcionÃ³ correctamente
-- âœ… Los logs mostraron los errores de cada generador individualmente
-- âœ… El sistema continuÃ³ ejecutÃ¡ndose a pesar de los fallos
+- ✅ El pipeline no falló
+- ✅ Se generó un `TacticalAnalysis` con datos fallback
+- ✅ El headline determinístico funcionó correctamente
+- ✅ Los logs mostraron los errores de cada generador individualmente
+- ✅ El sistema continuó ejecutándose a pesar de los fallos
 
-### 5. Principio de DegradaciÃ³n Elegante Validado
+### 5. Principio de Degradación Elegante Validado
 
-El sistema demostrÃ³ resiliencia ante fallos:
+El sistema demostró resiliencia ante fallos:
 
 ```
 Error generando GoalsNarrative: 429 RESOURCE_EXHAUSTED
@@ -1113,40 +1113,40 @@ Error generando CardsNarrative: 429 RESOURCE_EXHAUSTED
 Error generando CornersNarrative: 429 RESOURCE_EXHAUSTED
 Error generando BetBuilder: 429 RESOURCE_EXHAUSTED
 
-âœ… ANÃLISIS COMPLETADO EXITOSAMENTE
+✅ ANÁLISIS COMPLETADO EXITOSAMENTE
 ```
 
 Aunque todos los generadores LLM fallaron, el pipeline:
-1. CompletÃ³ el motor cuantitativo (Poisson) exitosamente
-2. GenerÃ³ un `TacticalAnalysis` vÃ¡lido con `None` en las narrativas
-3. UsÃ³ el headline determinÃ­stico como fallback
-4. CalculÃ³ la confianza global basada solo en el motor cuantitativo
-5. RetornÃ³ un resultado Ãºtil para el usuario
+1. Completó el motor cuantitativo (Poisson) exitosamente
+2. Generó un `TacticalAnalysis` válido con `None` en las narrativas
+3. Usó el headline determinístico como fallback
+4. Calculó la confianza global basada solo en el motor cuantitativo
+5. Retornó un resultado útil para el usuario
 
 ### 6. Limitaciones de la API Gratuita de Gemini
 
-La API key gratuita tiene lÃ­mites restrictivos:
-- **Requests por dÃ­a:** Limitado (agotado durante la prueba)
+La API key gratuita tiene límites restrictivos:
+- **Requests por día:** Limitado (agotado durante la prueba)
 - **Requests por minuto:** Limitado
 - **Tokens de entrada por minuto:** Limitado
 
 **Recomendaciones:**
 1. Esperar 24-48 horas para que se renueve el quota
 2. Considerar upgrade a plan pago de Gemini API
-3. Implementar cachÃ© de narrativas en Supabase (TTL 6 horas) para reducir llamadas
-4. Usar modelo `gemini-2.0-flash-lite` que tiene lÃ­mites mÃ¡s generosos
+3. Implementar caché de narrativas en Supabase (TTL 6 horas) para reducir llamadas
+4. Usar modelo `gemini-2.0-flash-lite` que tiene límites más generosos
 
 ### 7. Cambios Implementados
 
-**Generadores (sÃ­ncronos):**
-- `goals_narrative.py`: `async def` â†’ `def`
-- `cards_narrative.py`: `async def` â†’ `def`
-- `corners_narrative.py`: `async def` â†’ `def`
-- `bet_builder.py`: `async def` â†’ `def`
+**Generadores (síncronos):**
+- `goals_narrative.py`: `async def` → `def`
+- `cards_narrative.py`: `async def` → `def`
+- `corners_narrative.py`: `async def` → `def`
+- `bet_builder.py`: `async def` → `def`
 
 **NarrativeOrchestrator:**
-- Usa `asyncio.to_thread()` para ejecutar generadores sÃ­ncronos en paralelo
-- Mantiene la ejecuciÃ³n asÃ­ncrona del pipeline completo
+- Usa `asyncio.to_thread()` para ejecutar generadores síncronos en paralelo
+- Mantiene la ejecución asíncrona del pipeline completo
 
 **API Nativa de Gemini:**
 - Usa `client.models.generate_content()` con `GenerateContentConfig`
@@ -1154,22 +1154,22 @@ La API key gratuita tiene lÃ­mites restrictivos:
 - `response_schema=MarketNarrative` (Pydantic model directo)
 - Parseo con `MarketNarrative.model_validate_json(response.text)`
 
-### 8. VerificaciÃ³n
-- Script de integraciÃ³n: âœ… Creado y ejecutado
-- DiagnÃ³stico de modelos: âœ… 56 modelos listados
-- Pipeline completo: âœ… Ejecutado sin errores de cÃ³digo
-- DegradaciÃ³n elegante: âœ… Validada con fallos de quota
-- Tests unitarios: âœ… 4/4 pasados
-- Tiempo de respuesta: âœ… 1.68s (excelente)
+### 8. Verificación
+- Script de integración: ✅ Creado y ejecutado
+- Diagnóstico de modelos: ✅ 56 modelos listados
+- Pipeline completo: ✅ Ejecutado sin errores de código
+- Degradación elegante: ✅ Validada con fallos de quota
+- Tests unitarios: ✅ 4/4 pasados
+- Tiempo de respuesta: ✅ 1.68s (excelente)
 
 ---
 
-## ðŸŸ¢ Fase 4.3: Control de Concurrencia y Reintentos para Rate Limits (Completado)
+## 🟢 Fase 4.3: Control de Concurrencia y Reintentos para Rate Limits (Completado)
 
 ### 1. Problema Identificado
-Durante la prueba de integraciÃ³n (Fase 4.2), se identificÃ³ que la API gratuita de Gemini tiene lÃ­mites de tasa (RPM - Requests Per Minute) restrictivos que causan errores 429 (RESOURCE_EXHAUSTED) cuando se hacen mÃºltiples llamadas en paralelo.
+Durante la prueba de integración (Fase 4.2), se identificó que la API gratuita de Gemini tiene límites de tasa (RPM - Requests Per Minute) restrictivos que causan errores 429 (RESOURCE_EXHAUSTED) cuando se hacen múltiples llamadas en paralelo.
 
-### 2. SoluciÃ³n Implementada
+### 2. Solución Implementada
 
 #### Control de Concurrencia (`NarrativeOrchestrator`)
 ```python
@@ -1177,12 +1177,12 @@ class NarrativeOrchestrator:
     def __init__(self, gemini_api_key: str) -> None:
         self._client = genai.Client(api_key=gemini_api_key)
         self._model = NARRATIVE_MODEL
-        self._semaphore = asyncio.Semaphore(1)  # MÃ¡ximo 1 peticiÃ³n en paralelo
+        self._semaphore = asyncio.Semaphore(1)  # Máximo 1 petición en paralelo
         self._rate_limit_delay = 1.0  # 1 segundo entre llamadas
 ```
 
 **Cambios:**
-- **SemÃ¡foro reducido:** De 2 a 1 peticiÃ³n en paralelo para ser mÃ¡s conservadores
+- **Semáforo reducido:** De 2 a 1 petición en paralelo para ser más conservadores
 - **Pausa aumentada:** De 0.3s a 1.0s entre llamadas para evitar rate limits
 
 #### Sistema de Reintentos con Retardo Exponencial
@@ -1207,14 +1207,14 @@ async def _execute_with_retry(self, func, *args, max_retries=3, **kwargs):
                 return None
 ```
 
-**CaracterÃ­sticas:**
-- **DetecciÃ³n de errores 429:** FunciÃ³n helper `_is_rate_limit_error()` que verifica si el error contiene "429", "resource_exhausted" o "rate limit"
-- **Retardo exponencial:** 5s â†’ 10s â†’ 20s (fÃ³rmula: `5 * (2 ** attempt)`)
-- **MÃ¡ximo 3 reintentos:** Configurable mediante parÃ¡metro `max_retries`
+**Características:**
+- **Detección de errores 429:** Función helper `_is_rate_limit_error()` que verifica si el error contiene "429", "resource_exhausted" o "rate limit"
+- **Retardo exponencial:** 5s → 10s → 20s (fórmula: `5 * (2 ** attempt)`)
+- **Máximo 3 reintentos:** Configurable mediante parámetro `max_retries`
 - **Logging detallado:** Muestra intentos y tiempos de espera
 
 ### 3. Modelo Actualizado
-Se cambiÃ³ el modelo narrativo a `gemini-2.0-flash-lite` para probar con un modelo diferente:
+Se cambió el modelo narrativo a `gemini-2.0-flash-lite` para probar con un modelo diferente:
 ```python
 NARRATIVE_MODEL = "gemini-2.0-flash-lite"
 ```
@@ -1222,25 +1222,25 @@ NARRATIVE_MODEL = "gemini-2.0-flash-lite"
 ### 4. Resultados de las Pruebas
 
 #### Estado del Sistema
-âœ… **Control de concurrencia:** Funcionando correctamente  
-âœ… **Sistema de reintentos:** Detecta y reintenta errores 429  
-âœ… **DegradaciÃ³n elegante:** Pipeline no falla, retorna anÃ¡lisis parcial  
-âœ… **Tests unitarios:** 4/4 pasando  
-âœ… **Logging:** Muestra reintentos y errores correctamente  
+✅ **Control de concurrencia:** Funcionando correctamente  
+✅ **Sistema de reintentos:** Detecta y reintenta errores 429  
+✅ **Degradación elegante:** Pipeline no falla, retorna análisis parcial  
+✅ **Tests unitarios:** 4/4 pasando  
+✅ **Logging:** Muestra reintentos y errores correctamente  
 
 #### Estado del Quota de Gemini API
-âŒ **Quota diario agotado:** Todos los modelos (gemini-2.0-flash, gemini-2.0-flash-lite) tienen limit: 0  
-âŒ **Causa:** MÃºltiples pruebas durante el desarrollo agotaron el quota gratuito diario  
-â³ **SoluciÃ³n:** Esperar renovaciÃ³n del quota (generalmente a medianoche UTC) o usar API key paga
+❌ **Quota diario agotado:** Todos los modelos (gemini-2.0-flash, gemini-2.0-flash-lite) tienen limit: 0  
+❌ **Causa:** Múltiples pruebas durante el desarrollo agotaron el quota gratuito diario  
+⏳ **Solución:** Esperar renovación del quota (generalmente a medianoche UTC) o usar API key paga
 
 #### Tiempos de Respuesta
 - **Sin rate limits:** ~1.68s (Fase 4.2)
 - **Con rate limits y reintentos:** ~6.36s - 6.54s (Fase 4.3)
 - **Overhead de reintentos:** ~4.7s adicional debido a esperas de 5s, 10s, 20s
 
-### 5. CÃ³digo Implementado
+### 5. Código Implementado
 
-#### FunciÃ³n Helper para DetecciÃ³n de Rate Limits
+#### Función Helper para Detección de Rate Limits
 ```python
 def _is_rate_limit_error(error: Exception) -> bool:
     """Verifica si el error es un rate limit (429) de Gemini API."""
@@ -1248,7 +1248,7 @@ def _is_rate_limit_error(error: Exception) -> bool:
     return "429" in error_str or "resource_exhausted" in error_str or "rate limit" in error_str
 ```
 
-#### IntegraciÃ³n en `generate_full_analysis()`
+#### Integración en `generate_full_analysis()`
 ```python
 (goals_result, cards_result, corners_result) = await asyncio.gather(
     self._execute_with_retry(
@@ -1273,44 +1273,44 @@ bet_builder_result = await self._execute_with_retry(
 )
 ```
 
-### 6. Recomendaciones para ProducciÃ³n
+### 6. Recomendaciones para Producción
 
-#### OpciÃ³n 1: Esperar RenovaciÃ³n del Quota
+#### Opción 1: Esperar Renovación del Quota
 - El quota gratuito de Gemini se renueva diariamente (generalmente a medianoche UTC)
 - Esperar 24 horas y ejecutar nuevamente la prueba
 
-#### OpciÃ³n 2: Upgrade a Plan Pago
-- Gemini API ofrece planes pagos con lÃ­mites mÃ¡s generosos
+#### Opción 2: Upgrade a Plan Pago
+- Gemini API ofrece planes pagos con límites más generosos
 - Costo: ~$0.00075 por 1K tokens de entrada (gemini-2.0-flash)
-- LÃ­mites: 1,500 RPM vs 15 RPM del plan gratuito
+- Límites: 1,500 RPM vs 15 RPM del plan gratuito
 
-#### OpciÃ³n 3: Implementar CachÃ© en Supabase
+#### Opción 3: Implementar Caché en Supabase
 - Persistir `TacticalAnalysis` en Supabase con TTL de 6 horas
-- Reducir llamadas a la API reutilizando anÃ¡lisis previos
+- Reducir llamadas a la API reutilizando análisis previos
 - Solo regenerar narrativas cuando cambien las cuotas o contexto
 
-#### OpciÃ³n 4: Usar MÃºltiples API Keys
-- Rotar entre mÃºltiples API keys gratuitas
+#### Opción 4: Usar Múltiples API Keys
+- Rotar entre múltiples API keys gratuitas
 - Distribuir carga para evitar agotar quota de una sola key
 
-### 7. VerificaciÃ³n
-- Control de concurrencia: âœ… SemÃ¡foro de 1 peticiÃ³n en paralelo
-- Sistema de reintentos: âœ… Retardo exponencial (5s, 10s, 20s)
-- DetecciÃ³n de errores 429: âœ… FunciÃ³n helper `_is_rate_limit_error()`
-- DegradaciÃ³n elegante: âœ… Pipeline no falla con rate limits
-- Tests unitarios: âœ… 4/4 pasados
-- Logging: âœ… Muestra reintentos y errores correctamente
+### 7. Verificación
+- Control de concurrencia: ✅ Semáforo de 1 petición en paralelo
+- Sistema de reintentos: ✅ Retardo exponencial (5s, 10s, 20s)
+- Detección de errores 429: ✅ Función helper `_is_rate_limit_error()`
+- Degradación elegante: ✅ Pipeline no falla con rate limits
+- Tests unitarios: ✅ 4/4 pasados
+- Logging: ✅ Muestra reintentos y errores correctamente
 
 ---
 
-## ðŸŸ¢ Fase 4.4: IntegraciÃ³n del Pipeline Completo con FastAPI (Completado)
+## 🟢 Fase 4.4: Integración del Pipeline Completo con FastAPI (Completado)
 
 ### 1. Objetivo
-Integrar el pipeline completo de la Fase 4 (`full_analysis_pipeline.py`) con la capa de API de FastAPI mediante el `PredictionOrchestrator`, permitiendo que las predicciones incluyan el anÃ¡lisis tÃ¡ctico completo generado por el Cerebro TÃ¡ctico.
+Integrar el pipeline completo de la Fase 4 (`full_analysis_pipeline.py`) con la capa de API de FastAPI mediante el `PredictionOrchestrator`, permitiendo que las predicciones incluyan el análisis táctico completo generado por el Cerebro Táctico.
 
 ### 2. Cambios en Repositorios
 
-#### `match_repository.py` - Nuevos MÃ©todos
+#### `match_repository.py` - Nuevos Métodos
 ```python
 async def get_league_matches(
     self,
@@ -1355,8 +1355,8 @@ def match_to_dict(match: Match) -> dict:
 ```python
 class TacticalAnalysis(TimestampMixin, Base):
     """
-    Almacena el anÃ¡lisis tÃ¡ctico completo generado por el Cerebro TÃ¡ctico (Fase 4).
-    Incluye narrativas de goles, tarjetas, cÃ³rneres y combinaciones bet builder.
+    Almacena el análisis táctico completo generado por el Cerebro Táctico (Fase 4).
+    Incluye narrativas de goles, tarjetas, córneres y combinaciones bet builder.
     """
     __tablename__ = "tactical_analyses"
 
@@ -1382,11 +1382,11 @@ class TacticalAnalysis(TimestampMixin, Base):
     data_completeness_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 ```
 
-**CaracterÃ­sticas:**
-- RelaciÃ³n 1:1 con `matches` (un anÃ¡lisis tÃ¡ctico por partido)
+**Características:**
+- Relación 1:1 con `matches` (un análisis táctico por partido)
 - Columnas JSON para narrativas complejas (flexibilidad para cambios de schema)
-- Ãndice Ãºnico en `match_id` para evitar duplicados
-- Timestamps automÃ¡ticos (`created_at`, `updated_at`)
+- Índice único en `match_id` para evitar duplicados
+- Timestamps automáticos (`created_at`, `updated_at`)
 
 ### 4. Nuevo Repositorio: `TacticalAnalysisRepository`
 
@@ -1394,15 +1394,15 @@ class TacticalAnalysis(TimestampMixin, Base):
 ```python
 class TacticalAnalysisRepository:
     """
-    Encapsula TODA la interacciÃ³n con la DB para anÃ¡lisis tÃ¡cticos.
-    Recibe la sesiÃ³n por DI â€” nunca la crea internamente.
+    Encapsula TODA la interacción con la DB para análisis tácticos.
+    Recibe la sesión por DI — nunca la crea internamente.
     """
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
     async def get_by_match_id(self, match_id: int) -> TacticalAnalysis | None:
-        """Obtiene el anÃ¡lisis tÃ¡ctico de un partido especÃ­fico."""
+        """Obtiene el análisis táctico de un partido específico."""
         stmt = select(TacticalAnalysis).where(TacticalAnalysis.match_id == match_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
@@ -1423,20 +1423,20 @@ class TacticalAnalysisRepository:
         data_completeness_score: float,
     ) -> TacticalAnalysis:
         """
-        Inserta o actualiza un anÃ¡lisis tÃ¡ctico.
+        Inserta o actualiza un análisis táctico.
         Si existe por match_id, actualiza. Si no, inserta.
         """
-        # ... implementaciÃ³n completa
+        # ... implementación completa
 ```
 
-### 5. ActualizaciÃ³n del `PredictionOrchestrator`
+### 5. Actualización del `PredictionOrchestrator`
 
 #### Flujo Completo Integrado
 ```python
 class PredictionOrchestrator:
     """
-    Orquesta el flujo completo de una predicciÃ³n:
-    Cache â†’ DB â†’ ML Pipeline (Fase 3 + Fase 4) â†’ Persistencia â†’ Respuesta.
+    Orquesta el flujo completo de una predicción:
+    Cache → DB → ML Pipeline (Fase 3 + Fase 4) → Persistencia → Respuesta.
     """
 
     def __init__(
@@ -1454,35 +1454,35 @@ class PredictionOrchestrator:
         match_id: int,
         odds: OddsInput,
     ) -> PredictionResponse:
-        # 1. Intentar desde cachÃ©
+        # 1. Intentar desde caché
         # 2. Cargar datos desde DB
         # 3. Cargar forma reciente y H2H
         # 4. Convertir a formato dict para el pipeline ML
         # 5. Construir contexto del partido
         # 6. Construir cuotas para el pipeline ML
         # 7. Ejecutar pipeline completo (Fase 3 + Fase 4)
-        # 8. Persistir anÃ¡lisis tÃ¡ctico en DB
+        # 8. Persistir análisis táctico en DB
         # 9. Construir respuesta
-        # 10. Persistir en cachÃ©
+        # 10. Persistir en caché
 ```
 
-**MÃ©todos Helper:**
+**Métodos Helper:**
 - `_build_match_context()`: Construye `MatchContext` con datos del partido
 - `_build_bookmaker_odds()`: Convierte cuotas de la API al formato del pipeline ML
 - `_get_league_key()`: Mapea `external_id` de liga a `league_key` del pipeline ML
-- `_persist_tactical_analysis()`: Persiste el anÃ¡lisis tÃ¡ctico en Supabase
-- `_build_response()`: Construye la respuesta completa con anÃ¡lisis tÃ¡ctico
+- `_persist_tactical_analysis()`: Persiste el análisis táctico en Supabase
+- `_build_response()`: Construye la respuesta completa con análisis táctico
 - `_build_tactical_narrative()`: Genera narrativa resumida para el campo `tactical_narrative`
 - `_build_tactical_analysis_response()`: Construye `TacticalAnalysisResponse` completo
 
-### 6. ActualizaciÃ³n de Schemas
+### 6. Actualización de Schemas
 
 #### `apps/api/schemas/prediction.py`
 ```python
 class TacticalAnalysisResponse(BaseModel):
     """
-    AnÃ¡lisis tÃ¡ctico completo generado por el Cerebro TÃ¡ctico (Fase 4).
-    Incluye narrativas de goles, tarjetas, cÃ³rneres y combinaciones bet builder.
+    Análisis táctico completo generado por el Cerebro Táctico (Fase 4).
+    Incluye narrativas de goles, tarjetas, córneres y combinaciones bet builder.
     """
     match_id: int
     model_version: str
@@ -1499,18 +1499,18 @@ class TacticalAnalysisResponse(BaseModel):
 class PredictionResponse(BaseModel):
     # ... campos existentes ...
     tactical_analysis: TacticalAnalysisResponse | None = Field(
-        None, description="AnÃ¡lisis tÃ¡ctico completo (Fase 4)"
+        None, description="Análisis táctico completo (Fase 4)"
     )
 ```
 
-### 7. ActualizaciÃ³n de Rutas
+### 7. Actualización de Rutas
 
 #### `apps/api/routes/v1/predictions.py`
 ```python
 def get_tactical_analysis_repository(
     session: AsyncSession = Depends(get_async_session),
 ) -> TacticalAnalysisRepository:
-    """Provee un TacticalAnalysisRepository con la sesiÃ³n de DB inyectada."""
+    """Provee un TacticalAnalysisRepository con la sesión de DB inyectada."""
     return TacticalAnalysisRepository(session)
 
 def get_prediction_orchestrator(
@@ -1530,40 +1530,40 @@ def get_prediction_orchestrator(
 
 ```
 Cliente API
-    â”‚
-    â–¼
+    │
+    ▼
 GET /api/v1/predictions/{match_id}
-    â”‚
-    â–¼
+    │
+    ▼
 PredictionOrchestrator.get_prediction()
-    â”‚
-    â”œâ”€â–º 1. CacheService.get() â†’ HIT/MISS
-    â”‚
-    â”œâ”€â–º 2. MatchRepository.get_by_id() â†’ Match ORM
-    â”‚
-    â”œâ”€â–º 3. MatchRepository.get_recent_form() â†’ list[Match]
-    â”‚       MatchRepository.get_h2h() â†’ list[Match]
-    â”‚       MatchRepository.get_league_matches() â†’ list[Match]
-    â”‚
-    â”œâ”€â–º 4. MatchRepository.match_to_dict() â†’ list[dict]
-    â”‚
-    â”œâ”€â–º 5. _build_match_context() â†’ MatchContext
-    â”‚
-    â”œâ”€â–º 6. _build_bookmaker_odds() â†’ dict[str, float]
-    â”‚
-    â”œâ”€â–º 7. run_full_analysis() â†’ (MatchPredictionOutput, TacticalAnalysis)
-    â”‚       â”‚
-    â”‚       â”œâ”€â–º Fase 3: Motor Cuantitativo (Poisson)
-    â”‚       â””â”€â–º Fase 4: Cerebro TÃ¡ctico (Gemini API)
-    â”‚
-    â”œâ”€â–º 8. TacticalAnalysisRepository.upsert() â†’ Persistir en Supabase
-    â”‚
-    â”œâ”€â–º 9. _build_response() â†’ PredictionResponse
-    â”‚
-    â””â”€â–º 10. CacheService.set() â†’ Persistir en cachÃ©
+    │
+    ├─► 1. CacheService.get() → HIT/MISS
+    │
+    ├─► 2. MatchRepository.get_by_id() → Match ORM
+    │
+    ├─► 3. MatchRepository.get_recent_form() → list[Match]
+    │       MatchRepository.get_h2h() → list[Match]
+    │       MatchRepository.get_league_matches() → list[Match]
+    │
+    ├─► 4. MatchRepository.match_to_dict() → list[dict]
+    │
+    ├─► 5. _build_match_context() → MatchContext
+    │
+    ├─► 6. _build_bookmaker_odds() → dict[str, float]
+    │
+    ├─► 7. run_full_analysis() → (MatchPredictionOutput, TacticalAnalysis)
+    │       │
+    │       ├─► Fase 3: Motor Cuantitativo (Poisson)
+    │       └─► Fase 4: Cerebro Táctico (Gemini API)
+    │
+    ├─► 8. TacticalAnalysisRepository.upsert() → Persistir en Supabase
+    │
+    ├─► 9. _build_response() → PredictionResponse
+    │
+    └─► 10. CacheService.set() → Persistir en caché
 ```
 
-### 9. ConfiguraciÃ³n de Variables de Entorno
+### 9. Configuración de Variables de Entorno
 
 El `PredictionOrchestrator` lee `GEMINI_API_KEY` desde `apps/api/config.py`:
 ```python
@@ -1573,7 +1573,7 @@ from apps.api.config import settings
 gemini_api_key=settings.GEMINI_API_KEY
 ```
 
-### 10. VerificaciÃ³n
+### 10. Verificación
 
 #### Tests Unitarios
 ```bash
@@ -1605,7 +1605,7 @@ FastAPI import OK
 Routes: 15
 ```
 
-#### ConfiguraciÃ³n Verificada
+#### Configuración Verificada
 ```
 App: BetMind AI
 Version: 0.1.0
@@ -1617,41 +1617,41 @@ FastAPI ready to start!
 ### 11. Archivos Creados/Modificados
 
 **Creados:**
-1. `apps/api/models/tactical_analysis.py` â€” Modelo ORM para anÃ¡lisis tÃ¡ctico
-2. `apps/api/repositories/tactical_analysis_repository.py` â€” Repositorio para anÃ¡lisis tÃ¡ctico
+1. `apps/api/models/tactical_analysis.py` — Modelo ORM para análisis táctico
+2. `apps/api/repositories/tactical_analysis_repository.py` — Repositorio para análisis táctico
 
 **Modificados:**
-3. `apps/api/repositories/match_repository.py` â€” Agregados `get_league_matches()` y `match_to_dict()`
-4. `apps/api/orchestrators/prediction_orchestrator.py` â€” IntegraciÃ³n completa con `run_full_analysis()`
-5. `apps/api/schemas/prediction.py` â€” Agregado `TacticalAnalysisResponse`
-6. `apps/api/routes/v1/predictions.py` â€” InyecciÃ³n de `TacticalAnalysisRepository`
-7. `apps/api/models/__init__.py` â€” Registro de `TacticalAnalysis`
+3. `apps/api/repositories/match_repository.py` — Agregados `get_league_matches()` y `match_to_dict()`
+4. `apps/api/orchestrators/prediction_orchestrator.py` — Integración completa con `run_full_analysis()`
+5. `apps/api/schemas/prediction.py` — Agregado `TacticalAnalysisResponse`
+6. `apps/api/routes/v1/predictions.py` — Inyección de `TacticalAnalysisRepository`
+7. `apps/api/models/__init__.py` — Registro de `TacticalAnalysis`
 
-### 12. PrÃ³ximos Pasos
+### 12. Próximos Pasos
 
-1. **Crear tabla en Supabase:** Ejecutar migraciÃ³n para crear tabla `tactical_analyses`
-2. **Probar con datos reales:** Ejecutar predicciÃ³n con partido real de la DB
+1. **Crear tabla en Supabase:** Ejecutar migración para crear tabla `tactical_analyses`
+2. **Probar con datos reales:** Ejecutar predicción con partido real de la DB
 3. **Validar persistencia:** Verificar que `TacticalAnalysis` se guarde correctamente en Supabase
-4. **Optimizar cachÃ©:** Implementar invalidaciÃ³n de cachÃ© cuando cambien las cuotas
-5. **Monitoreo:** Agregar mÃ©tricas de latencia y tasa de Ã©xito del Cerebro TÃ¡ctico
+4. **Optimizar caché:** Implementar invalidación de caché cuando cambien las cuotas
+5. **Monitoreo:** Agregar métricas de latencia y tasa de éxito del Cerebro Táctico
 
-### 13. VerificaciÃ³n Final
-- âœ… Repositorios actualizados con mÃ©todos necesarios
-- âœ… Modelo ORM `TacticalAnalysis` creado y registrado
-- âœ… Repositorio `TacticalAnalysisRepository` implementado
-- âœ… `PredictionOrchestrator` integrado con `run_full_analysis()`
-- âœ… Schemas actualizados con `TacticalAnalysisResponse`
-- âœ… Rutas actualizadas con inyecciÃ³n de dependencias
-- âœ… Tests unitarios: 8/8 pasando
-- âœ… FastAPI startup: Sin errores
-- âœ… ConfiguraciÃ³n: `GEMINI_API_KEY` cargada correctamente
+### 13. Verificación Final
+- ✅ Repositorios actualizados con métodos necesarios
+- ✅ Modelo ORM `TacticalAnalysis` creado y registrado
+- ✅ Repositorio `TacticalAnalysisRepository` implementado
+- ✅ `PredictionOrchestrator` integrado con `run_full_analysis()`
+- ✅ Schemas actualizados con `TacticalAnalysisResponse`
+- ✅ Rutas actualizadas con inyección de dependencias
+- ✅ Tests unitarios: 8/8 pasando
+- ✅ FastAPI startup: Sin errores
+- ✅ Configuración: `GEMINI_API_KEY` cargada correctamente
 
 ---
 
-## ðŸŸ¢ Fase 4.5: MigraciÃ³n de Google Gemini a Groq (Llama 3.3) (Completado)
+## 🟢 Fase 4.5: Migración de Google Gemini a Groq (Llama 3.3) (Completado)
 
 ### 1. Objetivo
-Migrar el mÃ³dulo narrativo de Google Gemini a Groq con el modelo `llama-3.3-70b-versatile` para mejorar la calidad de las narrativas y evitar problemas de quota de la API gratuita de Gemini.
+Migrar el módulo narrativo de Google Gemini a Groq con el modelo `llama-3.3-70b-versatile` para mejorar la calidad de las narrativas y evitar problemas de quota de la API gratuita de Gemini.
 
 ### 2. Cambios en Dependencias
 
@@ -1664,19 +1664,19 @@ narrative = [
 ]
 ```
 
-**InstalaciÃ³n:**
+**Instalación:**
 ```bash
 pip install groq
 ```
 
-### 3. ConfiguraciÃ³n Actualizada
+### 3. Configuración Actualizada
 
 #### `packages/ml/betmind_ml/config.py`
 ```python
-# â”€â”€ ConfiguraciÃ³n de API Keys â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Configuración de API Keys ─────────────────────────────────────────────────
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# â”€â”€ Modelo Narrativo (LLM) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Modelo Narrativo (LLM) ────────────────────────────────────────────────────
 NARRATIVE_MODEL = "llama-3.3-70b-versatile"
 ```
 
@@ -1686,7 +1686,7 @@ GROQ_API_KEY: str = ""
 GEMINI_API_KEY: str = ""  # Mantenido para compatibilidad
 ```
 
-### 4. AdaptaciÃ³n de Generadores Narrativos
+### 4. Adaptación de Generadores Narrativos
 
 #### Cambios Comunes en los 4 Generadores
 Todos los generadores (`goals_narrative.py`, `cards_narrative.py`, `corners_narrative.py`, `bet_builder.py`) fueron actualizados:
@@ -1709,7 +1709,7 @@ def generate_xxx_narrative(..., gemini_client):
     narrative = MarketNarrative.model_validate_json(response.text)
 ```
 
-**DespuÃ©s (Groq):**
+**Después (Groq):**
 ```python
 from groq import Groq
 
@@ -1729,10 +1729,10 @@ def generate_xxx_narrative(..., groq_client):
 1. **Cliente:** `Groq(api_key=...)` en lugar de `genai.Client(api_key=...)`
 2. **API:** `chat.completions.create()` (compatible con OpenAI) en lugar de `models.generate_content()`
 3. **Formato de respuesta:** `response_format={"type": "json_object"}` en lugar de `response_mime_type="application/json"`
-4. **Temperatura:** Configurada explÃ­citamente a 0.3 para mayor consistencia
-5. **Max tokens:** Configurado explÃ­citamente (2000-3000 segÃºn el generador)
+4. **Temperatura:** Configurada explícitamente a 0.3 para mayor consistencia
+5. **Max tokens:** Configurado explícitamente (2000-3000 según el generador)
 
-### 5. ActualizaciÃ³n del NarrativeOrchestrator
+### 5. Actualización del NarrativeOrchestrator
 
 ```python
 from groq import Groq
@@ -1750,7 +1750,7 @@ class NarrativeOrchestrator:
 - Mantiene el sistema de control de concurrencia y reintentos
 - Actualiza `_is_rate_limit_error()` para detectar errores de Groq
 
-### 6. ActualizaciÃ³n del Pipeline
+### 6. Actualización del Pipeline
 
 #### `packages/ml/betmind_ml/pipeline/full_analysis_pipeline.py`
 ```python
@@ -1764,7 +1764,7 @@ async def run_full_analysis(
     ...
 ```
 
-### 7. ActualizaciÃ³n de la API
+### 7. Actualización de la API
 
 #### `apps/api/orchestrators/prediction_orchestrator.py`
 ```python
@@ -1775,7 +1775,7 @@ quant_output, tactical_output = await run_full_analysis(
 )
 ```
 
-### 8. ActualizaciÃ³n de Tests
+### 8. Actualización de Tests
 
 #### `tests/test_full_analysis.py`
 ```python
@@ -1806,7 +1806,7 @@ async def main():
 
 ### 9. Resultados de la Prueba End-to-End
 
-**Estado:** âœ… Pipeline ejecutado exitosamente con Groq API
+**Estado:** ✅ Pipeline ejecutado exitosamente con Groq API
 
 **Modelos Disponibles en Groq:**
 - llama-3.3-70b-versatile (usado)
@@ -1826,113 +1826,113 @@ async def main():
 - openai/gpt-oss-safeguard-20b
 
 **Motor Cuantitativo (Fase 3):**
-- Î» Local (xG): 5.084
-- Î» Visitante (xG): 3.789
-- Marcador mÃ¡s probable: 5-3 (3.6%)
+- λ Local (xG): 5.084
+- λ Visitante (xG): 3.789
+- Marcador más probable: 5-3 (3.6%)
 - Confianza del modelo: 88/100
 
-**Cerebro TÃ¡ctico (Fase 4):**
-- Tiempo de respuesta: 32.61s (mÃ¡s lento que Gemini, pero funcional)
+**Cerebro Táctico (Fase 4):**
+- Tiempo de respuesta: 32.61s (más lento que Gemini, pero funcional)
 - Completitud de datos: 100%
 - Confianza global: 93/100
 - Modelo LLM: llama-3.3-70b-versatile
 
-**AnÃ¡lisis de Tarjetas Generado:**
+**Análisis de Tarjetas Generado:**
 ```
-ðŸ“Œ RecomendaciÃ³n: Over 3.5 tarjetas
-ðŸ“Š Probabilidad: 52.6%
-ðŸŽ¯ Signal Strength: MODERATE
+📌 Recomendación: Over 3.5 tarjetas
+📊 Probabilidad: 52.6%
+🎯 Signal Strength: MODERATE
 
-âœ… PROS (3):
-   1. [HIGH] arbitro: El Ã¡rbitro Wilmar RoldÃ¡n tiene un Ã­ndice de estrictez de 1.35
+✅ PROS (3):
+   1. [HIGH] arbitro: El árbitro Wilmar Roldán tiene un índice de estrictez de 1.35
    2. [MEDIUM] contexto: El partido es un derby con intensidad de rivalidad 5/5
    3. [MEDIUM] estadistica: Promedio esperado del modelo: 4.5 tarjetas
 
-âŒ CONTRAS (2):
+❌ CONTRAS (2):
    1. [LOW] forma: Disciplina de equipos no ha sido particularmente mala
-   2. [MEDIUM] estadistica: Probabilidad implÃ­cita de cuota: 52.6%
+   2. [MEDIUM] estadistica: Probabilidad implícita de cuota: 52.6%
 
-âš ï¸  Riesgo Principal: La intensidad del partido y tendencia del Ã¡rbitro pueden no materializarse
+⚠️  Riesgo Principal: La intensidad del partido y tendencia del árbitro pueden no materializarse
 
-ðŸ“ Resumen: Over 3.5 tarjetas es apuesta plausible debido a tendencia del Ã¡rbitro y contexto
+📝 Resumen: Over 3.5 tarjetas es apuesta plausible debido a tendencia del árbitro y contexto
 ```
 
 **Nota sobre Validaciones:**
-- Goals y Corners tuvieron errores de validaciÃ³n porque `tactical_summary` excediÃ³ los 300 caracteres permitidos
-- El anÃ¡lisis de tarjetas se generÃ³ correctamente
-- El sistema de degradaciÃ³n elegante funcionÃ³: el pipeline no fallÃ³ a pesar de los errores de validaciÃ³n
+- Goals y Corners tuvieron errores de validación porque `tactical_summary` excedió los 300 caracteres permitidos
+- El análisis de tarjetas se generó correctamente
+- El sistema de degradación elegante funcionó: el pipeline no falló a pesar de los errores de validación
 
-### 10. ComparaciÃ³n: Gemini vs Groq
+### 10. Comparación: Gemini vs Groq
 
-| CaracterÃ­stica | Google Gemini | Groq (Llama 3.3) |
+| Característica | Google Gemini | Groq (Llama 3.3) |
 |----------------|---------------|------------------|
 | **Modelo** | gemini-2.0-flash-lite | llama-3.3-70b-versatile |
 | **Velocidad** | ~1-3s por llamada | ~8s por llamada |
-| **Calidad Narrativa** | Buena | Excelente (mÃ¡s detallada) |
-| **Rate Limits** | Restringidos (quota diario) | MÃ¡s generosos |
-| **Costo** | Gratuito (limitado) | Gratuito (mÃ¡s generoso) |
+| **Calidad Narrativa** | Buena | Excelente (más detallada) |
+| **Rate Limits** | Restringidos (quota diario) | Más generosos |
+| **Costo** | Gratuito (limitado) | Gratuito (más generoso) |
 | **API** | Nativa de Google | Compatible con OpenAI |
-| **Longitud de Respuesta** | Concisa | MÃ¡s detallada (puede exceder lÃ­mites) |
+| **Longitud de Respuesta** | Concisa | Más detallada (puede exceder límites) |
 
 ### 11. Archivos Modificados
 
-1. `packages/ml/pyproject.toml` â€” Dependencia `groq>=1.6.0`
-2. `packages/ml/betmind_ml/config.py` â€” `GROQ_API_KEY` y `NARRATIVE_MODEL = "llama-3.3-70b-versatile"`
-3. `packages/ml/betmind_ml/narrative/generators/goals_narrative.py` â€” Migrado a Groq
-4. `packages/ml/betmind_ml/narrative/generators/cards_narrative.py` â€” Migrado a Groq
-5. `packages/ml/betmind_ml/narrative/generators/corners_narrative.py` â€” Migrado a Groq
-6. `packages/ml/betmind_ml/narrative/generators/bet_builder.py` â€” Migrado a Groq
-7. `packages/ml/betmind_ml/narrative/narrative_orchestrator.py` â€” InicializaciÃ³n con Groq
-8. `packages/ml/betmind_ml/pipeline/full_analysis_pipeline.py` â€” ParÃ¡metro `groq_api_key`
-9. `apps/api/config.py` â€” Agregado `GROQ_API_KEY`
-10. `apps/api/orchestrators/prediction_orchestrator.py` â€” Usa `GROQ_API_KEY`
-11. `tests/test_full_analysis.py` â€” Actualizado para usar `groq_api_key`
-12. `tests/test_live_full_analysis.py` â€” Migrado a Groq
+1. `packages/ml/pyproject.toml` — Dependencia `groq>=1.6.0`
+2. `packages/ml/betmind_ml/config.py` — `GROQ_API_KEY` y `NARRATIVE_MODEL = "llama-3.3-70b-versatile"`
+3. `packages/ml/betmind_ml/narrative/generators/goals_narrative.py` — Migrado a Groq
+4. `packages/ml/betmind_ml/narrative/generators/cards_narrative.py` — Migrado a Groq
+5. `packages/ml/betmind_ml/narrative/generators/corners_narrative.py` — Migrado a Groq
+6. `packages/ml/betmind_ml/narrative/generators/bet_builder.py` — Migrado a Groq
+7. `packages/ml/betmind_ml/narrative/narrative_orchestrator.py` — Inicialización con Groq
+8. `packages/ml/betmind_ml/pipeline/full_analysis_pipeline.py` — Parámetro `groq_api_key`
+9. `apps/api/config.py` — Agregado `GROQ_API_KEY`
+10. `apps/api/orchestrators/prediction_orchestrator.py` — Usa `GROQ_API_KEY`
+11. `tests/test_full_analysis.py` — Actualizado para usar `groq_api_key`
+12. `tests/test_live_full_analysis.py` — Migrado a Groq
 
-### 12. PrÃ³ximos Pasos
+### 12. Próximos Pasos
 
-1. **Ajustar lÃ­mites de schemas:** Aumentar `max_length` de `tactical_summary` a 500 caracteres para acomodar respuestas mÃ¡s detalladas de Llama 3.3
+1. **Ajustar límites de schemas:** Aumentar `max_length` de `tactical_summary` a 500 caracteres para acomodar respuestas más detalladas de Llama 3.3
 2. **Optimizar temperatura:** Experimentar con valores de temperatura (0.2-0.4) para balance entre creatividad y consistencia
-3. **Implementar cachÃ©:** Reducir llamadas a la API con cachÃ© de 6 horas en Supabase
-4. **Monitoreo:** Agregar mÃ©tricas de latencia y tasa de Ã©xito
-5. **Calibrar prompts:** Ajustar prompts para que Llama 3.3 genere respuestas mÃ¡s concisas
+3. **Implementar caché:** Reducir llamadas a la API con caché de 6 horas en Supabase
+4. **Monitoreo:** Agregar métricas de latencia y tasa de éxito
+5. **Calibrar prompts:** Ajustar prompts para que Llama 3.3 genere respuestas más concisas
 
-### 13. VerificaciÃ³n
-- âœ… Dependencia `groq` instalada correctamente
-- âœ… ConfiguraciÃ³n actualizada en ambos config.py
-- âœ… Generadores migrados a Groq API
-- âœ… NarrativeOrchestrator actualizado
-- âœ… Pipeline actualizado con `groq_api_key`
-- âœ… API actualizada para usar `GROQ_API_KEY`
-- âœ… Tests unitarios: 4/4 pasando
-- âœ… Prueba end-to-end: âœ… Ejecutada exitosamente
-- âœ… AnÃ¡lisis tÃ¡ctico generado: âœ… Tarjetas completas con pros/contras
-- âš ï¸ Validaciones de longitud: Ajustar `tactical_summary` max_length
+### 13. Verificación
+- ✅ Dependencia `groq` instalada correctamente
+- ✅ Configuración actualizada en ambos config.py
+- ✅ Generadores migrados a Groq API
+- ✅ NarrativeOrchestrator actualizado
+- ✅ Pipeline actualizado con `groq_api_key`
+- ✅ API actualizada para usar `GROQ_API_KEY`
+- ✅ Tests unitarios: 4/4 pasando
+- ✅ Prueba end-to-end: ✅ Ejecutada exitosamente
+- ✅ Análisis táctico generado: ✅ Tarjetas completas con pros/contras
+- ⚠️ Validaciones de longitud: Ajustar `tactical_summary` max_length
 
-## ðŸŸ¢ Fase 4.6: Ajustes Finales y Cierre de Fase 4 (Completado)
+## 🟢 Fase 4.6: Ajustes Finales y Cierre de Fase 4 (Completado)
 ### 1. Ajuste de Schemas Pydantic para Llama 3.3
 
 **Archivo modificado:** `packages/ml/betmind_ml/schemas/tactical_analysis.py`
 
 **Cambios realizados:**
-- `tactical_summary`: 300 â†’ 600 caracteres
-- `key_risk`: 150 â†’ 300 caracteres  
-- `description` (ProConPoint): 200 â†’ 400 caracteres
-- `correlation_rationale` (BetBuilderCombination): 250 â†’ 500 caracteres
-- `match_preview_headline`: 120 â†’ 200 caracteres
+- `tactical_summary`: 300 → 600 caracteres
+- `key_risk`: 150 → 300 caracteres  
+- `description` (ProConPoint): 200 → 400 caracteres
+- `correlation_rationale` (BetBuilderCombination): 250 → 500 caracteres
+- `match_preview_headline`: 120 → 200 caracteres
 
-**JustificaciÃ³n:** Llama 3.3 genera narrativas mÃ¡s detalladas y completas que Gemini. Los lÃ­mites anteriores causaban errores de validaciÃ³n. Los nuevos lÃ­mites permiten mayor flexibilidad sin sacrificar calidad.
+**Justificación:** Llama 3.3 genera narrativas más detalladas y completas que Gemini. Los límites anteriores causaban errores de validación. Los nuevos límites permiten mayor flexibilidad sin sacrificar calidad.
 
-### 2. MigraciÃ³n SQL para Supabase
+### 2. Migración SQL para Supabase
 
 **Archivo creado:** `apps/api/migrations/004_create_tactical_analyses.sql`
 
-**CaracterÃ­sticas de la tabla:**
-- RelaciÃ³n 1:1 con `matches` (UNIQUE constraint en match_id)
+**Características de la tabla:**
+- Relación 1:1 con `matches` (UNIQUE constraint en match_id)
 - Columnas JSONB para narrativas (flexibilidad para cambios de schema)
-- Ãndices optimizados para consultas frecuentes
-- Trigger automÃ¡tico para actualizar `updated_at`
-- Comentarios descriptivos para documentaciÃ³n
+- Índices optimizados para consultas frecuentes
+- Trigger automático para actualizar `updated_at`
+- Comentarios descriptivos para documentación
 
 **Estructura:**
 ```sql
@@ -1955,229 +1955,229 @@ CREATE TABLE tactical_analyses (
 );
 ```
 
-### 3. ImplementaciÃ³n de CachÃ© en PredictionOrchestrator
+### 3. Implementación de Caché en PredictionOrchestrator
 
 **Archivo modificado:** `apps/api/orchestrators/prediction_orchestrator.py`
 
-**LÃ³gica de cachÃ© implementada:**
+**Lógica de caché implementada:**
 
-1. **Consulta de anÃ¡lisis tÃ¡ctico en DB:** Antes de ejecutar el pipeline completo, se consulta si existe un `TacticalAnalysis` en Supabase para el `match_id`.
+1. **Consulta de análisis táctico en DB:** Antes de ejecutar el pipeline completo, se consulta si existe un `TacticalAnalysis` en Supabase para el `match_id`.
 
-2. **VerificaciÃ³n de antigÃ¼edad:** Si existe, se verifica que tenga menos de 6 horas de antigÃ¼edad (`_is_tactical_analysis_recent()`).
+2. **Verificación de antigüedad:** Si existe, se verifica que tenga menos de 6 horas de antigüedad (`_is_tactical_analysis_recent()`).
 
-3. **Uso de cachÃ©:** Si es reciente, se convierte de ORM a Pydantic (`_convert_orm_to_pydantic()`) y se usa directamente sin consumir la API de Groq.
+3. **Uso de caché:** Si es reciente, se convierte de ORM a Pydantic (`_convert_orm_to_pydantic()`) y se usa directamente sin consumir la API de Groq.
 
-4. **EjecuciÃ³n de pipeline:** Si no existe o es antiguo, se ejecuta el pipeline completo (Fase 3 + Fase 4) y se persiste el resultado en DB.
+4. **Ejecución de pipeline:** Si no existe o es antiguo, se ejecuta el pipeline completo (Fase 3 + Fase 4) y se persiste el resultado en DB.
 
-**MÃ©todos agregados:**
-- `_get_cached_tactical_analysis()`: Consulta y valida anÃ¡lisis tÃ¡ctico en cachÃ©
-- `_is_tactical_analysis_recent()`: Verifica si el anÃ¡lisis tiene menos de 6 horas
+**Métodos agregados:**
+- `_get_cached_tactical_analysis()`: Consulta y valida análisis táctico en caché
+- `_is_tactical_analysis_recent()`: Verifica si el análisis tiene menos de 6 horas
 - `_convert_orm_to_pydantic()`: Convierte ORM TacticalAnalysis a Pydantic
-- `_run_quantitative_analysis()`: Ejecuta solo Fase 3 cuando el anÃ¡lisis tÃ¡ctico estÃ¡ en cachÃ©
+- `_run_quantitative_analysis()`: Ejecuta solo Fase 3 cuando el análisis táctico está en caché
 
 **Beneficios:**
 - Reduce costos de API de Groq (~$0.00075 por 1K tokens)
-- Mejora tiempo de respuesta (21s â†’ <1s para anÃ¡lisis en cachÃ©)
-- Evita regenerar anÃ¡lisis para el mismo partido dentro de 6 horas
+- Mejora tiempo de respuesta (21s → <1s para análisis en caché)
+- Evita regenerar análisis para el mismo partido dentro de 6 horas
 
-### 4. VerificaciÃ³n End-to-End
+### 4. Verificación End-to-End
 
-**Resultado:** âœ… Todos los anÃ¡lisis se generaron correctamente sin errores de validaciÃ³n
+**Resultado:** ✅ Todos los análisis se generaron correctamente sin errores de validación
 
-**AnÃ¡lisis generados:**
+**Análisis generados:**
 1. **Goles (Over/Under 2.5):**
-   - RecomendaciÃ³n: Over 2.5
+   - Recomendación: Over 2.5
    - Probabilidad: 90.5%
    - Signal Strength: STRONG
    - 3 pros, 2 contras
    - Resumen completo sin errores de longitud
 
 2. **Tarjetas (Over/Under 3.5):**
-   - RecomendaciÃ³n: Over 3.5 tarjetas
+   - Recomendación: Over 3.5 tarjetas
    - Probabilidad: 52.6%
    - Signal Strength: MODERATE
    - 3 pros, 2 contras
-   - AnÃ¡lisis detallado del Ã¡rbitro Wilmar RoldÃ¡n
+   - Análisis detallado del árbitro Wilmar Roldán
 
-3. **CÃ³rneres (Over/Under 9.5):**
-   - RecomendaciÃ³n: Over 9.5 cÃ³rneres
+3. **Córneres (Over/Under 9.5):**
+   - Recomendación: Over 9.5 córneres
    - Probabilidad: 55.6%
    - Signal Strength: MODERATE
    - 3 pros, 2 contras
-   - AnÃ¡lisis de tendencias H2H
+   - Análisis de tendencias H2H
 
 4. **Bet Builder:**
    - No generado en esta prueba (opcional)
    - Schema ajustado para soportar hasta 500 caracteres en correlation_rationale
 
-**MÃ©tricas de rendimiento:**
-- Tiempo de respuesta: 21.41s (primera ejecuciÃ³n)
+**Métricas de rendimiento:**
+- Tiempo de respuesta: 21.41s (primera ejecución)
 - Completitud de datos: 100%
 - Confianza global: 100/100
 - Modelo LLM: llama-3.3-70b-versatile
 
-### 5. Flujo Completo con CachÃ©
+### 5. Flujo Completo con Caché
 
 ```
 Cliente API
-    â”‚
-    â–¼
+    │
+    ▼
 GET /api/v1/predictions/{match_id}
-    â”‚
-    â–¼
+    │
+    ▼
 PredictionOrchestrator.get_prediction()
-    â”‚
-    â”œâ”€â–º 1. CacheService.get() â†’ HIT/MISS
-    â”‚
-    â”œâ”€â–º 2. MatchRepository.get_by_id() â†’ Match ORM
-    â”‚
-    â”œâ”€â–º 3. TacticalAnalysisRepository.get_by_match_id()
-    â”‚       â”‚
-    â”‚       â”œâ”€â–º Si existe y < 6h: USAR CACHÃ‰
-    â”‚       â”‚   â””â”€â–º _convert_orm_to_pydantic()
-    â”‚       â”‚   â””â”€â–º _run_quantitative_analysis() (solo Fase 3)
-    â”‚       â”‚   â””â”€â–º Tiempo total: <1s
-    â”‚       â”‚
-    â”‚       â””â”€â–º Si no existe o > 6h: EJECUTAR PIPELINE
-    â”‚           â””â”€â–º run_full_analysis() (Fase 3 + Fase 4)
-    â”‚           â””â”€â–º _persist_tactical_analysis()
-    â”‚           â””â”€â–º Tiempo total: ~21s
-    â”‚
-    â”œâ”€â–º 4. _build_response() â†’ PredictionResponse
-    â”‚
-    â””â”€â–º 5. CacheService.set() â†’ Persistir en cachÃ©
+    │
+    ├─► 1. CacheService.get() → HIT/MISS
+    │
+    ├─► 2. MatchRepository.get_by_id() → Match ORM
+    │
+    ├─► 3. TacticalAnalysisRepository.get_by_match_id()
+    │       │
+    │       ├─► Si existe y < 6h: USAR CACHÉ
+    │       │   └─► _convert_orm_to_pydantic()
+    │       │   └─► _run_quantitative_analysis() (solo Fase 3)
+    │       │   └─► Tiempo total: <1s
+    │       │
+    │       └─► Si no existe o > 6h: EJECUTAR PIPELINE
+    │           └─► run_full_analysis() (Fase 3 + Fase 4)
+    │           └─► _persist_tactical_analysis()
+    │           └─► Tiempo total: ~21s
+    │
+    ├─► 4. _build_response() → PredictionResponse
+    │
+    └─► 5. CacheService.set() → Persistir en caché
 ```
 
-### 6. ComparaciÃ³n de Rendimiento
+### 6. Comparación de Rendimiento
 
-| Escenario | Tiempo | Costo API | CachÃ© |
+| Escenario | Tiempo | Costo API | Caché |
 |-----------|--------|-----------|-------|
-| Primera ejecuciÃ³n | ~21s | ~$0.01 | No |
-| EjecuciÃ³n con cachÃ© (<6h) | <1s | $0.00 | SÃ­ |
-| EjecuciÃ³n con cachÃ© antiguo (>6h) | ~21s | ~$0.01 | No |
+| Primera ejecución | ~21s | ~$0.01 | No |
+| Ejecución con caché (<6h) | <1s | $0.00 | Sí |
+| Ejecución con caché antiguo (>6h) | ~21s | ~$0.01 | No |
 
 **Ahorro estimado:** Para 100 predicciones del mismo partido en 6 horas:
-- Sin cachÃ©: 100 Ã— $0.01 = $1.00
-- Con cachÃ©: 1 Ã— $0.01 = $0.01
+- Sin caché: 100 × $0.01 = $1.00
+- Con caché: 1 × $0.01 = $0.01
 - **Ahorro: 99%**
 
-### 7. VerificaciÃ³n Final
+### 7. Verificación Final
 
-- âœ… Schemas ajustados para Llama 3.3
-- âœ… MigraciÃ³n SQL creada y documentada
-- âœ… CachÃ© implementado en PredictionOrchestrator
-- âœ… Prueba end-to-end exitosa
-- âœ… Todos los anÃ¡lisis generados sin errores
-- âœ… Tiempo de respuesta optimizado con cachÃ©
-- âœ… Costos de API reducidos significativamente
+- ✅ Schemas ajustados para Llama 3.3
+- ✅ Migración SQL creada y documentada
+- ✅ Caché implementado en PredictionOrchestrator
+- ✅ Prueba end-to-end exitosa
+- ✅ Todos los análisis generados sin errores
+- ✅ Tiempo de respuesta optimizado con caché
+- ✅ Costos de API reducidos significativamente
 
-### 8. PrÃ³ximos Pasos (Post-Fase 4)
+### 8. Próximos Pasos (Post-Fase 4)
 
-1. **Ejecutar migraciÃ³n en Supabase:** Aplicar `004_create_tactical_analyses.sql`
-2. **Monitoreo de producciÃ³n:** Agregar mÃ©tricas de uso de cachÃ© y costos
-3. **OptimizaciÃ³n de prompts:** Ajustar prompts para Llama 3.3
+1. **Ejecutar migración en Supabase:** Aplicar `004_create_tactical_analyses.sql`
+2. **Monitoreo de producción:** Agregar métricas de uso de caché y costos
+3. **Optimización de prompts:** Ajustar prompts para Llama 3.3
 4. **Implementar modelos adicionales:** cards_model.py, corners_model.py
 5. **Player props:** Implementar generador de player_props_narrative
-6. ~~**CalibraciÃ³n de Poisson:** Ajustar lambdas para ligas especÃ­ficas~~ âœ… Completado en Fase 5
+6. ~~**Calibración de Poisson:** Ajustar lambdas para ligas específicas~~ ✅ Completado en Fase 5
 
 ---
 
-## ðŸŽ‰ Fase 4 Completada al 100%
+## 🎉 Fase 4 Completada al 100%
 
 **Resumen de logros:**
-- âœ… Motor TÃ¡ctico y Narrativo implementado
-- âœ… MigraciÃ³n de Anthropic a Google Gemini
-- âœ… MigraciÃ³n de Google Gemini a Groq (Llama 3.3)
-- âœ… Control de concurrencia y reintentos
-- âœ… IntegraciÃ³n completa con FastAPI
-- âœ… Persistencia en Supabase
-- âœ… CachÃ© inteligente de 6 horas
-- âœ… Schemas ajustados para Llama 3.3
-- âœ… Pruebas end-to-end exitosas
+- ✅ Motor Táctico y Narrativo implementado
+- ✅ Migración de Anthropic a Google Gemini
+- ✅ Migración de Google Gemini a Groq (Llama 3.3)
+- ✅ Control de concurrencia y reintentos
+- ✅ Integración completa con FastAPI
+- ✅ Persistencia en Supabase
+- ✅ Caché inteligente de 6 horas
+- ✅ Schemas ajustados para Llama 3.3
+- ✅ Pruebas end-to-end exitosas
 
 **Arquitectura final:**
 ```
-Cliente API â†’ FastAPI â†’ PredictionOrchestrator
-                              â”‚
-                              â”œâ”€â–º CachÃ© (Redis)
-                              â”œâ”€â–º CachÃ© DB (Supabase, 6h)
-                              â””â”€â–º Pipeline ML
-                                   â”œâ”€â–º Fase 3: Motor Cuantitativo (Poisson)
-                                   â”‚    â””â”€â–º CalibraciÃ³n de lambdas por liga (Fase 5)
-                                   â””â”€â–º Fase 4: Cerebro TÃ¡ctico (Groq Llama 3.3)
-                                        â”œâ”€â–º Goals Narrative
-                                        â”œâ”€â–º Cards Narrative
-                                        â”œâ”€â–º Corners Narrative
-                                        â””â”€â–º Bet Builder
+Cliente API → FastAPI → PredictionOrchestrator
+                              │
+                              ├─► Caché (Redis)
+                              ├─► Caché DB (Supabase, 6h)
+                              └─► Pipeline ML
+                                   ├─► Fase 3: Motor Cuantitativo (Poisson)
+                                   │    └─► Calibración de lambdas por liga (Fase 5)
+                                   └─► Fase 4: Cerebro Táctico (Groq Llama 3.3)
+                                        ├─► Goals Narrative
+                                        ├─► Cards Narrative
+                                        ├─► Corners Narrative
+                                        └─► Bet Builder
 
 Backtesting (admin):
 POST /api/v1/backtesting/{league_key}
-    â””â”€â–º Walk-forward validation
-         â”œâ”€â–º CalibraciÃ³n previa
-         â”œâ”€â–º SimulaciÃ³n sin leakage
-         â”œâ”€â–º MÃ©tricas: Brier, ROI, Hit Rate
-         â””â”€â–º Reporte con model_quality_score
+    └─► Walk-forward validation
+         ├─► Calibración previa
+         ├─► Simulación sin leakage
+         ├─► Métricas: Brier, ROI, Hit Rate
+         └─► Reporte con model_quality_score
 ```
 
 ---
 
-## ðŸŽ‰ Fase 5 Completada al 100%
+## 🎉 Fase 5 Completada al 100%
 
 **Resumen de logros:**
-- âœ… CalibraciÃ³n de Poisson con baselines histÃ³ricos por liga
-- âœ… ValidaciÃ³n de lambdas en el motor (clamp por liga)
-- âœ… Motor de Backtesting Walk-Forward (simulator, metrics, runner)
-- âœ… MÃ©tricas: Brier Score, ROI, Hit Rate, Calibration Curve
-- âœ… Endpoint admin de backtesting en FastAPI
-- âœ… Tests de integraciÃ³n: 19 tests nuevos, 27/27 totales en verde
+- ✅ Calibración de Poisson con baselines históricos por liga
+- ✅ Validación de lambdas en el motor (clamp por liga)
+- ✅ Motor de Backtesting Walk-Forward (simulator, metrics, runner)
+- ✅ Métricas: Brier Score, ROI, Hit Rate, Calibration Curve
+- ✅ Endpoint admin de backtesting en FastAPI
+- ✅ Tests de integración: 19 tests nuevos, 27/27 totales en verde
 
 ---
 
-## ðŸŸ¢ Fase 5.1: ConfiguraciÃ³n de 11 Ligas Activas Prioritarias (Completado)
+## 🟢 Fase 5.1: Configuración de 11 Ligas Activas Prioritarias (Completado)
 
 ### 1. Objetivo
-Configurar las 11 ligas prioritarias para ingesta de datos y calibraciÃ³n de Poisson, expandiendo el sistema mÃ¡s allÃ¡ de las 3 ligas iniciales (Premier League, LaLiga, Liga BetPlay).
+Configurar las 11 ligas prioritarias para ingesta de datos y calibración de Poisson, expandiendo el sistema más allá de las 3 ligas iniciales (Premier League, LaLiga, Liga BetPlay).
 
-### 2. Baselines de CalibraciÃ³n Actualizados
+### 2. Baselines de Calibración Actualizados
 
 **Archivo modificado:** `packages/ml/betmind_ml/calibration/league_calibrator.py`
 
-Se expandiÃ³ `KNOWN_LEAGUE_BASELINES` de 3 a 13 ligas con parÃ¡metros histÃ³ricos calibrados:
+Se expandió `KNOWN_LEAGUE_BASELINES` de 3 a 13 ligas con parámetros históricos calibrados:
 
-| Liga | PaÃ­s | avg_goals/team | Î»_home range | Î»_away range | home_win_rate |
+| Liga | País | avg_goals/team | λ_home range | λ_away range | home_win_rate |
 |------|------|----------------|--------------|--------------|---------------|
 | premier_league | Inglaterra | 1.35 | (0.8, 3.0) | (0.5, 2.5) | 0.46 |
-| laliga | EspaÃ±a | 1.30 | (0.7, 2.8) | (0.5, 2.3) | 0.47 |
+| laliga | España | 1.30 | (0.7, 2.8) | (0.5, 2.3) | 0.47 |
 | liga_betplay | Colombia | 1.15 | (0.6, 2.4) | (0.4, 2.0) | 0.44 |
 | serie_a_bra | Brasil | 1.25 | (0.7, 2.6) | (0.5, 2.2) | 0.45 |
 | liga_profesional_arg | Argentina | 1.12 | (0.6, 2.3) | (0.4, 1.9) | 0.43 |
-| liga_mx | MÃ©xico | 1.32 | (0.7, 2.7) | (0.5, 2.4) | 0.46 |
+| liga_mx | México | 1.32 | (0.7, 2.7) | (0.5, 2.4) | 0.46 |
 | mls | USA | 1.48 | (0.8, 3.1) | (0.6, 2.6) | 0.47 |
 | primera_chile | Chile | 1.28 | (0.7, 2.6) | (0.5, 2.3) | 0.45 |
 | liga_pro_ecu | Ecuador | 1.22 | (0.7, 2.6) | (0.5, 2.1) | 0.46 |
-| liga_1_peru | PerÃº | 1.25 | (0.7, 2.7) | (0.4, 2.2) | 0.45 |
+| liga_1_peru | Perú | 1.25 | (0.7, 2.7) | (0.4, 2.2) | 0.45 |
 | allsvenskan | Suecia | 1.38 | (0.8, 2.9) | (0.5, 2.5) | 0.47 |
 | superliga_den | Dinamarca | 1.35 | (0.7, 2.8) | (0.5, 2.4) | 0.46 |
 | super_league_sui | Suiza | 1.42 | (0.8, 3.0) | (0.6, 2.6) | 0.47 |
 
-**Nota:** MLS tiene el promedio de goles mÃ¡s alto (1.48), mientras que Liga Profesional Argentina tiene el mÃ¡s bajo (1.12), reflejando las diferencias estilÃ­sticas entre ligas.
+**Nota:** MLS tiene el promedio de goles más alto (1.48), mientras que Liga Profesional Argentina tiene el más bajo (1.12), reflejando las diferencias estilísticas entre ligas.
 
-### 3. ConfiguraciÃ³n de Ligas Objetivo
+### 3. Configuración de Ligas Objetivo
 
 **Archivo modificado:** `apps/api/config.py`
 
-Se agregÃ³ `FEATURED_LEAGUES` con los IDs de API-Football para las 11 ligas prioritarias:
+Se agregó `FEATURED_LEAGUES` con los IDs de API-Football para las 11 ligas prioritarias:
 
 ```python
 FEATURED_LEAGUES: dict[str, dict] = {
     "liga_betplay": {"api_football_id": 239, "name": "Liga BetPlay Dimayor", "country": "Colombia"},
     "serie_a_bra": {"api_football_id": 71, "name": "Serie A", "country": "Brasil"},
     "liga_profesional_arg": {"api_football_id": 128, "name": "Liga Profesional", "country": "Argentina"},
-    "liga_mx": {"api_football_id": 262, "name": "Liga MX", "country": "MÃ©xico"},
+    "liga_mx": {"api_football_id": 262, "name": "Liga MX", "country": "México"},
     "mls": {"api_football_id": 253, "name": "Major League Soccer", "country": "USA"},
-    "primera_chile": {"api_football_id": 274, "name": "Primera DivisiÃ³n", "country": "Chile"},
+    "primera_chile": {"api_football_id": 274, "name": "Primera División", "country": "Chile"},
     "liga_pro_ecu": {"api_football_id": 275, "name": "Liga Pro", "country": "Ecuador"},
-    "liga_1_peru": {"api_football_id": 294, "name": "Liga 1", "country": "PerÃº"},
+    "liga_1_peru": {"api_football_id": 294, "name": "Liga 1", "country": "Perú"},
     "allsvenskan": {"api_football_id": 113, "name": "Allsvenskan", "country": "Suecia"},
     "superliga_den": {"api_football_id": 119, "name": "Superliga", "country": "Dinamarca"},
     "super_league_sui": {"api_football_id": 207, "name": "Super League", "country": "Suiza"},
@@ -2188,11 +2188,11 @@ FEATURED_LEAGUE_IDS: list[int] = [
 ]
 ```
 
-### 4. ActualizaciÃ³n de Tests
+### 4. Actualización de Tests
 
 **Archivo modificado:** `tests/test_backtest_runner.py`
 
-Se actualizÃ³ `test_validate_lambda_exceeds_max` para reflejar el nuevo rango de Liga BetPlay (0.6, 2.4) en lugar del anterior (0.6, 2.5).
+Se actualizó `test_validate_lambda_exceeds_max` para reflejar el nuevo rango de Liga BetPlay (0.6, 2.4) en lugar del anterior (0.6, 2.5).
 
 ### 5. Resultados de Tests
 
@@ -2212,22 +2212,22 @@ Total:                         27 passed in 1.69s
 | `apps/api/repositories/match_repository.py` | Expandido LEAGUE_KEY_TO_EXTERNAL_ID de 5 a 15 ligas |
 | `tests/test_backtest_runner.py` | Actualizado test para nuevo rango de liga_betplay |
 
-### 7. VerificaciÃ³n
-- âœ… 13 ligas configuradas en KNOWN_LEAGUE_BASELINES
-- âœ… 11 ligas prioritarias en FEATURED_LEAGUES con IDs de API-Football
-- âœ… Tests actualizados y pasando (27/27)
-- âœ… CalibraciÃ³n funcional para todas las ligas configuradas
+### 7. Verificación
+- ✅ 13 ligas configuradas en KNOWN_LEAGUE_BASELINES
+- ✅ 11 ligas prioritarias en FEATURED_LEAGUES con IDs de API-Football
+- ✅ Tests actualizados y pasando (27/27)
+- ✅ Calibración funcional para todas las ligas configuradas
 
 ---
 
-## ðŸŸ¢ Fase 5.2: Script CLI de SincronizaciÃ³n de Partidos PrÃ³ximos (Completado)
+## 🟢 Fase 5.2: Script CLI de Sincronización de Partidos Próximos (Completado)
 
 ### 1. Objetivo
-Crear un script CLI para sincronizar partidos programados de los prÃ³ximos 3 dÃ­as en las 11 ligas destacadas, con persistencia en Supabase y resumen organizado en consola.
+Crear un script CLI para sincronizar partidos programados de los próximos 3 días en las 11 ligas destacadas, con persistencia en Supabase y resumen organizado en consola.
 
 ### 2. Archivo Creado
 
-**`scripts/sync_today_matches.py`** â€” Script CLI asÃ­ncrono que:
+**`scripts/sync_today_matches.py`** — Script CLI asíncrono que:
 - Itera sobre `FEATURED_LEAGUES` (11 ligas prioritarias)
 - Consulta fixtures por rango de fechas usando `APIFootballService.get_fixtures_by_date_range()`
 - Persiste ligas, equipos y partidos en Supabase (upsert)
@@ -2236,11 +2236,11 @@ Crear un script CLI para sincronizar partidos programados de los prÃ³ximos 3 d
 
 ### 3. Cambios en `api_football.py`
 
-**Nuevo mÃ©todo:** `get_fixtures_by_date_range(league, season, date_from, date_to)`
-- Consulta fixtures de una liga en un rango de fechas especÃ­fico
-- ParÃ¡metros: `league`, `season`, `from`, `to`
+**Nuevo método:** `get_fixtures_by_date_range(league, season, date_from, date_to)`
+- Consulta fixtures de una liga en un rango de fechas específico
+- Parámetros: `league`, `season`, `from`, `to`
 
-### 4. ConfiguraciÃ³n de ConexiÃ³n
+### 4. Configuración de Conexión
 
 El script crea su propio engine con `statement_cache_size=0` para compatibilidad con pgbouncer (Supabase):
 
@@ -2248,16 +2248,16 @@ El script crea su propio engine con `statement_cache_size=0` para compatibilidad
 engine_kwargs["connect_args"] = {"statement_cache_size": 0}
 ```
 
-### 5. LimitaciÃ³n de API-Football Free Plan
+### 5. Limitación de API-Football Free Plan
 
 El plan gratuito solo permite acceso a temporadas 2022-2024. El script usa `season=2024` y busca fechas equivalentes en 2024.
 
-### 6. Resultado de EjecuciÃ³n
+### 6. Resultado de Ejecución
 
 ```
-âœ… Ligas sincronizadas: 11
-âœ… Equipos sincronizados: 77
-âœ… Partidos sincronizados: 50
+✅ Ligas sincronizadas: 11
+✅ Equipos sincronizados: 77
+✅ Partidos sincronizados: 50
 ```
 
 **Partidos encontrados por liga:**
@@ -2270,65 +2270,65 @@ El plan gratuito solo permite acceso a temporadas 2022-2024. El script usa `seas
 | Allsvenskan (Suecia) | 7 |
 | Superliga (Dinamarca) | 5 |
 | Super League (Suiza) | 6 |
-| Liga MX, MLS, Primera Chile, Liga Pro Ecuador, Liga 1 PerÃº | 0 (sin actividad en ese rango) |
+| Liga MX, MLS, Primera Chile, Liga Pro Ecuador, Liga 1 Perú | 0 (sin actividad en ese rango) |
 
 ### 7. Archivos Modificados
 
 | Archivo | Cambio |
 |---------|--------|
-| `apps/api/services/api_football.py` | Nuevo mÃ©todo `get_fixtures_by_date_range()` |
+| `apps/api/services/api_football.py` | Nuevo método `get_fixtures_by_date_range()` |
 | `scripts/sync_today_matches.py` | Script CLI creado |
 
-### 8. VerificaciÃ³n
-- âœ… Script ejecutado exitosamente
-- âœ… 50 partidos sincronizados en Supabase
-- âœ… 77 equipos sincronizados
-- âœ… Resumen en consola organizado por liga
-- âœ… Manejo de ligas sin partidos (omisiÃ³n suave)
+### 8. Verificación
+- ✅ Script ejecutado exitosamente
+- ✅ 50 partidos sincronizados en Supabase
+- ✅ 77 equipos sincronizados
+- ✅ Resumen en consola organizado por liga
+- ✅ Manejo de ligas sin partidos (omisión suave)
 
 ---
 
-## ðŸŸ¢ Fase 5.3: Scraper de Partidos con football-data.org (Completado)
+## 🟢 Fase 5.3: Scraper de Partidos con football-data.org (Completado)
 
-### 1. MotivaciÃ³n
-API-Football (plan gratuito) solo permite acceso a temporadas 2022-2024. Para obtener partidos reales de 2026, se implementÃ³ un scraper usando football-data.org que sÃ­ tiene datos de la temporada actual.
+### 1. Motivación
+API-Football (plan gratuito) solo permite acceso a temporadas 2022-2024. Para obtener partidos reales de 2026, se implementó un scraper usando football-data.org que sí tiene datos de la temporada actual.
 
 ### 2. Scraper Implementado
 
 **Archivo creado:** `apps/api/services/scrapers/match_fixture_scraper.py`
 
 - Usa football-data.org API (gratuita con datos de 2026)
-- `MatchFixtureScraper` con mÃ©todos:
-  - `fetch_league_fixtures(league_code, date_from, date_to)` â€” Obtiene partidos de una liga
-  - `fetch_all_leagues_fixtures(days_ahead)` â€” Obtiene partidos de todas las ligas disponibles
-  - `fetch_featured_leagues_fixtures(days_ahead)` â€” Obtiene partidos de ligas destacadas disponibles
+- `MatchFixtureScraper` con métodos:
+  - `fetch_league_fixtures(league_code, date_from, date_to)` — Obtiene partidos de una liga
+  - `fetch_all_leagues_fixtures(days_ahead)` — Obtiene partidos de todas las ligas disponibles
+  - `fetch_featured_leagues_fixtures(days_ahead)` — Obtiene partidos de ligas destacadas disponibles
 
 ### 3. Ligas Disponibles en football-data.org
 
-| CÃ³digo | Liga | Disponibilidad |
+| Código | Liga | Disponibilidad |
 |--------|------|----------------|
-| PL | Premier League | âœ… |
-| PD | LaLiga | âœ… |
-| BL1 | Bundesliga | âœ… |
-| SA | Serie A (Italia) | âœ… |
-| BSA | BrasileirÃ£o SÃ©rie A | âœ… |
-| FL1 | Ligue 1 | âœ… |
-| DED | Eredivisie | âœ… |
-| PPL | Primeira Liga | âœ… |
-| ELC | Championship | âœ… |
+| PL | Premier League | ✅ |
+| PD | LaLiga | ✅ |
+| BL1 | Bundesliga | ✅ |
+| SA | Serie A (Italia) | ✅ |
+| BSA | Brasileirão Série A | ✅ |
+| FL1 | Ligue 1 | ✅ |
+| DED | Eredivisie | ✅ |
+| PPL | Primeira Liga | ✅ |
+| ELC | Championship | ✅ |
 
-**Nota:** Las ligas latinoamericanas (Liga BetPlay, Liga MX, MLS, etc.) no estÃ¡n disponibles en football-data.org.
+**Nota:** Las ligas latinoamericanas (Liga BetPlay, Liga MX, MLS, etc.) no están disponibles en football-data.org.
 
 ### 4. Script Actualizado
 
 **Archivo modificado:** `scripts/sync_today_matches.py`
 
 - Usa `MatchFixtureScraper` en lugar de `APIFootballService`
-- Genera `external_id` Ãºnico para equipos nuevos usando hash del nombre
+- Genera `external_id` único para equipos nuevos usando hash del nombre
 - Persiste ligas, equipos y partidos en Supabase
 - Imprime resumen organizado por liga
 
-### 5. Resultado de EjecuciÃ³n
+### 5. Resultado de Ejecución
 
 ```
 Rango de fechas: 2026-07-25 a 2026-07-28
@@ -2339,10 +2339,10 @@ Serie A (Brasil)
    2026-07-26 19:00 | EC Bahia vs SC Corinthians Paulista | ID: 102
    2026-07-26 19:00 | Cruzeiro EC vs Botafogo FR | ID: 103
    2026-07-26 21:30 | RB Bragantino vs Coritiba FBC | ID: 104
-   2026-07-26 21:30 | CR Flamengo vs SÃ£o Paulo FC | ID: 105
-   2026-07-26 21:30 | GrÃªmio FBPA vs Fluminense FC | ID: 106
+   2026-07-26 21:30 | CR Flamengo vs São Paulo FC | ID: 105
+   2026-07-26 21:30 | Grêmio FBPA vs Fluminense FC | ID: 106
    2026-07-26 22:30 | SE Palmeiras vs CA Mineiro | ID: 107
-   2026-07-26 22:30 | Clube do Remo vs EC VitÃ³ria | ID: 108
+   2026-07-26 22:30 | Clube do Remo vs EC Vitória | ID: 108
 
 RESUMEN FINAL
    Ligas sincronizadas: 1
@@ -2354,22 +2354,22 @@ RESUMEN FINAL
 
 | Archivo | Cambio |
 |---------|--------|
-| `apps/api/services/scrapers/__init__.py` | Nuevo mÃ³dulo |
+| `apps/api/services/scrapers/__init__.py` | Nuevo módulo |
 | `apps/api/services/scrapers/match_fixture_scraper.py` | Scraper de football-data.org |
 | `scripts/sync_today_matches.py` | Actualizado para usar scraper |
 
-### 7. VerificaciÃ³n
-- âœ… Scraper funciona con football-data.org
-- âœ… 8 partidos reales de BrasileirÃ£o 2026 sincronizados
-- âœ… 15 equipos nuevos creados en Supabase
-- âœ… Datos de 2026 (no solo 2022-2024)
+### 7. Verificación
+- ✅ Scraper funciona con football-data.org
+- ✅ 8 partidos reales de Brasileirão 2026 sincronizados
+- ✅ 15 equipos nuevos creados en Supabase
+- ✅ Datos de 2026 (no solo 2022-2024)
 
 ---
 
-## ðŸŸ¢ Fase 5.4: Scraper de Partidos con ESPN Scoreboard API (Completado)
+## 🟢 Fase 5.4: Scraper de Partidos con ESPN Scoreboard API (Completado)
 
-### 1. MotivaciÃ³n
-football-data.org retornaba datos errÃ³neos/incompletos. Se implementÃ³ un scraper usando ESPN Scoreboard API que es:
+### 1. Motivación
+football-data.org retornaba datos erróneos/incompletos. Se implementó un scraper usando ESPN Scoreboard API que es:
 - 100% gratuita
 - No requiere API key
 - Tiene datos en tiempo real
@@ -2380,22 +2380,22 @@ football-data.org retornaba datos errÃ³neos/incompletos. Se implementÃ³ un s
 **Archivo modificado:** `apps/api/services/scrapers/match_fixture_scraper.py`
 
 - Usa ESPN Scoreboard API: `https://site.api.espn.com/apis/site/v2/sports/soccer/{league_slug}/scoreboard?dates={YYYYMMDD}`
-- `MatchFixtureScraper` con mÃ©todos:
-  - `fetch_league_fixtures(league_key, date)` â€” Obtiene partidos de una liga para una fecha
-  - `fetch_all_leagues_fixtures(days_ahead)` â€” Obtiene partidos de todas las ligas para prÃ³ximos N dÃ­as
+- `MatchFixtureScraper` con métodos:
+  - `fetch_league_fixtures(league_key, date)` — Obtiene partidos de una liga para una fecha
+  - `fetch_all_leagues_fixtures(days_ahead)` — Obtiene partidos de todas las ligas para próximos N días
 
 ### 3. Mapeo de Ligas a Slugs de ESPN
 
-| Liga | PaÃ­s | Slug ESPN |
+| Liga | País | Slug ESPN |
 |------|------|-----------|
 | liga_betplay | Colombia | col.1 |
 | serie_a_bra | Brasil | bra.1 |
 | liga_profesional_arg | Argentina | arg.1 |
-| liga_mx | MÃ©xico | mex.1 |
+| liga_mx | México | mex.1 |
 | mls | USA | usa.1 |
 | primera_chile | Chile | chi.1 |
 | liga_pro_ecu | Ecuador | ecu.1 |
-| liga_1_peru | PerÃº | per.1 |
+| liga_1_peru | Perú | per.1 |
 | allsvenskan | Suecia | swe.1 |
 | superliga_den | Dinamarca | den.1 |
 | super_league_sui | Suiza | sui.1 |
@@ -2405,13 +2405,13 @@ football-data.org retornaba datos errÃ³neos/incompletos. Se implementÃ³ un s
 **Archivo modificado:** `scripts/sync_today_matches.py`
 
 - Usa `MatchFixtureScraper` con ESPN Scoreboard API
-- Busca partidos para hoy + prÃ³ximos 2 dÃ­as
+- Busca partidos para hoy + próximos 2 días
 - Convierte external_id de string a entero (ESPN retorna strings)
-- Genera external_id Ãºnico para equipos nuevos usando hash del nombre
+- Genera external_id único para equipos nuevos usando hash del nombre
 - Persiste ligas, equipos y partidos en Supabase
-- Imprime resumen organizado por liga con estados (â° Programado, ðŸ”´ En vivo, âœ… Finalizado)
+- Imprime resumen organizado por liga con estados (⏰ Programado, 🔴 En vivo, ✅ Finalizado)
 
-### 5. Resultado de EjecuciÃ³n
+### 5. Resultado de Ejecución
 
 ```
 Fecha actual: 2026-07-25
@@ -2420,11 +2420,11 @@ Rango: 2026-07-25 a 2026-07-27
 Liga BetPlay (Colombia): 8 partidos
 Serie A (Brasil): 10 partidos
 Liga Profesional (Argentina): 7 partidos
-Liga MX (MÃ©xico): 5 partidos
+Liga MX (México): 5 partidos
 MLS (USA): 15 partidos
-Primera DivisiÃ³n (Chile): 7 partidos
+Primera División (Chile): 7 partidos
 Liga Pro (Ecuador): 8 partidos
-Liga 1 (PerÃº): 7 partidos
+Liga 1 (Perú): 7 partidos
 Allsvenskan (Suecia): 7 partidos
 Superliga (Dinamarca): 5 partidos
 Super League (Suiza): 0 partidos (sin actividad)
@@ -2435,14 +2435,14 @@ RESUMEN: 10 ligas, 135 equipos, 79 partidos sincronizados
 ### 6. Ejemplos de Partidos Sincronizados
 
 **Liga BetPlay (Colombia):**
-- 2026-07-25 21:00 | BoyacÃ¡ ChicÃ³ FC vs AtlÃ©tico Nacional
-- 2026-07-25 21:05 | Independiente MedellÃ­n vs Deportivo Pasto
-- 2026-07-25 23:10 | Millonarios vs AtlÃ©tico Bucaramanga
-- 2026-07-26 01:15 | Deportes Tolima vs AtlÃ©tico Junior
+- 2026-07-25 21:00 | Boyacá Chicó FC vs Atlético Nacional
+- 2026-07-25 21:05 | Independiente Medellín vs Deportivo Pasto
+- 2026-07-25 23:10 | Millonarios vs Atlético Bucaramanga
+- 2026-07-26 01:15 | Deportes Tolima vs Atlético Junior
 
 **MLS (USA):**
 - 2026-07-25 22:30 | Red Bull New York vs Charlotte FC
-- 2026-07-25 23:30 | CF MontrÃ©al vs Inter Miami CF
+- 2026-07-25 23:30 | CF Montréal vs Inter Miami CF
 - 2026-07-26 02:30 | LAFC vs Sporting Kansas City
 - 2026-07-26 02:30 | San Jose Earthquakes vs LA Galaxy
 
@@ -2451,31 +2451,31 @@ RESUMEN: 10 ligas, 135 equipos, 79 partidos sincronizados
 | Archivo | Cambio |
 |---------|--------|
 | `apps/api/services/scrapers/match_fixture_scraper.py` | Reescrito para usar ESPN Scoreboard API |
-| `scripts/sync_today_matches.py` | Actualizado para usar ESPN + conversiÃ³n de external_id |
+| `scripts/sync_today_matches.py` | Actualizado para usar ESPN + conversión de external_id |
 
-### 8. VerificaciÃ³n
-- âœ… Scraper funciona con ESPN Scoreboard API
-- âœ… 79 partidos reales de 2026 sincronizados en Supabase
-- âœ… 135 equipos nuevos/actualizados
-- âœ… 10 de 11 ligas con actividad (Suiza sin partidos en el rango)
-- âœ… Estados de partidos correctos (Programado/En vivo/Finalizado)
-- âœ… Fechas y horas en UTC/COT correctas
+### 8. Verificación
+- ✅ Scraper funciona con ESPN Scoreboard API
+- ✅ 79 partidos reales de 2026 sincronizados en Supabase
+- ✅ 135 equipos nuevos/actualizados
+- ✅ 10 de 11 ligas con actividad (Suiza sin partidos en el rango)
+- ✅ Estados de partidos correctos (Programado/En vivo/Finalizado)
+- ✅ Fechas y horas en UTC/COT correctas
 
 ---
 
-## ðŸŸ¢ Fase 5.4.1: CorrecciÃ³n de Zona Horaria UTC â†’ COT (Completado)
+## 🟢 Fase 5.4.1: Corrección de Zona Horaria UTC → COT (Completado)
 
 ### 1. Problema Identificado
 ESPN Scoreboard API retorna todas las fechas en **UTC**. Esto causaba que:
-- Partidos nocturnos en LatinoamÃ©rica (ej: 21:00 COT) se mostraban como 02:00 UTC del dÃ­a siguiente
-- El rango de bÃºsqueda no capturaba partidos que en UTC caÃ­an en dÃ­a diferente al local
-- Las horas mostradas no correspondÃ­an a la percepciÃ³n local del usuario
+- Partidos nocturnos en Latinoamérica (ej: 21:00 COT) se mostraban como 02:00 UTC del día siguiente
+- El rango de búsqueda no capturaba partidos que en UTC caían en día diferente al local
+- Las horas mostradas no correspondían a la percepción local del usuario
 
-### 2. SoluciÃ³n Implementada
+### 2. Solución Implementada
 
 **Archivo modificado:** `apps/api/services/scrapers/match_fixture_scraper.py`
 
-#### 2.1 ConversiÃ³n de Zona Horaria
+#### 2.1 Conversión de Zona Horaria
 ```python
 from zoneinfo import ZoneInfo
 
@@ -2487,9 +2487,9 @@ match_date_utc = datetime.fromisoformat(match_date_str.replace("Z", "+00:00"))
 match_date_local = match_date_utc.astimezone(COLOMBIA_TZ)
 ```
 
-#### 2.2 Rango de BÃºsqueda Expandido
+#### 2.2 Rango de Búsqueda Expandido
 ```python
-# Consultar 3 fechas en ESPN: ayer, hoy, maÃ±ana (en UTC)
+# Consultar 3 fechas en ESPN: ayer, hoy, mañana (en UTC)
 for day_offset in range(-1, 2):  # -1, 0, 1
     target_date = datetime.combine(today_local + timedelta(days=day_offset), ...)
     fixtures = await self.fetch_league_fixtures(league_key, target_date)
@@ -2504,7 +2504,7 @@ for fixture in fixtures:
         league_fixtures.append(fixture)
 ```
 
-#### 2.4 EliminaciÃ³n de Duplicados
+#### 2.4 Eliminación de Duplicados
 ```python
 # Eliminar duplicados por external_id
 seen_ids = set()
@@ -2518,7 +2518,7 @@ for fixture in league_fixtures:
 
 **Archivo modificado:** `scripts/sync_today_matches.py`
 
-#### 2.5 VisualizaciÃ³n en COT
+#### 2.5 Visualización en COT
 ```python
 # Convertir a zona horaria de Colombia si tiene info de timezone
 if hasattr(match_date, 'tzinfo') and match_date.tzinfo:
@@ -2534,119 +2534,119 @@ pip install tzdata
 ```
 Necesario para que `zoneinfo` funcione correctamente en Windows.
 
-### 4. Resultado de EjecuciÃ³n
+### 4. Resultado de Ejecución
 
 ```
 Fecha actual (COT): 2026-07-25 18:03:12 UTC-5
 Zona horaria: America/Bogota (UTC-5)
-Rango local de bÃºsqueda: 2026-07-25 a 2026-07-27
+Rango local de búsqueda: 2026-07-25 a 2026-07-27
 
 Liga BetPlay (Colombia):
-  â° 2026-07-25 16:00 COT | BoyacÃ¡ ChicÃ³ FC vs AtlÃ©tico Nacional
-  â° 2026-07-25 18:10 COT | Millonarios vs AtlÃ©tico Bucaramanga
-  â° 2026-07-25 20:15 COT | Deportes Tolima vs AtlÃ©tico Junior
+  ⏰ 2026-07-25 16:00 COT | Boyacá Chicó FC vs Atlético Nacional
+  ⏰ 2026-07-25 18:10 COT | Millonarios vs Atlético Bucaramanga
+  ⏰ 2026-07-25 20:15 COT | Deportes Tolima vs Atlético Junior
 
-Liga MX (MÃ©xico):
-  â° 2026-07-25 18:07 COT | Guadalajara vs FC Juarez
-  â° 2026-07-25 22:00 COT | Santos vs Atlas
+Liga MX (México):
+  ⏰ 2026-07-25 18:07 COT | Guadalajara vs FC Juarez
+  ⏰ 2026-07-25 22:00 COT | Santos vs Atlas
 
 MLS (USA):
-  â° 2026-07-25 17:30 COT | Red Bull New York vs Charlotte FC
-  â° 2026-07-25 18:30 COT | CF MontrÃ©al vs Inter Miami CF
-  â° 2026-07-25 21:30 COT | LAFC vs Sporting Kansas City
+  ⏰ 2026-07-25 17:30 COT | Red Bull New York vs Charlotte FC
+  ⏰ 2026-07-25 18:30 COT | CF Montréal vs Inter Miami CF
+  ⏰ 2026-07-25 21:30 COT | LAFC vs Sporting Kansas City
 
 Serie A (Brasil):
-  ðŸ”´ 2026-07-25 16:30 COT | Athletico-PR vs Internacional
-  â° 2026-07-26 14:00 COT | Bahia vs Corinthians
-  â° 2026-07-26 16:30 COT | Flamengo vs SÃ£o Paulo
+  🔴 2026-07-25 16:30 COT | Athletico-PR vs Internacional
+  ⏰ 2026-07-26 14:00 COT | Bahia vs Corinthians
+  ⏰ 2026-07-26 16:30 COT | Flamengo vs São Paulo
 ```
 
-### 5. VerificaciÃ³n de ConversiÃ³n UTC â†’ COT
+### 5. Verificación de Conversión UTC → COT
 
-| Liga | UTC (antes) | COT (despuÃ©s) | Diferencia |
+| Liga | UTC (antes) | COT (después) | Diferencia |
 |------|-------------|---------------|------------|
-| Liga BetPlay | 21:00 | 16:00 | -5h âœ… |
-| Liga MX | 23:07 | 18:07 | -5h âœ… |
-| MLS | 23:30 | 18:30 | -5h âœ… |
-| BrasileirÃ£o | 21:30 | 16:30 | -5h âœ… |
-| Argentina | 22:15 | 17:15 | -5h âœ… |
-| Chile | 21:00 | 16:00 | -5h âœ… |
-| Ecuador | 00:00 (+1d) | 19:00 | -5h âœ… |
-| PerÃº | 01:30 (+1d) | 20:30 | -5h âœ… |
-| Suecia | 12:00 | 07:00 | -5h âœ… |
-| Dinamarca | 16:00 | 11:00 | -5h âœ… |
+| Liga BetPlay | 21:00 | 16:00 | -5h ✅ |
+| Liga MX | 23:07 | 18:07 | -5h ✅ |
+| MLS | 23:30 | 18:30 | -5h ✅ |
+| Brasileirão | 21:30 | 16:30 | -5h ✅ |
+| Argentina | 22:15 | 17:15 | -5h ✅ |
+| Chile | 21:00 | 16:00 | -5h ✅ |
+| Ecuador | 00:00 (+1d) | 19:00 | -5h ✅ |
+| Perú | 01:30 (+1d) | 20:30 | -5h ✅ |
+| Suecia | 12:00 | 07:00 | -5h ✅ |
+| Dinamarca | 16:00 | 11:00 | -5h ✅ |
 
 ### 6. Archivos Modificados
 
 | Archivo | Cambio |
 |---------|--------|
-| `apps/api/services/scrapers/match_fixture_scraper.py` | ConversiÃ³n UTCâ†’COT, rango expandido (-1, 0, +1 dÃ­as), filtrado local, deduplicaciÃ³n |
-| `scripts/sync_today_matches.py` | VisualizaciÃ³n en COT, import de ZoneInfo |
+| `apps/api/services/scrapers/match_fixture_scraper.py` | Conversión UTC→COT, rango expandido (-1, 0, +1 días), filtrado local, deduplicación |
+| `scripts/sync_today_matches.py` | Visualización en COT, import de ZoneInfo |
 
-### 7. VerificaciÃ³n Final
-- âœ… ConversiÃ³n UTC â†’ COT correcta (-5 horas)
-- âœ… Rango de bÃºsqueda expandido captura partidos nocturnos
-- âœ… Filtrado por rango local elimina partidos fuera del rango deseado
-- âœ… DeduplicaciÃ³n por external_id funciona correctamente
-- âœ… Horas mostradas en COT son coherentes con horarios tÃ­picos de fÃºtbol
-- âœ… Partidos de ligas europeas (Suecia, Dinamarca) se muestran en horas tempranas de LatinoamÃ©rica (correcto)
-- âœ… 73 partidos sincronizados con zona horaria correcta
+### 7. Verificación Final
+- ✅ Conversión UTC → COT correcta (-5 horas)
+- ✅ Rango de búsqueda expandido captura partidos nocturnos
+- ✅ Filtrado por rango local elimina partidos fuera del rango deseado
+- ✅ Deduplicación por external_id funciona correctamente
+- ✅ Horas mostradas en COT son coherentes con horarios típicos de fútbol
+- ✅ Partidos de ligas europeas (Suecia, Dinamarca) se muestran en horas tempranas de Latinoamérica (correcto)
+- ✅ 73 partidos sincronizados con zona horaria correcta
 
 ---
 
-## ðŸŸ¢ Fase 6: Motor de GeneraciÃ³n Inteligente de Tickets (Completado)
+## 🟢 Fase 6: Motor de Generación Inteligente de Tickets (Completado)
 
 ### 1. Objetivo
-Implementar el endpoint `POST /api/v1/tickets/generate` que genera tickets pre-validados en 3 modos de riesgo (EDGE, VALUE, BOLD) combinando el motor cuantitativo (Poisson + EV) con reglas de correlaciÃ³n.
+Implementar el endpoint `POST /api/v1/tickets/generate` que genera tickets pre-validados en 3 modos de riesgo (EDGE, VALUE, BOLD) combinando el motor cuantitativo (Poisson + EV) con reglas de correlación.
 
 ### 2. Arquitectura del Motor de Tickets
 
-#### Principios de DiseÃ±o
-- **SRP (Single Responsibility):** `ticket_builder.py` es lÃ³gica pura sin I/O â€” testeable de forma aislada
+#### Principios de Diseño
+- **SRP (Single Responsibility):** `ticket_builder.py` es lógica pura sin I/O — testeable de forma aislada
 - **SDD (Schema-Driven Development):** Contratos Pydantic estrictos para request/response
-- **DegradaciÃ³n elegante:** Si un partido falla, el resto continÃºa
-- **CachÃ© inteligente:** TTL 30 minutos (los tickets del dÃ­a son relativamente estables)
+- **Degradación elegante:** Si un partido falla, el resto continúa
+- **Caché inteligente:** TTL 30 minutos (los tickets del día son relativamente estables)
 
 #### Modos de Riesgo
-| Modo | EV MÃ­nimo | Max Legs | Prob MÃ­nima | Rango Cuotas | Staking |
+| Modo | EV Mínimo | Max Legs | Prob Mínima | Rango Cuotas | Staking |
 |------|-----------|----------|-------------|--------------|---------|
 | EDGE | 5% | 3 | 55% | 1.40 - 2.30 | 1-2% bankroll |
 | VALUE | 8% | 4 | 46% | 1.90 - 4.50 | 0.5-1% bankroll |
 | BOLD | 3% | 4 | 40% | 4.00 - 14.00 | 0.25-0.5% bankroll |
 
-### 3. Reglas de CorrelaciÃ³n
+### 3. Reglas de Correlación
 
-#### Combinaciones Prohibidas (CorrelaciÃ³n Negativa)
+#### Combinaciones Prohibidas (Correlación Negativa)
 ```python
 FORBIDDEN_COMBINATIONS = [
     frozenset({"UNDER_2_5",  "BTTS_YES"}),     # Pocos goles + ambos anotan: contradictorio
     frozenset({"UNDER_1_5",  "BTTS_YES"}),     # Menos de 2 goles + ambos anotan: imposible casi
-    frozenset({"OVER_3_5",   "CARDS_UNDER"}),  # Partido abierto â†’ mÃ¡s tarjetas, no menos
+    frozenset({"OVER_3_5",   "CARDS_UNDER"}),  # Partido abierto → más tarjetas, no menos
     frozenset({"1X2_DRAW",   "BTTS_NO"}),      # Empate sin goles: muy raro
-    frozenset({"OVER_2_5",   "CARDS_UNDER"}),  # Alta goles â†’ alta tensiÃ³n â†’ mÃ¡s tarjetas
-    frozenset({"1X2_AWAY",   "CORNERS_OVER"}), # Visitante gana controlando â†’ menos cÃ³rneres
+    frozenset({"OVER_2_5",   "CARDS_UNDER"}),  # Alta goles → alta tensión → más tarjetas
+    frozenset({"1X2_AWAY",   "CORNERS_OVER"}), # Visitante gana controlando → menos córneres
 ]
 ```
 
-#### Combinaciones con Bonus (CorrelaciÃ³n Positiva)
+#### Combinaciones con Bonus (Correlación Positiva)
 ```python
 POSITIVE_CORRELATIONS = [
-    (frozenset({"1X2_HOME",  "OVER_1_5"}),    0.72),  # Local gana â†’ al menos 2 goles
-    (frozenset({"1X2_HOME",  "CORNERS_OVER"}), 0.65),  # Local dominante â†’ mÃ¡s cÃ³rneres
-    (frozenset({"BTTS_YES",  "OVER_2_5"}),    0.81),  # Ambos anotan â†’ suele haber +2.5
-    (frozenset({"CARDS_OVER","1X2_DRAW"}),    0.58),  # Derbis igualados â†’ mÃ¡s tarjetas
-    (frozenset({"OVER_3_5",  "BTTS_YES"}),    0.76),  # Muchos goles â†’ casi seguro ambos anotan
+    (frozenset({"1X2_HOME",  "OVER_1_5"}),    0.72),  # Local gana → al menos 2 goles
+    (frozenset({"1X2_HOME",  "CORNERS_OVER"}), 0.65),  # Local dominante → más córneres
+    (frozenset({"BTTS_YES",  "OVER_2_5"}),    0.81),  # Ambos anotan → suele haber +2.5
+    (frozenset({"CARDS_OVER","1X2_DRAW"}),    0.58),  # Derbis igualados → más tarjetas
+    (frozenset({"OVER_3_5",  "BTTS_YES"}),    0.76),  # Muchos goles → casi seguro ambos anotan
 ]
 ```
 
 ### 4. Conflictos de Arquitectura Resueltos
 
-| # | Conflicto | SoluciÃ³n |
+| # | Conflicto | Solución |
 |---|-----------|----------|
-| 1 | `PredictionOrchestrator` requiere 3 parÃ¡metros (`match_repo`, `tactical_repo`, `cache`) | Pasar `TacticalAnalysisRepository` al constructor en el endpoint |
+| 1 | `PredictionOrchestrator` requiere 3 parámetros (`match_repo`, `tactical_repo`, `cache`) | Pasar `TacticalAnalysisRepository` al constructor en el endpoint |
 | 2 | `get_prediction(odds: OddsInput)` era obligatorio | Hacer `odds: OddsInput | None = None` opcional |
-| 3 | `EVAnalysis` no tenÃ­a `bookmaker_odds` (necesario para tickets) | Agregar campo `bookmaker_odds: float | None = None` y poblarlo en `_build_response()` |
-| 4 | `get_matches_by_date()` no existÃ­a en `MatchRepository` | Crear mÃ©todo con filtro por fecha COT y `selectinload` de relaciones |
+| 3 | `EVAnalysis` no tenía `bookmaker_odds` (necesario para tickets) | Agregar campo `bookmaker_odds: float | None = None` y poblarlo en `_build_response()` |
+| 4 | `get_matches_by_date()` no existía en `MatchRepository` | Crear método con filtro por fecha COT y `selectinload` de relaciones |
 
 ### 5. Archivos Creados
 
@@ -2697,62 +2697,62 @@ class TicketGenerateResponse(BaseModel):
 ```
 
 #### `apps/api/engine/ticket_builder.py`
-- `MODE_CONFIG`: ConfiguraciÃ³n por modo (EV mÃ­nimo, mercados permitidos, rango de cuotas)
-- `FORBIDDEN_COMBINATIONS`: 6 combinaciones de correlaciÃ³n negativa
+- `MODE_CONFIG`: Configuración por modo (EV mínimo, mercados permitidos, rango de cuotas)
+- `FORBIDDEN_COMBINATIONS`: 6 combinaciones de correlación negativa
 - `POSITIVE_CORRELATIONS`: 5 combinaciones con bonus de confianza
 - Funciones puras:
-  - `check_forbidden_combination()` â†’ Valida correlaciones negativas
-  - `get_correlation_bonus()` â†’ Calcula bonus por correlaciÃ³n positiva
-  - `calculate_combined_odds()` â†’ Producto de cuotas
-  - `calculate_average_ev()` â†’ EV promedio del ticket
-  - `build_ticket_for_mode()` â†’ Construye el mejor ticket para un modo dado
+  - `check_forbidden_combination()` → Valida correlaciones negativas
+  - `get_correlation_bonus()` → Calcula bonus por correlación positiva
+  - `calculate_combined_odds()` → Producto de cuotas
+  - `calculate_average_ev()` → EV promedio del ticket
+  - `build_ticket_for_mode()` → Construye el mejor ticket para un modo dado
 
 #### `apps/api/routes/v1/tickets.py`
 - Endpoint `POST /api/v1/tickets/generate`
-- CachÃ© con TTL 30 minutos (clave: `tickets:daily:{YYYY-MM-DD}`)
-- IntegraciÃ³n con `PredictionOrchestrator` para obtener predicciones
-- ConversiÃ³n de horarios UTC â†’ COT (`America/Bogota`)
-- DegradaciÃ³n elegante: si un partido falla, el resto continÃºa
+- Caché con TTL 30 minutos (clave: `tickets:daily:{YYYY-MM-DD}`)
+- Integración con `PredictionOrchestrator` para obtener predicciones
+- Conversión de horarios UTC → COT (`America/Bogota`)
+- Degradación elegante: si un partido falla, el resto continúa
 
 #### `tests/test_ticket_builder.py`
 - 34 tests unitarios organizados en 5 clases:
-  - `TestCheckForbiddenCombination` (8 tests): ValidaciÃ³n de correlaciones negativas
-  - `TestGetCorrelationBonus` (6 tests): CÃ¡lculo de bonus por correlaciÃ³n positiva
+  - `TestCheckForbiddenCombination` (8 tests): Validación de correlaciones negativas
+  - `TestGetCorrelationBonus` (6 tests): Cálculo de bonus por correlación positiva
   - `TestCalculateCombinedOdds` (4 tests): Producto de cuotas
   - `TestCalculateAverageEV` (3 tests): EV promedio
-  - `TestBuildTicketForMode` (13 tests): ConstrucciÃ³n de tickets por modo
+  - `TestBuildTicketForMode` (13 tests): Construcción de tickets por modo
 
 ### 6. Archivos Modificados
 
 | Archivo | Cambio |
 |---------|--------|
 | `apps/api/schemas/prediction.py` | Agregado `bookmaker_odds: float | None = None` a `EVAnalysis` |
-| `apps/api/orchestrators/prediction_orchestrator.py` | `odds` parÃ¡metro opcional + poblar `bookmaker_odds` en `_build_response()` |
-| `apps/api/repositories/match_repository.py` | Nuevo mÃ©todo `get_matches_by_date()` con filtro COT y `selectinload` |
+| `apps/api/orchestrators/prediction_orchestrator.py` | `odds` parámetro opcional + poblar `bookmaker_odds` en `_build_response()` |
+| `apps/api/repositories/match_repository.py` | Nuevo método `get_matches_by_date()` con filtro COT y `selectinload` |
 | `apps/api/routes/v1/router.py` | Registrado `tickets.router` |
 
 ### 7. Flujo Completo del Endpoint
 
 ```
 POST /api/v1/tickets/generate
-    â”‚
-    â–¼
-1. CacheService.get("tickets:daily:{date}") â†’ HIT/MISS
-    â”‚
-    â”œâ”€â–º HIT: Retornar tickets cacheados (filtrar por modos solicitados)
-    â”‚
-    â””â”€â–º MISS: Continuar
-         â”‚
-         â–¼
+    │
+    ▼
+1. CacheService.get("tickets:daily:{date}") → HIT/MISS
+    │
+    ├─► HIT: Retornar tickets cacheados (filtrar por modos solicitados)
+    │
+    └─► MISS: Continuar
+         │
+         ▼
 2. MatchRepository.get_matches_by_date(today_cot, league_filter)
-   â†’ list[Match] con selectinload(home_team, away_team, league)
-         â”‚
-         â–¼
+   → list[Match] con selectinload(home_team, away_team, league)
+         │
+         ▼
 3. Para cada partido:
    PredictionOrchestrator.get_prediction(match_id, odds=None)
-   â†’ PredictionResponse con ev_analysis[]
-         â”‚
-         â–¼
+   → PredictionResponse con ev_analysis[]
+         │
+         ▼
 4. Construir all_predictions[] con formato:
    {
      "match_id": int,
@@ -2771,24 +2771,24 @@ POST /api/v1/tickets/generate
        }
      ]
    }
-         â”‚
-         â–¼
+         │
+         ▼
 5. Para cada modo solicitado:
    build_ticket_for_mode(mode, all_predictions)
-   â†’ GeneratedTicket | None
-         â”‚
-         â”œâ”€â–º Filtrar mercados por allowed_markets del modo
-         â”œâ”€â–º Filtrar por min_ev y min_our_probability
-         â”œâ”€â–º Ordenar por EV descendente
-         â”œâ”€â–º Seleccionar 1 mercado por partido (sin duplicados)
-         â”œâ”€â–º Validar sin combinaciones prohibidas
-         â”œâ”€â–º Verificar cuota combinada en rango objetivo
-         â””â”€â–º Calcular mÃ©tricas finales (combined_odds, avg_ev, confidence)
-         â”‚
-         â–¼
+   → GeneratedTicket | None
+         │
+         ├─► Filtrar mercados por allowed_markets del modo
+         ├─► Filtrar por min_ev y min_our_probability
+         ├─► Ordenar por EV descendente
+         ├─► Seleccionar 1 mercado por partido (sin duplicados)
+         ├─► Validar sin combinaciones prohibidas
+         ├─► Verificar cuota combinada en rango objetivo
+         └─► Calcular métricas finales (combined_odds, avg_ev, confidence)
+         │
+         ▼
 6. CacheService.set(cache_key, response, ttl=1800)
-         â”‚
-         â–¼
+         │
+         ▼
 7. Retornar TicketGenerateResponse
 ```
 
@@ -2838,7 +2838,7 @@ tests/test_ticket_builder.py::TestBuildTicketForMode::test_ev_filtering_edge_mod
 34 passed in 0.07s
 ```
 
-### 9. VerificaciÃ³n de IntegraciÃ³n
+### 9. Verificación de Integración
 
 ```bash
 python -c "from apps.api.routes.v1.router import api_router; routes = [r.path for r in api_router.routes]; print(routes)"
@@ -2851,7 +2851,7 @@ python -c "from apps.api.routes.v1.router import api_router; routes = [r.path fo
  '/auth/login', '/backtesting/{league_key}', '/tickets/generate']
 ```
 
-âœ… Ruta `/tickets/generate` registrada correctamente.
+✅ Ruta `/tickets/generate` registrada correctamente.
 
 ### 10. Ejemplo de Respuesta
 
@@ -2866,7 +2866,7 @@ python -c "from apps.api.routes.v1.router import api_router; routes = [r.path fo
         {
           "match_id": 101,
           "home_team": "CR Flamengo",
-          "away_team": "SÃ£o Paulo FC",
+          "away_team": "São Paulo FC",
           "league": "Serie A",
           "market_name": "OVER_2_5",
           "market_label": "Over 2.5 Goals",
@@ -2906,7 +2906,7 @@ python -c "from apps.api.routes.v1.router import api_router; routes = [r.path fo
         "Past model performance does not guarantee future results",
         "Lower confidence legs: 0 selection(s) below 55%"
       ],
-      "staking_suggestion": "1-2% of bankroll â€” conservative, high-frequency play"
+      "staking_suggestion": "1-2% of bankroll — conservative, high-frequency play"
     }
   ],
   "total_ev_opportunities": 15,
@@ -2914,42 +2914,42 @@ python -c "from apps.api.routes.v1.router import api_router; routes = [r.path fo
 }
 ```
 
-### 11. PrÃ³ximos Pasos (Post-Fase 6)
+### 11. Próximos Pasos (Post-Fase 6)
 
 1. **Probar con datos reales:** Ejecutar endpoint con partidos reales de Supabase
-2. **Integrar con frontend:** Conectar app mÃ³vil/web al nuevo endpoint
-3. **Monitoreo:** Agregar mÃ©tricas de uso de cachÃ© y calidad de tickets generados
-4. **Optimizar prompts:** Usar anÃ¡lisis tÃ¡ctico (Fase 4) para enriquecer `tactical_summary`
+2. **Integrar con frontend:** Conectar app móvil/web al nuevo endpoint
+3. **Monitoreo:** Agregar métricas de uso de caché y calidad de tickets generados
+4. **Optimizar prompts:** Usar análisis táctico (Fase 4) para enriquecer `tactical_summary`
 5. **Player props:** Expandir motor para incluir mercados de jugadores
 
-### 12. VerificaciÃ³n Final
-- âœ… Schemas Pydantic creados y validados
-- âœ… Motor de tickets con lÃ³gica pura (SRP)
-- âœ… 34 tests unitarios pasando
-- âœ… Endpoint registrado en router
-- âœ… Conflictos de arquitectura resueltos
-- âœ… CachÃ© con TTL 30 minutos implementado
-- âœ… ConversiÃ³n UTC â†’ COT funcional
-- âœ… DegradaciÃ³n elegante validada
-- âœ… FastAPI startup sin errores
+### 12. Verificación Final
+- ✅ Schemas Pydantic creados y validados
+- ✅ Motor de tickets con lógica pura (SRP)
+- ✅ 34 tests unitarios pasando
+- ✅ Endpoint registrado en router
+- ✅ Conflictos de arquitectura resueltos
+- ✅ Caché con TTL 30 minutos implementado
+- ✅ Conversión UTC → COT funcional
+- ✅ Degradación elegante validada
+- ✅ FastAPI startup sin errores
 
 ---
 
-## ðŸŸ¢ Fase 7: Frontend Web con Next.js + ConexiÃ³n al Backend (Completado)
+## 🟢 Fase 7: Frontend Web con Next.js + Conexión al Backend (Completado)
 
 ### 1. Objetivo
-Integrar el prototipo visual exportado desde v0.dev (`apps/web`) con el backend FastAPI, realizando auditorÃ­a de archivos, ajustes de UI/UX y conexiÃ³n en vivo al endpoint `POST /api/v1/tickets/generate`.
+Integrar el prototipo visual exportado desde v0.dev (`apps/web`) con el backend FastAPI, realizando auditoría de archivos, ajustes de UI/UX y conexión en vivo al endpoint `POST /api/v1/tickets/generate`.
 
-### 2. AuditorÃ­a y Limpieza
+### 2. Auditoría y Limpieza
 
 #### Archivos Eliminados
-| Tipo | Archivos | RazÃ³n |
+| Tipo | Archivos | Razón |
 |------|----------|-------|
-| Componentes UI no usados | `badge.tsx`, `scroll-area.tsx`, `tabs.tsx`, `toggle.tsx`, `toggle-group.tsx`, `tooltip.tsx` | NingÃºn componente de dominio los importaba |
-| Placeholders muertos | `placeholder.svg`, `placeholder.jpg`, `placeholder-user.jpg`, `placeholder-logo.svg`, `placeholder-logo.png` | Ninguna referencia en el cÃ³digo |
+| Componentes UI no usados | `badge.tsx`, `scroll-area.tsx`, `tabs.tsx`, `toggle.tsx`, `toggle-group.tsx`, `tooltip.tsx` | Ningún componente de dominio los importaba |
+| Placeholders muertos | `placeholder.svg`, `placeholder.jpg`, `placeholder-user.jpg`, `placeholder-logo.svg`, `placeholder-logo.png` | Ninguna referencia en el código |
 
 #### Dependencias Limpiadas (`package.json`)
-| Dependencia | AcciÃ³n | RazÃ³n |
+| Dependencia | Acción | Razón |
 |---|---|---|
 | `next-themes` | **ELIMINADA** | App es dark-only, innecesaria |
 | `@vercel/analytics` | **ELIMINADA** | Innecesaria para prototipo local |
@@ -2965,7 +2965,7 @@ Integrar el prototipo visual exportado desde v0.dev (`apps/web`) con el backend 
 - Removido `{process.env.NODE_ENV === 'production' && <Analytics />}`
 
 #### Cambios en `next.config.mjs`
-- Removido `typescript: { ignoreBuildErrors: true }` â€” el build ahora valida TypeScript estrictamente
+- Removido `typescript: { ignoreBuildErrors: true }` — el build ahora valida TypeScript estrictamente
 
 #### Nombre del Paquete
 - Cambiado de `"my-project"` a `"betmind-web"`
@@ -2975,9 +2975,9 @@ Integrar el prototipo visual exportado desde v0.dev (`apps/web`) con el backend 
 | Componente | Cambio | Archivo |
 |---|---|---|
 | **match-modal.tsx** | Header sticky: `sticky top-0 z-10 bg-card` | `components/betmind/match-modal.tsx:73` |
-| **poisson-mini-chart.tsx** | Altura default 32â†’48px, gap entre barras 2â†’4px | `components/betmind/poisson-mini-chart.tsx:25,35,71` |
-| **ticket-card.tsx** | BotÃ³n "Show Tactical Analysis" con borde visible: `border border-border px-3 py-2 hover:bg-muted/50` | `components/betmind/ticket-card.tsx:93` |
-| **ticket-leg.tsx** | Padding vertical `py-2.5`â†’`py-3` | `components/betmind/ticket-leg.tsx:6` |
+| **poisson-mini-chart.tsx** | Altura default 32→48px, gap entre barras 2→4px | `components/betmind/poisson-mini-chart.tsx:25,35,71` |
+| **ticket-card.tsx** | Botón "Show Tactical Analysis" con borde visible: `border border-border px-3 py-2 hover:bg-muted/50` | `components/betmind/ticket-card.tsx:93` |
+| **ticket-leg.tsx** | Padding vertical `py-2.5`→`py-3` | `components/betmind/ticket-leg.tsx:6` |
 
 ### 4. Cliente API (`lib/api.ts`)
 
@@ -3013,22 +3013,22 @@ interface BackendTicket {
 }
 ```
 
-#### FunciÃ³n Adaptadora `mapBackendTicket()`
+#### Función Adaptadora `mapBackendTicket()`
 Convierte tipos del backend (snake_case) a tipos del frontend (camelCase):
-- `mode` lowercase â†’ uppercase (`"edge"` â†’ `"EDGE"`)
-- `combined_odds` â†’ `combinedOdds`
-- `average_ev` â†’ `evAverage`
-- `confidence_score` â†’ `confidence`
-- `tactical_summary` â†’ `analysis`
-- `correlation_validated` â†’ `correlationPositive` + texto de `correlation`
-- `home_team + " vs " + away_team` â†’ `match`
-- `market_label` â†’ `market`
-- `our_probability` â†’ `prob`
-- `bookmaker_odds` â†’ `odds`
-- `expected_value` â†’ `ev`
-- Liga â†’ emoji de bandera (mapa `LEAGUE_FLAGS` con 17 ligas)
+- `mode` lowercase → uppercase (`"edge"` → `"EDGE"`)
+- `combined_odds` → `combinedOdds`
+- `average_ev` → `evAverage`
+- `confidence_score` → `confidence`
+- `tactical_summary` → `analysis`
+- `correlation_validated` → `correlationPositive` + texto de `correlation`
+- `home_team + " vs " + away_team` → `match`
+- `market_label` → `market`
+- `our_probability` → `prob`
+- `bookmaker_odds` → `odds`
+- `expected_value` → `ev`
+- Liga → emoji de bandera (mapa `LEAGUE_FLAGS` con 17 ligas)
 
-#### FunciÃ³n `fetchTickets()`
+#### Función `fetchTickets()`
 ```typescript
 export async function fetchTickets(
   modes: Mode[] = ['EDGE', 'VALUE', 'BOLD'],
@@ -3039,25 +3039,25 @@ export async function fetchTickets(
 - `API_BASE` configurable via `NEXT_PUBLIC_API_URL` (default: `http://localhost:8000`)
 - Retorna `TicketFetchResult` con `tickets`, `totalEvOpportunities`, `matchesAnalyzed`, `generatedAt`
 
-### 5. IntegraciÃ³n del Dashboard
+### 5. Integración del Dashboard
 
 #### Cambios en `components/betmind/dashboard.tsx`
 - **Estado nuevo:** `tickets` (inicializado con mock `TICKETS`), `ticketsLoading`, `ticketMeta`
 - **useEffect** con fetch al montar:
-  - Ã‰xito â†’ reemplaza tickets mock con datos reales
-  - Error â†’ fallback silencioso a datos mock (`TICKETS`)
-  - Respuesta vacÃ­a â†’ mantiene datos mock
+  - Éxito → reemplaza tickets mock con datos reales
+  - Error → fallback silencioso a datos mock (`TICKETS`)
+  - Respuesta vacía → mantiene datos mock
 - **Loading skeleton:** 3 cards animadas con `animate-pulse` mientras carga
-- **Metadata dinÃ¡mica:** Muestra `"X matches analyzed Â· Y EV opportunities detected"` cuando hay datos reales
+- **Metadata dinámica:** Muestra `"X matches analyzed · Y EV opportunities detected"` cuando hay datos reales
 
-#### Flujo de DegradaciÃ³n Elegante
+#### Flujo de Degradación Elegante
 ```
-fetchTickets() â†’ Ã‰XITO â†’ tickets reales
-                 â†“ FALLO
-                 TICKETS mock (datos estÃ¡ticos de v0)
+fetchTickets() → ÉXITO → tickets reales
+                 ↓ FALLO
+                 TICKETS mock (datos estáticos de v0)
 ```
 
-### 6. ConfiguraciÃ³n CORS del Backend
+### 6. Configuración CORS del Backend
 
 #### Cambios en `apps/api/main.py`
 ```python
@@ -3077,9 +3077,9 @@ app.add_middleware(
 
 ### 7. Archivos Creados
 
-| Archivo | DescripciÃ³n |
+| Archivo | Descripción |
 |---------|-------------|
-| `apps/web/lib/api.ts` | Cliente HTTP + adaptador de tipos backendâ†’frontend |
+| `apps/web/lib/api.ts` | Cliente HTTP + adaptador de tipos backend→frontend |
 
 ### 8. Archivos Modificados
 
@@ -3092,14 +3092,14 @@ app.add_middleware(
 | `apps/web/components/ui/sonner.tsx` | Hardcodeado `theme="dark"`, removido `next-themes` |
 | `apps/web/components/betmind/match-modal.tsx` | Header sticky |
 | `apps/web/components/betmind/poisson-mini-chart.tsx` | Altura 48px, gap 4px |
-| `apps/web/components/betmind/ticket-card.tsx` | BotÃ³n "Show Tactical Analysis" visible |
+| `apps/web/components/betmind/ticket-card.tsx` | Botón "Show Tactical Analysis" visible |
 | `apps/web/components/betmind/ticket-leg.tsx` | Padding `py-3` |
 | `apps/web/components/betmind/dashboard.tsx` | Fetch tickets reales + loading + fallback |
 | `apps/api/main.py` | CORS middleware para `localhost:3000` |
 
 ### 9. Archivos Eliminados
 
-| Archivo | RazÃ³n |
+| Archivo | Razón |
 |---------|-------|
 | `components/ui/badge.tsx` | No usado |
 | `components/ui/scroll-area.tsx` | No usado |
@@ -3113,23 +3113,23 @@ app.add_middleware(
 | `public/placeholder-logo.svg` | No referenciado |
 | `public/placeholder-logo.png` | No referenciado |
 
-### 10. VerificaciÃ³n
+### 10. Verificación
 
 ```
-next build:           âœ… PASS (TypeScript + compilaciÃ³n, 0 errores)
-Backend tests:        âœ… 34/34 pasando (ticket_builder)
-CORS middleware:      âœ… Configurado para localhost:3000
-Importaciones limpias: âœ… Sin referencias rotas
+next build:           ✅ PASS (TypeScript + compilación, 0 errores)
+Backend tests:        ✅ 34/34 pasando (ticket_builder)
+CORS middleware:      ✅ Configurado para localhost:3000
+Importaciones limpias: ✅ Sin referencias rotas
 ```
 
 ### 11. Instrucciones de Desarrollo
 
 ```bash
-# Terminal 1 â€” Backend
+# Terminal 1 — Backend
 cd C:\betmind-ai
 python -m uvicorn apps.api.main:app --reload --port 8000
 
-# Terminal 2 â€” Frontend
+# Terminal 2 — Frontend
 cd C:\betmind-ai\apps\web
 npm run dev
 ```
@@ -3140,10 +3140,10 @@ npm run dev
 
 ---
 
-## ðŸŸ¢ Fase 7.1: Pulido Visual Premium del Frontend (Completado)
+## 🟢 Fase 7.1: Pulido Visual Premium del Frontend (Completado)
 
 ### 1. Objetivo
-Aplicar la Ãºltima capa de detalles de UX premium al frontend: logo pill badge, tooltips educativos en histograma Poisson, empty state para Scanner, y skeleton loaders estructurados.
+Aplicar la última capa de detalles de UX premium al frontend: logo pill badge, tooltips educativos en histograma Poisson, empty state para Scanner, y skeleton loaders estructurados.
 
 ### 2. Logo "AI" Pill Badge (`top-nav.tsx`)
 
@@ -3154,7 +3154,7 @@ Transformado el superscript "AI" en una pastilla/pill redondeada con estilo prem
 <span className="text-[10px] font-semibold text-primary">AI</span>
 ```
 
-**DespuÃ©s:**
+**Después:**
 ```tsx
 <span className="ml-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold text-indigo-400">
   AI
@@ -3163,12 +3163,12 @@ Transformado el superscript "AI" en una pastilla/pill redondeada con estilo prem
 
 ### 3. Tooltips Educativos en Histograma Poisson (`poisson-modal-chart.tsx`)
 
-Agregados tooltips interactivos al hacer hover sobre las barras del histograma en el modal tÃ¡ctico.
+Agregados tooltips interactivos al hacer hover sobre las barras del histograma en el modal táctico.
 
-**ImplementaciÃ³n:**
+**Implementación:**
 - Componente convertido a `'use client'` para usar `useState` y `useRef`
 - Estado `TooltipState` con `visible`, `x`, `y`, `text`
-- Handler `handleBarHover()` que calcula posiciÃ³n relativa al SVG
+- Handler `handleBarHover()` que calcula posición relativa al SVG
 - Texto del tooltip: `"[Equipo]: [X]% prob. exactly [N] goals"`
 - Tooltip renderizado como elemento SVG `<g>` con `<rect>` de fondo y `<text>`
 - Barras con `cursor-pointer` y `hover:opacity-80` para feedback visual
@@ -3176,25 +3176,25 @@ Agregados tooltips interactivos al hacer hover sobre las barras del histograma e
 
 **Archivo modificado:** `apps/web/components/betmind/poisson-modal-chart.tsx`
 
-### 4. Empty State para PestaÃ±a Scanner
+### 4. Empty State para Pestaña Scanner
 
 Creado nuevo componente `ScannerEmptyState` con dropzone para subir capturas de boletos.
 
-**CaracterÃ­sticas:**
+**Características:**
 - Zona de arrastre con borde punteado: `border-2 border-dashed border-border p-12 rounded-xl`
 - Estado visual de drag-over: `border-primary bg-primary/5`
-- Ãcono de cÃ¡mara en cÃ­rculo Ã­ndigo: `<CameraIcon className="size-8 text-primary" />`
+- Ícono de cámara en círculo índigo: `<CameraIcon className="size-8 text-primary" />`
 - Mensaje principal: "Drag and drop your ticket screenshot here"
-- BotÃ³n "Browse files" con input file oculto
-- SecciÃ³n "How it works" con 4 pasos numerados
+- Botón "Browse files" con input file oculto
+- Sección "How it works" con 4 pasos numerados
 - Soporte para drag & drop + click para seleccionar
-- Acepta imÃ¡genes: `accept="image/*"`
+- Acepta imágenes: `accept="image/*"`
 
 **Archivo creado:** `apps/web/components/betmind/scanner-empty-state.tsx`
 
 ### 5. Skeleton Loaders Estructurados (`dashboard.tsx`)
 
-Reemplazados los skeleton loaders genÃ©ricos por componentes que imitan exactamente la forma de las tarjetas reales.
+Reemplazados los skeleton loaders genéricos por componentes que imitan exactamente la forma de las tarjetas reales.
 
 #### `TicketSkeleton`
 - Altura fija `h-[420px]` para evitar saltos de layout
@@ -3205,27 +3205,27 @@ Reemplazados los skeleton loaders genÃ©ricos por componentes que imitan exacta
   - 3 legs con estructura completa (flag, match, market, EV badge, prob, odds)
   - Separador "Show Tactical Analysis"
   - Footer con botones y disclaimer
-- AnimaciÃ³n `animate-pulse` en cada elemento
+- Animación `animate-pulse` en cada elemento
 
 #### `MatchSkeleton`
 - Imita la estructura completa de `MatchCard`:
   - Layout responsive (vertical en mobile, horizontal en desktop)
-  - SecciÃ³n izquierda: liga, hora, status pill
-  - SecciÃ³n central: equipos + mini chart + marcadores
-  - SecciÃ³n derecha: EV badge + probabilidades 1X2 + botÃ³n "View Analysis"
-- AnimaciÃ³n `animate-pulse` en cada elemento
+  - Sección izquierda: liga, hora, status pill
+  - Sección central: equipos + mini chart + marcadores
+  - Sección derecha: EV badge + probabilidades 1X2 + botón "View Analysis"
+- Animación `animate-pulse` en cada elemento
 
 **Cambios en `dashboard.tsx`:**
 - Importado `ScannerEmptyState`
 - Agregadas funciones `TicketSkeleton()` y `MatchSkeleton()`
-- Separada lÃ³gica de tabs: `showTickets`, `showBoard`, `showScanner`
+- Separada lógica de tabs: `showTickets`, `showBoard`, `showScanner`
 - Scanner ahora muestra `ScannerEmptyState` en lugar del match board
 
 **Archivo modificado:** `apps/web/components/betmind/dashboard.tsx`
 
 ### 6. Archivos Creados
 
-| Archivo | DescripciÃ³n |
+| Archivo | Descripción |
 |---------|-------------|
 | `apps/web/components/betmind/scanner-empty-state.tsx` | Empty state con dropzone para Scanner |
 
@@ -3237,17 +3237,17 @@ Reemplazados los skeleton loaders genÃ©ricos por componentes que imitan exacta
 | `apps/web/components/betmind/poisson-modal-chart.tsx` | Tooltips interactivos en histograma |
 | `apps/web/components/betmind/dashboard.tsx` | Skeleton loaders estructurados + Scanner empty state |
 
-### 8. VerificaciÃ³n
+### 8. Verificación
 
 ```
-next build: âœ… PASS (TypeScript + compilaciÃ³n, 0 errores)
+next build: ✅ PASS (TypeScript + compilación, 0 errores)
 ```
 
 ### 9. Detalles de UX Agregados
 
 | Elemento | Mejora |
 |----------|--------|
-| Logo "AI" | Pill badge con fondo Ã­ndigo semitransparente y borde sutil |
+| Logo "AI" | Pill badge con fondo índigo semitransparente y borde sutil |
 | Histograma Poisson | Tooltips al hover mostrando probabilidad exacta por equipo/goles |
 | Scanner tab | Dropzone con drag & drop + instrucciones paso a paso |
 | Loading tickets | Skeleton que imita forma exacta de TicketCard (420px alto) |
@@ -3255,46 +3255,46 @@ next build: âœ… PASS (TypeScript + compilaciÃ³n, 0 errores)
 
 ---
 
-## ðŸŸ¢ Fase 7.2: LocalizaciÃ³n Completa al EspaÃ±ol (Completado)
+## 🟢 Fase 7.2: Localización Completa al Español (Completado)
 
 ### 1. Objetivo
-Realizar la localizaciÃ³n completa (i18n) al espaÃ±ol de toda la aplicaciÃ³n: tÃ©rminos de apuestas, componentes frontend y diccionarios del backend.
+Realizar la localización completa (i18n) al español de toda la aplicación: términos de apuestas, componentes frontend y diccionarios del backend.
 
-### 2. Backend: TraducciÃ³n de Mercados (`apps/api/routes/v1/tickets.py`)
+### 2. Backend: Traducción de Mercados (`apps/api/routes/v1/tickets.py`)
 
-Actualizada la funciÃ³n `_market_label()` con las traducciones oficiales:
+Actualizada la función `_market_label()` con las traducciones oficiales:
 
-| Clave | TraducciÃ³n |
+| Clave | Traducción |
 |-------|------------|
 | `1X2_HOME` | "Gana Local" |
 | `1X2_DRAW` | "Empate" |
 | `1X2_AWAY` | "Gana Visitante" |
-| `OVER_1_5` | "MÃ¡s de 1.5 Goles" |
-| `OVER_2_5` | "MÃ¡s de 2.5 Goles" |
+| `OVER_1_5` | "Más de 1.5 Goles" |
+| `OVER_2_5` | "Más de 2.5 Goles" |
 | `UNDER_2_5` | "Menos de 2.5 Goles" |
-| `OVER_3_5` | "MÃ¡s de 3.5 Goles" |
-| `BTTS_YES` | "Ambos Anotan: SÃ­" |
+| `OVER_3_5` | "Más de 3.5 Goles" |
+| `BTTS_YES` | "Ambos Anotan: Sí" |
 | `BTTS_NO` | "Ambos Anotan: No" |
-| `CORNERS_OVER` | "MÃ¡s CÃ³rneres" |
-| `CARDS_OVER` | "MÃ¡s Tarjetas" |
+| `CORNERS_OVER` | "Más Córneres" |
+| `CARDS_OVER` | "Más Tarjetas" |
 
-### 3. Frontend: NavegaciÃ³n y Barra Superior (`top-nav.tsx`)
+### 3. Frontend: Navegación y Barra Superior (`top-nav.tsx`)
 
-| Original | TraducciÃ³n |
+| Original | Traducción |
 |----------|------------|
 | "Today's Tickets" | "Boletos de Hoy" |
 | "Match Board" | "Cartelera" |
-| "Scanner" | "EscÃ¡ner" |
+| "Scanner" | "Escáner" |
 | "LIVE DATA" | "DATOS EN VIVO" |
 | "EDGE MEMBER" | "MIEMBRO EDGE" |
 
 ### 4. Frontend: Barra Lateral de Ligas (`league-sidebar.tsx`)
 
-| Original | TraducciÃ³n |
+| Original | Traducción |
 |----------|------------|
 | "Active Leagues" | "Ligas Activas" |
 | "EUROPE" | "EUROPA" |
-| "AMERICAS" | "AMÃ‰RICA" |
+| "AMERICAS" | "AMÉRICA" |
 | "All Leagues" | "Todas las Ligas" |
 | "Model Status" | "Estado del Modelo" |
 | "CALIBRATED" | "CALIBRADO" |
@@ -3303,7 +3303,7 @@ Actualizada la funciÃ³n `_market_label()` con las traducciones oficiales:
 
 ### 5. Frontend: Dashboard Principal (`dashboard.tsx`)
 
-| Original | TraducciÃ³n |
+| Original | Traducción |
 |----------|------------|
 | "Today's Intelligence Report" | "Informe de Inteligencia de Hoy" |
 | "3 pre-built tickets..." | "3 boletos generados por nuestro modelo de Poisson..." |
@@ -3312,169 +3312,169 @@ Actualizada la funciÃ³n `_market_label()` con las traducciones oficiales:
 
 ### 6. Frontend: Tarjetas de Tickets (`ticket-card.tsx`)
 
-| Original | TraducciÃ³n |
+| Original | Traducción |
 |----------|------------|
 | "Expected Value" | "Valor Esperado" |
-| "Show Tactical Analysis" | "Mostrar AnÃ¡lisis TÃ¡ctico" |
+| "Show Tactical Analysis" | "Mostrar Análisis Táctico" |
 | "Copy Selections" | "Copiar Selecciones" |
-| "Add All to Watchlist" | "AÃ±adir a Seguimiento" |
-| "Model confidence based on..." | "Confianza del modelo basada Ãºnicamente en datos de 90 min..." |
+| "Add All to Watchlist" | "Añadir a Seguimiento" |
+| "Model confidence based on..." | "Confianza del modelo basada únicamente en datos de 90 min..." |
 | "Combined odds" | "Cuota combinada" |
 
 ### 7. Frontend: Tarjetas de Partido y Modal (`match-card.tsx`, `match-modal.tsx`)
 
-| Original | TraducciÃ³n |
+| Original | Traducción |
 |----------|------------|
 | "UPCOMING" | "POR JUGAR" |
 | "LIVE" | "EN VIVO" |
-| "Most likely" | "MÃ¡s probable" |
+| "Most likely" | "Más probable" |
 | "NO EDGE" | "SIN EDGE" |
-| "View Analysis" | "Ver AnÃ¡lisis" |
+| "View Analysis" | "Ver Análisis" |
 | "Goal Probability Model (Poisson Bivariate)" | "Modelo de Probabilidad de Goles (Poisson)" |
-| "Most Likely Scores" | "Marcadores MÃ¡s Probables" |
-| "Expected Value Analysis" | "AnÃ¡lisis de Valor Esperado (+EV)" |
-| "Tactical Analysis" | "AnÃ¡lisis TÃ¡ctico" |
-| "Referee Profile" | "Perfil del Ãrbitro" |
+| "Most Likely Scores" | "Marcadores Más Probables" |
+| "Expected Value Analysis" | "Análisis de Valor Esperado (+EV)" |
+| "Tactical Analysis" | "Análisis Táctico" |
+| "Referee Profile" | "Perfil del Árbitro" |
 | "Select a Market" | "Seleccionar Mercado" |
-| "Add to Ticket" | "AÃ±adir al Boleto" |
+| "Add to Ticket" | "Añadir al Boleto" |
 
 ### 8. Frontend: Tabla de Mercados (`market-table.tsx`)
 
-| Original | TraducciÃ³n |
+| Original | Traducción |
 |----------|------------|
 | "Market" | "Mercado" |
 | "Our Prob." | "Nuestra Prob." |
 | "Odds" | "Cuota" |
-| "Implied" | "ImplÃ­cita" |
+| "Implied" | "Implícita" |
 | "Verdict" | "Veredicto" |
 | "EV+" | "VALOR (+EV)" |
 | "NO EDGE" | "SIN EDGE" |
 | "AVOID" | "EVITAR" |
 
-### 9. Frontend: Panel TÃ¡ctico (`tactical-panel.tsx`)
+### 9. Frontend: Panel Táctico (`tactical-panel.tsx`)
 
-| Original | TraducciÃ³n |
+| Original | Traducción |
 |----------|------------|
 | "CONS" | "CONTRAS" |
-| "Signal Strength" | "SeÃ±al" |
+| "Signal Strength" | "Señal" |
 | "STRONG" | "FUERTE" |
 | "MODERATE" | "MODERADA" |
-| "WEAK" | "DÃ‰BIL" |
+| "WEAK" | "DÉBIL" |
 | "Key Risk" | "Riesgo Clave" |
-| "Tactical Summary" | "Resumen TÃ¡ctico" |
-| Categories: FORM, STATISTICS, CONTEXT, REFEREE | FORMA, ESTADÃSTICA, CONTEXTO, ÃRBITRO |
+| "Tactical Summary" | "Resumen Táctico" |
+| Categories: FORM, STATISTICS, CONTEXT, REFEREE | FORMA, ESTADÍSTICA, CONTEXTO, ÁRBITRO |
 | Impacts: HIGH, MEDIUM, LOW | ALTO, MEDIO, BAJO |
 
-### 10. Frontend: Widget de Ãrbitro (`referee-widget.tsx`)
+### 10. Frontend: Widget de Árbitro (`referee-widget.tsx`)
 
-| Original | TraducciÃ³n |
+| Original | Traducción |
 |----------|------------|
 | "Avg Yellow Cards" | "Prom. Tarjetas Amarillas" |
 | "Avg Red Cards" | "Prom. Tarjetas Rojas" |
 | "Avg Fouls Called" | "Prom. Faltas Cobradas" |
-| "Strictness Index" | "Ãndice de Estrictez" |
+| "Strictness Index" | "Índice de Estrictez" |
 | "High-Stakes Avg" | "Prom. Partidos Clave" |
 | "Recent Trend" | "Tendencia Reciente" |
 | "Strictness meter" | "Medidor de estrictez" |
 
-### 11. Frontend: EscÃ¡ner (`scanner-empty-state.tsx`)
+### 11. Frontend: Escáner (`scanner-empty-state.tsx`)
 
-| Original | TraducciÃ³n |
+| Original | Traducción |
 |----------|------------|
-| "Ticket Scanner" | "EscÃ¡ner de Boletos" |
+| "Ticket Scanner" | "Escáner de Boletos" |
 | "Upload a screenshot..." | "Sube una captura de tu boleto..." |
 | "Drag and drop..." | "Arrastra o sube una captura..." |
 | "Browse files" | "Seleccionar archivo" |
-| "How it works" | "CÃ³mo funciona" |
+| "How it works" | "Cómo funciona" |
 
 ### 12. Frontend: Datos Mock (`lib/betmind.ts`)
 
-Traducidos todos los datos mock al espaÃ±ol:
-- **TICKETS**: 3 boletos (EDGE, VALUE, BOLD) con anÃ¡lisis, pros, contras y correlaciones en espaÃ±ol
-- **MATCHES**: 8 partidos con factores tÃ¡cticos, keyRisk y summary en espaÃ±ol
-- **REFEREES**: Tendencias traducidas ("MÃ¡s estricto", "Estable", "Flexible")
+Traducidos todos los datos mock al español:
+- **TICKETS**: 3 boletos (EDGE, VALUE, BOLD) con análisis, pros, contras y correlaciones en español
+- **MATCHES**: 8 partidos con factores tácticos, keyRisk y summary en español
+- **REFEREES**: Tendencias traducidas ("Más estricto", "Estable", "Flexible")
 - **MODE_META**: Labels traducidos ("MODO EDGE", "MODO VALUE", "MODO BOLD")
 - **marketRows()**: Labels de mercados traducidos
 
 ### 13. Frontend: Cliente API (`lib/api.ts`)
 
-Traducidos los textos de correlaciÃ³n del adaptador:
-- "All selections passed negative-correlation validation" â†’ "Todas las selecciones pasaron la validaciÃ³n de correlaciÃ³n negativa"
-- "Independent selections (no correlation detected)" â†’ "Selecciones independientes (sin correlaciÃ³n detectada)"
+Traducidos los textos de correlación del adaptador:
+- "All selections passed negative-correlation validation" → "Todas las selecciones pasaron la validación de correlación negativa"
+- "Independent selections (no correlation detected)" → "Selecciones independientes (sin correlación detectada)"
 
 ### 14. Frontend: Metadata (`app/layout.tsx`)
 
-| Original | TraducciÃ³n |
+| Original | Traducción |
 |----------|------------|
 | "Sports Betting Intelligence" | "Inteligencia en Apuestas Deportivas" |
-| "Poisson-modelled football probabilities..." | "Probabilidades de fÃºtbol modeladas con Poisson..." |
+| "Poisson-modelled football probabilities..." | "Probabilidades de fútbol modeladas con Poisson..." |
 
 ### 15. Archivos Modificados
 
 | Archivo | Cambio |
 |---------|--------|
-| `apps/api/routes/v1/tickets.py` | `_market_label()` traducido a espaÃ±ol |
-| `apps/web/components/betmind/top-nav.tsx` | NavegaciÃ³n y badges traducidos |
+| `apps/api/routes/v1/tickets.py` | `_market_label()` traducido a español |
+| `apps/web/components/betmind/top-nav.tsx` | Navegación y badges traducidos |
 | `apps/web/components/betmind/league-sidebar.tsx` | Sidebar traducido |
-| `apps/web/components/betmind/dashboard.tsx` | TÃ­tulos y mensajes traducidos |
+| `apps/web/components/betmind/dashboard.tsx` | Títulos y mensajes traducidos |
 | `apps/web/components/betmind/ticket-card.tsx` | Textos de tarjetas traducidos |
 | `apps/web/components/betmind/match-card.tsx` | Status pills y textos traducidos |
 | `apps/web/components/betmind/match-modal.tsx` | Secciones del modal traducidas |
 | `apps/web/components/betmind/market-table.tsx` | Encabezados y verdicts traducidos |
-| `apps/web/components/betmind/tactical-panel.tsx` | CategorÃ­as, impactos y seÃ±ales traducidas |
+| `apps/web/components/betmind/tactical-panel.tsx` | Categorías, impactos y señales traducidas |
 | `apps/web/components/betmind/referee-widget.tsx` | Etiquetas traducidas |
-| `apps/web/components/betmind/scanner-empty-state.tsx` | Textos del escÃ¡ner traducidos |
+| `apps/web/components/betmind/scanner-empty-state.tsx` | Textos del escáner traducidos |
 | `apps/web/components/betmind/poisson-modal-chart.tsx` | Tooltip y labels traducidos |
-| `apps/web/lib/betmind.ts` | Datos mock traducidos al espaÃ±ol |
-| `apps/web/lib/api.ts` | Textos de correlaciÃ³n traducidos |
+| `apps/web/lib/betmind.ts` | Datos mock traducidos al español |
+| `apps/web/lib/api.ts` | Textos de correlación traducidos |
 | `apps/web/app/layout.tsx` | Metadata traducida |
 
-### 16. VerificaciÃ³n
+### 16. Verificación
 
 ```
-next build:           âœ… PASS (TypeScript + compilaciÃ³n, 0 errores)
-Backend tests:        âœ… 34/34 pasando (ticket_builder)
+next build:           ✅ PASS (TypeScript + compilación, 0 errores)
+Backend tests:        ✅ 34/34 pasando (ticket_builder)
 ```
 
-### 17. Notas de ImplementaciÃ³n
+### 17. Notas de Implementación
 
-- Los valores internos de tipos TypeScript (`MatchStatus`, `Impact`, `TacticalFactor.category`) se mantienen en inglÃ©s para evitar romper contratos de tipos
-- La traducciÃ³n se realiza en la capa de presentaciÃ³n (componentes UI) mediante mapas de traducciÃ³n
-- Los datos mock del frontend estÃ¡n 100% en espaÃ±ol para fallback consistente
-- El backend genera labels de mercados en espaÃ±ol desde `_market_label()`
+- Los valores internos de tipos TypeScript (`MatchStatus`, `Impact`, `TacticalFactor.category`) se mantienen en inglés para evitar romper contratos de tipos
+- La traducción se realiza en la capa de presentación (componentes UI) mediante mapas de traducción
+- Los datos mock del frontend están 100% en español para fallback consistente
+- El backend genera labels de mercados en español desde `_market_label()`
 
 ---
 
-## ðŸŸ¢ Fase 7.3: Resiliencia de CacheService ante Fallos de Redis (Completado)
+## 🟢 Fase 7.3: Resiliencia de CacheService ante Fallos de Redis (Completado)
 
 ### 1. Problema
-Se presentÃ³ un error `redis.exceptions.ConnectionError` al llamar a `POST /api/v1/tickets/generate` porque el servicio local de Redis no estÃ¡ activo en el puerto 6379. La aplicaciÃ³n fallaba completamente cuando Redis no estaba disponible.
+Se presentó un error `redis.exceptions.ConnectionError` al llamar a `POST /api/v1/tickets/generate` porque el servicio local de Redis no está activo en el puerto 6379. La aplicación fallaba completamente cuando Redis no estaba disponible.
 
-### 2. SoluciÃ³n Implementada
+### 2. Solución Implementada
 
-#### ModificaciÃ³n de `apps/api/services/cache_service.py`
-Se envolviÃ³ todas las operaciones de Redis en bloques `try/except` que capturan:
-- `RedisError` (errores especÃ­ficos de Redis)
-- `ConnectionError` (errores de conexiÃ³n TCP)
+#### Modificación de `apps/api/services/cache_service.py`
+Se envolvió todas las operaciones de Redis en bloques `try/except` que capturan:
+- `RedisError` (errores específicos de Redis)
+- `ConnectionError` (errores de conexión TCP)
 - `OSError` (errores de sistema operativo)
 
 #### Comportamiento Fallback
-| MÃ©todo | Comportamiento cuando Redis falla |
+| Método | Comportamiento cuando Redis falla |
 |--------|-----------------------------------|
 | `get()` | Retorna `None` (API consulta DB normalmente) |
-| `set()` | Omite guardado sin lanzar excepciÃ³n |
-| `delete()` | Omite eliminaciÃ³n sin lanzar excepciÃ³n |
+| `set()` | Omite guardado sin lanzar excepción |
+| `delete()` | Omite eliminación sin lanzar excepción |
 | `get_json()` | Retorna `None` |
-| `set_json()` | Omite guardado sin lanzar excepciÃ³n |
-| `close()` | Cierra conexiÃ³n sin error |
+| `set_json()` | Omite guardado sin lanzar excepción |
+| `close()` | Cierra conexión sin error |
 
 #### Logging
-Cada fallo de conexiÃ³n genera un log de advertencia:
+Cada fallo de conexión genera un log de advertencia:
 ```python
 logger.warning(f"Redis cache unavailable for GET '{key}': {e}")
 ```
 
-### 3. CÃ³digo Implementado
+### 3. Código Implementado
 
 ```python
 import logging
@@ -3507,15 +3507,15 @@ async def set(self, key: str, value: Any, ttl: int = 300) -> None:
         logger.warning(f"Redis cache unavailable for SET '{key}': {e}")
 ```
 
-### 4. Test de VerificaciÃ³n
+### 4. Test de Verificación
 
-Se creÃ³ `tests/test_cache_resilience.py` que verifica:
-- âœ… GET retorna `None` cuando Redis estÃ¡ caÃ­do
-- âœ… SET completa sin error cuando Redis estÃ¡ caÃ­do
-- âœ… DELETE completa sin error cuando Redis estÃ¡ caÃ­do
-- âœ… GET_JSON retorna `None` cuando Redis estÃ¡ caÃ­do
-- âœ… SET_JSON completa sin error cuando Redis estÃ¡ caÃ­do
-- âœ… CLOSE completa sin error cuando Redis estÃ¡ caÃ­do
+Se creó `tests/test_cache_resilience.py` que verifica:
+- ✅ GET retorna `None` cuando Redis está caído
+- ✅ SET completa sin error cuando Redis está caído
+- ✅ DELETE completa sin error cuando Redis está caído
+- ✅ GET_JSON retorna `None` cuando Redis está caído
+- ✅ SET_JSON completa sin error cuando Redis está caído
+- ✅ CLOSE completa sin error cuando Redis está caído
 
 **Resultado del test:**
 ```
@@ -3524,17 +3524,17 @@ Se creÃ³ `tests/test_cache_resilience.py` que verifica:
 
 ### 5. Beneficios
 
-| Antes | DespuÃ©s |
+| Antes | Después |
 |-------|---------|
 | API fallaba con 500 Internal Server Error | API responde 200 OK |
-| Tickets no se generaban | Tickets se generan sin cachÃ© |
-| Usuario veÃ­a error crÃ­tico | Usuario recibe respuesta normal |
-| Redis era dependencia crÃ­tica | Redis es optimizaciÃ³n opcional |
+| Tickets no se generaban | Tickets se generan sin caché |
+| Usuario veía error crítico | Usuario recibe respuesta normal |
+| Redis era dependencia crítica | Redis es optimización opcional |
 
 ### 6. Impacto en Arquitectura
 
-- **PatrÃ³n Circuit Breaker:** ImplementaciÃ³n simplificada de circuit breaker
-- **DegradaciÃ³n Elegante:** Sistema funciona sin cachÃ© (mÃ¡s lento pero funcional)
+- **Patrón Circuit Breaker:** Implementación simplificada de circuit breaker
+- **Degradación Elegante:** Sistema funciona sin caché (más lento pero funcional)
 - **Observabilidad:** Logs de advertencia permiten monitorear disponibilidad de Redis
 - **Despliegue:** Redis ya no es requisito para desarrollo local
 
@@ -3542,30 +3542,30 @@ Se creÃ³ `tests/test_cache_resilience.py` que verifica:
 
 | Archivo | Cambio |
 |---------|--------|
-| `apps/api/services/cache_service.py` | Try/except en todos los mÃ©todos + logging |
+| `apps/api/services/cache_service.py` | Try/except en todos los métodos + logging |
 | `tests/test_cache_resilience.py` | Test de resiliencia creado |
 
-### 8. VerificaciÃ³n
+### 8. Verificación
 
 ```
-tests/test_cache_resilience.py: âœ… 6/6 tests pasando
-Backend con Redis apagado:      âœ… API responde 200 OK
+tests/test_cache_resilience.py: ✅ 6/6 tests pasando
+Backend con Redis apagado:      ✅ API responde 200 OK
 ```
 
 ---
 
-## ðŸŸ¢ Fase 5: CalibraciÃ³n de Poisson y Motor de Backtesting Walk-Forward (Completado)
+## 🟢 Fase 5: Calibración de Poisson y Motor de Backtesting Walk-Forward (Completado)
 
-### 1. MotivaciÃ³n
-El motor de Poisson presentaba un problema crÃ­tico: Î»_home=5.084 para Liga BetPlay cuando el promedio histÃ³rico real es ~1.15 goles por equipo. Un `confidence_score: 100/100` con lambdas errÃ³neos es peor que un 60/100 correcto, porque da falsa seguridad. La calibraciÃ³n era prerequisite para cualquier validaciÃ³n posterior.
+### 1. Motivación
+El motor de Poisson presentaba un problema crítico: λ_home=5.084 para Liga BetPlay cuando el promedio histórico real es ~1.15 goles por equipo. Un `confidence_score: 100/100` con lambdas erróneos es peor que un 60/100 correcto, porque da falsa seguridad. La calibración era prerequisite para cualquier validación posterior.
 
-### 2. MÃ³dulo de CalibraciÃ³n (`packages/ml/betmind_ml/calibration/`)
+### 2. Módulo de Calibración (`packages/ml/betmind_ml/calibration/`)
 
 #### Archivos Creados
 ```
 packages/ml/betmind_ml/calibration/
-â”œâ”€â”€ __init__.py                # Exporta calibrate_league, validate_lambda, LeagueCalibrationReport
-â””â”€â”€ league_calibrator.py       # CalibraciÃ³n por liga con baselines histÃ³ricos
+├── __init__.py                # Exporta calibrate_league, validate_lambda, LeagueCalibrationReport
+└── league_calibrator.py       # Calibración por liga con baselines históricos
 ```
 
 #### `LeagueCalibrationReport` (dataclass)
@@ -3576,117 +3576,117 @@ packages/ml/betmind_ml/calibration/
 - `is_calibrated` (bool), `warnings` (list[str])
 
 #### `KNOWN_LEAGUE_BASELINES`
-Baselines histÃ³ricos reales por liga (fuente: FBref, Transfermarkt):
+Baselines históricos reales por liga (fuente: FBref, Transfermarkt):
 
-| Liga | avg_goals/team | Î»_home range | Î»_away range | home_win_rate |
+| Liga | avg_goals/team | λ_home range | λ_away range | home_win_rate |
 |------|---------------|-------------|-------------|---------------|
 | Premier League | 1.35 | (0.8, 3.0) | (0.5, 2.5) | 0.46 |
 | LaLiga | 1.30 | (0.7, 2.8) | (0.5, 2.3) | 0.47 |
 | Liga BetPlay | 1.15 | (0.6, 2.5) | (0.4, 2.0) | 0.44 |
 
-#### Funciones PÃºblicas
-- `calibrate_league(league_key, all_matches, min_matches_required=20)` â€” Analiza datos reales, compara contra baselines, genera reporte con warnings
-- `validate_lambda(lambda_value, league_key, team_role)` â€” Clampea lambda contra rango histÃ³rico de la liga
+#### Funciones Públicas
+- `calibrate_league(league_key, all_matches, min_matches_required=20)` — Analiza datos reales, compara contra baselines, genera reporte con warnings
+- `validate_lambda(lambda_value, league_key, team_role)` — Clampea lambda contra rango histórico de la liga
 
-### 3. ModificaciÃ³n en `poisson_engine.py`
+### 3. Modificación en `poisson_engine.py`
 
-**Cambio:** IntegraciÃ³n de `validate_lambda()` al final de `calculate_lambdas()`, despuÃ©s del clamp genÃ©rico (0.1-6.0) y antes del return.
+**Cambio:** Integración de `validate_lambda()` al final de `calculate_lambdas()`, después del clamp genérico (0.1-6.0) y antes del return.
 
-**Orden de validaciÃ³n:**
-1. Clamp genÃ©rico: `max(0.1, min(lambda, 6.0))` â€” captura datos corruptos
-2. `validate_lambda()` â€” refina por liga (ej: liga_betplay home: 0.6-2.5)
-3. Logging de warnings si se clampeÃ³
+**Orden de validación:**
+1. Clamp genérico: `max(0.1, min(lambda, 6.0))` — captura datos corruptos
+2. `validate_lambda()` — refina por liga (ej: liga_betplay home: 0.6-2.5)
+3. Logging de warnings si se clampeó
 
-### 4. MÃ³dulo de Backtesting (`packages/ml/betmind_ml/backtesting/`)
+### 4. Módulo de Backtesting (`packages/ml/betmind_ml/backtesting/`)
 
 #### Archivos Creados
 ```
 packages/ml/betmind_ml/backtesting/
-â”œâ”€â”€ __init__.py                # Existente (stub), actualizado
-â”œâ”€â”€ simulator.py               # Walk-forward validation + dataclasses
-â”œâ”€â”€ metrics.py                 # Brier Score, ROI, Hit Rate, Calibration Curve
-â”œâ”€â”€ report_generator.py        # Formateo de reportes
-â””â”€â”€ runner.py                  # Entry point async del backtesting
+├── __init__.py                # Existente (stub), actualizado
+├── simulator.py               # Walk-forward validation + dataclasses
+├── metrics.py                 # Brier Score, ROI, Hit Rate, Calibration Curve
+├── report_generator.py        # Formateo de reportes
+└── runner.py                  # Entry point async del backtesting
 ```
 
 #### `simulator.py`
-- **`BacktestMatch`** (dataclass): Partido del dataset con resultado real conocido + cuotas histÃ³ricas opcionales
-- **`BacktestPrediction`** (dataclass): PredicciÃ³n vs realidad. `__post_init__` determina `actual_result` (HOME/DRAW/AWAY), `actual_btts`, `predicted_result` y `result_correct`
-- **`run_walkforward_simulation()`**: Walk-forward validation â€” para cada partido de test, usa SOLO partidos anteriores como training pool (leakage cero)
+- **`BacktestMatch`** (dataclass): Partido del dataset con resultado real conocido + cuotas históricas opcionales
+- **`BacktestPrediction`** (dataclass): Predicción vs realidad. `__post_init__` determina `actual_result` (HOME/DRAW/AWAY), `actual_btts`, `predicted_result` y `result_correct`
+- **`run_walkforward_simulation()`**: Walk-forward validation — para cada partido de test, usa SOLO partidos anteriores como training pool (leakage cero)
   - Split temporal: 70% train / 30% test
-  - MÃ­nimo 3 partidos previos por equipo para predecir
+  - Mínimo 3 partidos previos por equipo para predecir
   - Invoca `run_prediction()` del pipeline existente
 
 #### `metrics.py`
 - **`MarketMetrics`** (dataclass): brier_score, hit_rate, roi_flat_stake, yield_pct, total_ev_bets
-- **`BacktestReport`** (dataclass): Reporte completo con mÃ©tricas por mercado (1X2, Over/Under 2.5, BTTS), calibration_buckets, model_quality_score (0-100), summary_lines
+- **`BacktestReport`** (dataclass): Reporte completo con métricas por mercado (1X2, Over/Under 2.5, BTTS), calibration_buckets, model_quality_score (0-100), summary_lines
 - **Funciones:**
-  - `calculate_brier_score()` â€” BS multiclase para 1X2, BS binario para Over/BTTS
-  - `calculate_roi_flat_stake()` â€” ROI con 1 unidad en cada apuesta EV+ (> EV_POSITIVE_THRESHOLD)
-  - `calculate_calibration_curve()` â€” 5 buckets, compara probabilidad predicha vs tasa real
-  - `generate_full_report()` â€” Genera BacktestReport completo con score de calidad compuesto
+  - `calculate_brier_score()` — BS multiclase para 1X2, BS binario para Over/BTTS
+  - `calculate_roi_flat_stake()` — ROI con 1 unidad en cada apuesta EV+ (> EV_POSITIVE_THRESHOLD)
+  - `calculate_calibration_curve()` — 5 buckets, compara probabilidad predicha vs tasa real
+  - `generate_full_report()` — Genera BacktestReport completo con score de calidad compuesto
 
 #### `report_generator.py`
-- `format_report_as_text(report)` â€” Convierte BacktestReport a string formateado para logs/CLI
+- `format_report_as_text(report)` — Convierte BacktestReport a string formateado para logs/CLI
 
 #### `runner.py`
-- `run_full_backtest()` (async) â€” Flujo completo:
-  1. CalibraciÃ³n previa (detecta problemas antes de correr)
-  2. SimulaciÃ³n walk-forward
-  3. GeneraciÃ³n de mÃ©tricas
+- `run_full_backtest()` (async) — Flujo completo:
+  1. Calibración previa (detecta problemas antes de correr)
+  2. Simulación walk-forward
+  3. Generación de métricas
   4. Reporte con resumen legible
 
 ### 5. Cambios en la Capa de API
 
-#### `match_repository.py` â€” Nuevo MÃ©todo
+#### `match_repository.py` — Nuevo Método
 ```python
 async def get_all_finished_matches(league_key: str, season: int | None = None) -> list[Match]:
 ```
-- Mapea `league_key` â†’ `external_id` via `LEAGUE_KEY_TO_EXTERNAL_ID`
+- Mapea `league_key` → `external_id` via `LEAGUE_KEY_TO_EXTERNAL_ID`
 - Busca la liga en DB por `external_id`
 - Retorna partidos FINISHED con `regulation_time_only=True`, ordenados ASC por fecha
 - Incluye `selectinload` para `home_team` y `away_team`
 
-#### `dependencies.py` â€” Nueva Dependencia
+#### `dependencies.py` — Nueva Dependencia
 ```python
 async def require_admin_key(x_admin_key: str = Header(..., alias="X-Admin-Key")) -> str:
 ```
 - Valida header `X-Admin-Key` contra `settings.ADMIN_API_KEY`
-- Retorna 403 si la key es invÃ¡lida, 503 si no estÃ¡ configurada
+- Retorna 403 si la key es inválida, 503 si no está configurada
 
-#### `config.py` â€” Nuevo Setting
+#### `config.py` — Nuevo Setting
 ```python
 ADMIN_API_KEY: str = ""
 ```
 
-#### `routes/v1/backtesting.py` â€” Nuevo Endpoint
+#### `routes/v1/backtesting.py` — Nuevo Endpoint
 ```
 POST /api/v1/backtesting/{league_key}?season=2024
 ```
 - Requiere `X-Admin-Key` header (solo admin)
 - Carga partidos desde Supabase via `MatchRepository.get_all_finished_matches()`
-- Convierte ORM â†’ dicts para el paquete ML
+- Convierte ORM → dicts para el paquete ML
 - Ejecuta `run_full_backtest()` y retorna resultado
-- Valida mÃ­nimo 30 partidos
+- Valida mínimo 30 partidos
 
-#### `routes/v1/router.py` â€” Registro
+#### `routes/v1/router.py` — Registro
 ```python
 api_router.include_router(backtesting.router)
 ```
 
-### 6. Tests de IntegraciÃ³n (`tests/test_backtest_runner.py`)
+### 6. Tests de Integración (`tests/test_backtest_runner.py`)
 
 **19 tests organizados en 5 clases:**
 
 | Clase | Tests | Cobertura |
 |-------|-------|-----------|
 | `TestLeagueCalibrator` | 8 | calibrate_league (suficiente/insuficiente/unknown), validate_lambda (within/exceeds/below/unknown), baselines |
-| `TestWalkforwardSimulation` | 3 | simulaciÃ³n completa, datos insuficientes, dataclass BacktestMatch |
+| `TestWalkforwardSimulation` | 3 | simulación completa, datos insuficientes, dataclass BacktestMatch |
 | `TestMetrics` | 5 | Brier Score, ROI, calibration curve, generate_full_report, empty report |
 | `TestRunner` | 2 | run_full_backtest completo, datos insuficientes |
 | `TestReportGenerator` | 1 | format_report_as_text |
 
-**Datos mock:** `_build_mock_matches(50)` genera 50 partidos round-robin con 10 equipos y seed determinÃ­stico (42).
+**Datos mock:** `_build_mock_matches(50)` genera 50 partidos round-robin con 10 equipos y seed determinístico (42).
 
 ### 7. Resultados de Tests
 
@@ -3699,10 +3699,10 @@ Total:                         27 passed
 
 ### 8. Archivos Creados (7)
 
-| Archivo | DescripciÃ³n |
+| Archivo | Descripción |
 |---------|-------------|
 | `packages/ml/betmind_ml/calibration/__init__.py` | Exporta calibrate_league, validate_lambda |
-| `packages/ml/betmind_ml/calibration/league_calibrator.py` | CalibraciÃ³n por liga con baselines histÃ³ricos |
+| `packages/ml/betmind_ml/calibration/league_calibrator.py` | Calibración por liga con baselines históricos |
 | `packages/ml/betmind_ml/backtesting/simulator.py` | Walk-forward validation + dataclasses |
 | `packages/ml/betmind_ml/backtesting/metrics.py` | Brier Score, ROI, Hit Rate, Calibration Curve |
 | `packages/ml/betmind_ml/backtesting/report_generator.py` | Formateo de reportes |
@@ -3714,77 +3714,77 @@ Total:                         27 passed
 | Archivo | Cambio |
 |---------|--------|
 | `packages/ml/betmind_ml/models/poisson_engine.py` | validate_lambda() integrado post-clamp en calculate_lambdas() |
-| `apps/api/repositories/match_repository.py` | Nuevo mÃ©todo get_all_finished_matches() + LEAGUE_KEY_TO_EXTERNAL_ID |
+| `apps/api/repositories/match_repository.py` | Nuevo método get_all_finished_matches() + LEAGUE_KEY_TO_EXTERNAL_ID |
 | `apps/api/dependencies.py` | Nueva dependencia require_admin_key |
 | `apps/api/config.py` | Nuevo setting ADMIN_API_KEY |
 | `apps/api/routes/v1/router.py` | Registrado router de backtesting |
 
-### 10. VerificaciÃ³n
-- âœ… CalibraciÃ³n: validate_lambda clampea correctamente lambdas fuera de rango
-- âœ… Walk-forward: simulaciÃ³n sin leakage de datos futuros
-- âœ… MÃ©tricas: Brier Score, ROI, Hit Rate, Calibration Curve funcionando
-- âœ… Runner: flujo completo calibraciÃ³n â†’ simulaciÃ³n â†’ mÃ©tricas â†’ reporte
-- âœ… Endpoint: POST /api/v1/backtesting/{league_key} con auth admin
-- âœ… Tests: 27/27 pasando (19 nuevos + 8 existentes)
-- âœ… FastAPI startup: sin errores
+### 10. Verificación
+- ✅ Calibración: validate_lambda clampea correctamente lambdas fuera de rango
+- ✅ Walk-forward: simulación sin leakage de datos futuros
+- ✅ Métricas: Brier Score, ROI, Hit Rate, Calibration Curve funcionando
+- ✅ Runner: flujo completo calibración → simulación → métricas → reporte
+- ✅ Endpoint: POST /api/v1/backtesting/{league_key} con auth admin
+- ✅ Tests: 27/27 pasando (19 nuevos + 8 existentes)
+- ✅ FastAPI startup: sin errores
 
 ---
 
-## ðŸš€ 5. PrÃ³ximos Pasos (Roadmap Inmediato)
-- [x] Configurar conexiÃ³n a la base de datos PostgreSQL (`DATABASE_URL`). âœ… Completado con fallback SQLite.
-- [x] Crear el pipeline de ingesta de datos en `services/api_football.py` para cargar partidos histÃ³ricos y recientes de la Liga BetPlay y Premier League. âœ… Completado.
-- [x] Implementar capa de abstracciÃ³n de proveedores de datos (`DataProviderPort`) con soporte para football-data.org. âœ… Completado.
-- [x] Integrar `DataProviderPort` con `DataIngestionService` para usar proveedores intercambiables. âœ… Completado.
-- [x] Verificar sincronizaciÃ³n de temporada 2026 con `FootballDataProvider` para Premier League y LaLiga. âœ… Completado.
-- [x] Implementar infraestructura base del Agente de IA para Liga BetPlay 2026. âœ… Completado.
-- [x] Implementar nodos de procesamiento: scrape_node, parse_node, validate_node. âœ… Completado.
-- [x] Implementar grafo completo con `langgraph` que conecte search â†’ scrape â†’ parse â†’ validate. âœ… Completado.
-- [x] Implementar `AISearchAgentProvider` como proveedor de datos para Liga BetPlay. âœ… Completado.
-- [x] Implementar Motor Predictivo Cuantitativo (Fase 3): Poisson bivariado, cÃ¡lculo de mercados, +EV. âœ… Completado.
-- [x] Implementar Motor TÃ¡ctico y Narrativo (Fase 4): Cerebro cualitativo con LLM, prompts anti-alucinaciÃ³n, ejecutores paralelos. âœ… Completado.
-- [x] Migrar mÃ³dulo narrativo de Anthropic (Claude) a Google Gemini (gratuito) para reducir costos. âœ… Completado.
-- [x] Ejecutar prueba de integraciÃ³n end-to-end con API real de Gemini. âœ… Completado (degradaciÃ³n elegante validada).
-- [x] Implementar control de concurrencia y reintentos para rate limits de Gemini API. âœ… Completado.
-- [x] Integrar `run_full_analysis()` con `PredictionOrchestrator` de FastAPI para conectar pipeline completo con API. âœ… Completado.
-- [x] Crear modelo ORM `TacticalAnalysis` y repositorio para persistir anÃ¡lisis tÃ¡ctico en Supabase. âœ… Completado.
-- [x] Migrar mÃ³dulo narrativo de Google Gemini a Groq (Llama 3.3) para mejorar calidad de narrativas. âœ… Completado.
-- [x] Ejecutar prueba end-to-end con Groq API y validar generaciÃ³n de narrativas. âœ… Completado.
-- [x] Ajustar schemas Pydantic para acomodar respuestas de Llama 3.3. âœ… Completado.
-- [x] Crear migraciÃ³n SQL para tabla `tactical_analyses` en Supabase. âœ… Completado.
-- [x] Implementar cachÃ© de anÃ¡lisis tÃ¡ctico en DB (TTL 6 horas) para reducir costos de API. âœ… Completado.
-- [x] VerificaciÃ³n end-to-end: Todos los anÃ¡lisis generados sin errores. âœ… Completado.
-- [ ] Ejecutar migraciÃ³n `004_create_tactical_analyses.sql` en Supabase.
+## 🚀 5. Próximos Pasos (Roadmap Inmediato)
+- [x] Configurar conexión a la base de datos PostgreSQL (`DATABASE_URL`). ✅ Completado con fallback SQLite.
+- [x] Crear el pipeline de ingesta de datos en `services/api_football.py` para cargar partidos históricos y recientes de la Liga BetPlay y Premier League. ✅ Completado.
+- [x] Implementar capa de abstracción de proveedores de datos (`DataProviderPort`) con soporte para football-data.org. ✅ Completado.
+- [x] Integrar `DataProviderPort` con `DataIngestionService` para usar proveedores intercambiables. ✅ Completado.
+- [x] Verificar sincronización de temporada 2026 con `FootballDataProvider` para Premier League y LaLiga. ✅ Completado.
+- [x] Implementar infraestructura base del Agente de IA para Liga BetPlay 2026. ✅ Completado.
+- [x] Implementar nodos de procesamiento: scrape_node, parse_node, validate_node. ✅ Completado.
+- [x] Implementar grafo completo con `langgraph` que conecte search → scrape → parse → validate. ✅ Completado.
+- [x] Implementar `AISearchAgentProvider` como proveedor de datos para Liga BetPlay. ✅ Completado.
+- [x] Implementar Motor Predictivo Cuantitativo (Fase 3): Poisson bivariado, cálculo de mercados, +EV. ✅ Completado.
+- [x] Implementar Motor Táctico y Narrativo (Fase 4): Cerebro cualitativo con LLM, prompts anti-alucinación, ejecutores paralelos. ✅ Completado.
+- [x] Migrar módulo narrativo de Anthropic (Claude) a Google Gemini (gratuito) para reducir costos. ✅ Completado.
+- [x] Ejecutar prueba de integración end-to-end con API real de Gemini. ✅ Completado (degradación elegante validada).
+- [x] Implementar control de concurrencia y reintentos para rate limits de Gemini API. ✅ Completado.
+- [x] Integrar `run_full_analysis()` con `PredictionOrchestrator` de FastAPI para conectar pipeline completo con API. ✅ Completado.
+- [x] Crear modelo ORM `TacticalAnalysis` y repositorio para persistir análisis táctico en Supabase. ✅ Completado.
+- [x] Migrar módulo narrativo de Google Gemini a Groq (Llama 3.3) para mejorar calidad de narrativas. ✅ Completado.
+- [x] Ejecutar prueba end-to-end con Groq API y validar generación de narrativas. ✅ Completado.
+- [x] Ajustar schemas Pydantic para acomodar respuestas de Llama 3.3. ✅ Completado.
+- [x] Crear migración SQL para tabla `tactical_analyses` en Supabase. ✅ Completado.
+- [x] Implementar caché de análisis táctico en DB (TTL 6 horas) para reducir costos de API. ✅ Completado.
+- [x] Verificación end-to-end: Todos los análisis generados sin errores. ✅ Completado.
+- [ ] Ejecutar migración `004_create_tactical_analyses.sql` en Supabase.
 - [ ] Probar flujo completo del agente con Liga BetPlay 2026.
-- [ ] Implementar modelos de tarjetas y cÃ³rneres (`cards_model.py`, `corners_model.py`) para probabilidades cuantitativas.
+- [ ] Implementar modelos de tarjetas y córneres (`cards_model.py`, `corners_model.py`) para probabilidades cuantitativas.
 - [ ] Implementar generador de player_props_narrative para props de jugadores individuales.
-- [x] Calibrar lambdas de Poisson (actualmente Î»_home=5.084 es inusualmente alto para Liga BetPlay ~1.3 goles/partido). âœ… Completado â€” validate_lambda() con rangos histÃ³ricos por liga.
-- [x] Implementar Motor de Backtesting Walk-Forward: simulaciÃ³n, mÃ©tricas (Brier Score, ROI, Hit Rate), calibraciÃ³n y reporterÃ­a. âœ… Completado.
-- [x] Configurar 11 ligas activas prioritarias con baselines histÃ³ricos y IDs de API-Football. âœ… Completado.
-- [x] Crear script CLI para sincronizaciÃ³n de partidos prÃ³ximos en las 11 ligas destacadas. âœ… Completado.
-- [x] Implementar scraper de partidos con football-data.org para datos reales de 2026. âœ… Completado.
-- [x] Implementar scraper de partidos con ESPN Scoreboard API (gratuita, sin API key) para las 11 ligas destacadas. âœ… Completado.
-- [x] Corregir zona horaria UTC â†’ COT en sync script para capturar partidos nocturnos correctamente. âœ… Completado.
-- [x] Implementar Motor de GeneraciÃ³n Inteligente de Tickets (Fase 6): 3 modos (EDGE, VALUE, BOLD) con reglas de correlaciÃ³n. âœ… Completado.
-- [x] Integrar frontend web (Next.js) con backend FastAPI: cliente API, adaptador de tipos, fallback elegante. âœ… Completado.
-- [x] Pulido visual premium del frontend: logo pill badge, tooltips en histograma, empty state para Scanner, skeleton loaders. âœ… Completado.
-- [x] LocalizaciÃ³n completa al espaÃ±ol de toda la aplicaciÃ³n (frontend + backend). âœ… Completado.
-- [x] Implementar resiliencia de CacheService ante fallos de Redis (degradaciÃ³n elegante). âœ… Completado.
-- [ ] Implementar ingesta de cuotas reales desde API-Football para cÃ¡lculo de +EV en tiempo real. âœ… Completado en Fase 8.
-- [ ] Optimizar sistema para producciÃ³n: rotaciÃ³n de API keys, fallbacks estÃ¡ticos, modo cuantitativo sin LLM. âœ… Completado en Fase 9.
-- [ ] Conectar frontend a API real de partidos (reemplazar datos mock por fetch a /api/v1/matches). âœ… Completado en Fase 9.
+- [x] Calibrar lambdas de Poisson (actualmente λ_home=5.084 es inusualmente alto para Liga BetPlay ~1.3 goles/partido). ✅ Completado — validate_lambda() con rangos históricos por liga.
+- [x] Implementar Motor de Backtesting Walk-Forward: simulación, métricas (Brier Score, ROI, Hit Rate), calibración y reportería. ✅ Completado.
+- [x] Configurar 11 ligas activas prioritarias con baselines históricos y IDs de API-Football. ✅ Completado.
+- [x] Crear script CLI para sincronización de partidos próximos en las 11 ligas destacadas. ✅ Completado.
+- [x] Implementar scraper de partidos con football-data.org para datos reales de 2026. ✅ Completado.
+- [x] Implementar scraper de partidos con ESPN Scoreboard API (gratuita, sin API key) para las 11 ligas destacadas. ✅ Completado.
+- [x] Corregir zona horaria UTC → COT en sync script para capturar partidos nocturnos correctamente. ✅ Completado.
+- [x] Implementar Motor de Generación Inteligente de Tickets (Fase 6): 3 modos (EDGE, VALUE, BOLD) con reglas de correlación. ✅ Completado.
+- [x] Integrar frontend web (Next.js) con backend FastAPI: cliente API, adaptador de tipos, fallback elegante. ✅ Completado.
+- [x] Pulido visual premium del frontend: logo pill badge, tooltips en histograma, empty state para Scanner, skeleton loaders. ✅ Completado.
+- [x] Localización completa al español de toda la aplicación (frontend + backend). ✅ Completado.
+- [x] Implementar resiliencia de CacheService ante fallos de Redis (degradación elegante). ✅ Completado.
+- [ ] Implementar ingesta de cuotas reales desde API-Football para cálculo de +EV en tiempo real. ✅ Completado en Fase 8.
+- [ ] Optimizar sistema para producción: rotación de API keys, fallbacks estáticos, modo cuantitativo sin LLM. ✅ Completado en Fase 9.
+- [ ] Conectar frontend a API real de partidos (reemplazar datos mock por fetch a /api/v1/matches). ✅ Completado en Fase 9.
 
 ---
 
-## ðŸŸ¢ Fase 8: Ingesta de Cuotas Reales desde API-Football (Completado)
+## 🟢 Fase 8: Ingesta de Cuotas Reales desde API-Football (Completado)
 
 ### 1. Objetivo
-Implementar un pipeline completo para sincronizar cuotas de casas de apuestas desde API-Football y persistirlas en Supabase, permitiendo el cÃ¡lculo de +EV (Valor Esperado) con datos reales en tiempo real.
+Implementar un pipeline completo para sincronizar cuotas de casas de apuestas desde API-Football y persistirlas en Supabase, permitiendo el cálculo de +EV (Valor Esperado) con datos reales en tiempo real.
 
 ### 2. Problema Resuelto
-El sistema de tickets generaba boletos basados Ãºnicamente en probabilidades de Poisson sin comparar contra cuotas reales de bookmakers. Esto impedÃ­a:
+El sistema de tickets generaba boletos basados únicamente en probabilidades de Poisson sin comparar contra cuotas reales de bookmakers. Esto impedía:
 - Calcular el Valor Esperado (+EV) real
 - Detectar oportunidades de arbitraje
-- Generar tickets con ventaja estadÃ­stica comprobada
+- Generar tickets con ventaja estadística comprobada
 
 ### 3. Arquitectura Implementada
 
@@ -3804,19 +3804,19 @@ class BookmakerOdd(TimestampMixin, Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 ```
 
-**CaracterÃ­sticas:**
-- RelaciÃ³n N:1 con `matches` (mÃºltiples cuotas por partido)
-- Ãndice Ãºnico compuesto: `(match_id, market_name, bookmaker_name)`
+**Características:**
+- Relación N:1 con `matches` (múltiples cuotas por partido)
+- Índice único compuesto: `(match_id, market_name, bookmaker_name)`
 - Timestamp `fetched_at` para tracking de freshness
 
 #### Repositorio: `BookmakerOddsRepository`
 **Archivo:** `apps/api/repositories/bookmaker_odd_repository.py`
 
-MÃ©todos implementados:
-- `upsert_odds(match_id, odds_list, bookmaker_name)` â€” Inserta o actualiza cuotas
-- `get_odds_for_match(match_id, bookmaker_name)` â€” Obtiene cuotas de un partido
-- `get_odds_for_matches(match_ids, bookmaker_name)` â€” Obtiene cuotas de mÃºltiples partidos
-- `delete_stale_odds(older_than_hours)` â€” Limpia cuotas antiguas
+Métodos implementados:
+- `upsert_odds(match_id, odds_list, bookmaker_name)` — Inserta o actualiza cuotas
+- `get_odds_for_match(match_id, bookmaker_name)` — Obtiene cuotas de un partido
+- `get_odds_for_matches(match_ids, bookmaker_name)` — Obtiene cuotas de múltiples partidos
+- `delete_stale_odds(older_than_hours)` — Limpia cuotas antiguas
 
 #### Servicio: `OddsService`
 **Archivo:** `apps/api/services/odds_service.py`
@@ -3847,7 +3847,7 @@ OVER_UNDER_VALUE_MAP = {
 - Manejo de errores 429 (rate limit exceeded)
 - Logging detallado de cuotas sincronizadas por partido
 
-### 4. MigraciÃ³n SQL
+### 4. Migración SQL
 
 **Archivo:** `apps/api/migrations/005_create_bookmaker_odds.sql`
 
@@ -3872,25 +3872,25 @@ ALTER TABLE bookmaker_odds ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public read access on bookmaker_odds" ON bookmaker_odds FOR SELECT USING (true);
 ```
 
-### 5. IntegraciÃ³n con Sync Script
+### 5. Integración con Sync Script
 
 **Archivo modificado:** `scripts/sync_today_matches.py`
 
 **Flujo actualizado:**
-1. Sincronizar partidos de HOY y MAÃ‘ANA (COT) desde ESPN Scoreboard
+1. Sincronizar partidos de HOY y MAÑANA (COT) desde ESPN Scoreboard
 2. Para cada partido sincronizado, llamar `OddsService.sync_odds_for_matches()`
 3. `OddsService` consulta API-Football `/fixtures?date=YYYY-MM-DD` para obtener `fixture_id`
 4. Para cada `fixture_id`, consulta `/odds?fixture={fixture_id}`
 5. Parsea y persiste cuotas en tabla `bookmaker_odds`
 
-**Resultado de ejecuciÃ³n:**
+**Resultado de ejecución:**
 ```
 Partidos sincronizados: 73
 Cuotas sincronizadas: 65 (1X2 + BTTS para 13 partidos)
 Mercados capturados: 1X2_HOME, 1X2_DRAW, 1X2_AWAY, BTTS_YES, BTTS_NO
 ```
 
-### 6. IntegraciÃ³n con Endpoint de Tickets
+### 6. Integración con Endpoint de Tickets
 
 **Archivo modificado:** `apps/api/routes/v1/tickets.py`
 
@@ -3899,7 +3899,7 @@ Mercados capturados: 1X2_HOME, 1X2_DRAW, 1X2_AWAY, BTTS_YES, BTTS_NO
 # Antes: odds manuales por query params
 pred = await orchestrator.get_prediction(match_id=match.id, odds=odds_input)
 
-# DespuÃ©s: odds desde DB
+# Después: odds desde DB
 match_odds = odds_map.get(match.id, {})
 odds_input = OddsInput(
     home_win=match_odds.get("1X2_HOME"),
@@ -3910,61 +3910,61 @@ odds_input = OddsInput(
 pred = await orchestrator.get_prediction(match_id=match.id, odds=odds_input)
 ```
 
-**Beneficio:** Los tickets ahora se generan con cuotas reales de bookmakers, permitiendo cÃ¡lculo de +EV autÃ©ntico.
+**Beneficio:** Los tickets ahora se generan con cuotas reales de bookmakers, permitiendo cálculo de +EV auténtico.
 
 ### 7. Limitaciones de API-Football Free Plan
 
-| LimitaciÃ³n | Impacto | SoluciÃ³n |
+| Limitación | Impacto | Solución |
 |------------|---------|----------|
-| Solo permite temporada 2024 para ligas especÃ­ficas | No se pueden obtener cuotas de 2026 | Usar `/fixtures?date=YYYY-MM-DD` sin filtro de liga |
-| Rate limit: 10 requests/minuto | SincronizaciÃ³n lenta | Delay de 6s entre peticiones |
-| Daily quota: ~100 requests/dÃ­a | Limita cantidad de partidos | Sincronizar solo partidos de hoy/maÃ±ana |
+| Solo permite temporada 2024 para ligas específicas | No se pueden obtener cuotas de 2026 | Usar `/fixtures?date=YYYY-MM-DD` sin filtro de liga |
+| Rate limit: 10 requests/minuto | Sincronización lenta | Delay de 6s entre peticiones |
+| Daily quota: ~100 requests/día | Limita cantidad de partidos | Sincronizar solo partidos de hoy/mañana |
 
 ### 8. Archivos Creados
 
-| Archivo | DescripciÃ³n |
+| Archivo | Descripción |
 |---------|-------------|
 | `apps/api/models/bookmaker_odd.py` | Modelo ORM para cuotas de bookmakers |
-| `apps/api/repositories/bookmaker_odd_repository.py` | Repositorio con mÃ©todos upsert/get/delete |
-| `apps/api/migrations/005_create_bookmaker_odds.sql` | MigraciÃ³n SQL para Supabase |
+| `apps/api/repositories/bookmaker_odd_repository.py` | Repositorio con métodos upsert/get/delete |
+| `apps/api/migrations/005_create_bookmaker_odds.sql` | Migración SQL para Supabase |
 
 ### 9. Archivos Modificados
 
 | Archivo | Cambio |
 |---------|--------|
-| `apps/api/services/odds_service.py` | ImplementaciÃ³n completa de `OddsService` con API-Football |
-| `apps/api/services/api_football.py` | Nuevo mÃ©todo `get_fixtures_by_date()` y `get_odds_for_fixture()` |
-| `scripts/sync_today_matches.py` | IntegraciÃ³n con `OddsService` para sincronizar cuotas |
+| `apps/api/services/odds_service.py` | Implementación completa de `OddsService` con API-Football |
+| `apps/api/services/api_football.py` | Nuevo método `get_fixtures_by_date()` y `get_odds_for_fixture()` |
+| `scripts/sync_today_matches.py` | Integración con `OddsService` para sincronizar cuotas |
 | `apps/api/routes/v1/tickets.py` | Carga de cuotas desde DB en lugar de query params manuales |
 | `apps/api/models/__init__.py` | Registro de `BookmakerOdd` |
 | `apps/api/db/database.py` | Import de `BookmakerOdd` en `init_db()` |
 
-### 10. VerificaciÃ³n
+### 10. Verificación
 
 ```
-âœ… Modelo ORM creado y registrado
-âœ… MigraciÃ³n SQL aplicada en Supabase
-âœ… Repositorio con mÃ©todos CRUD funcionales
-âœ… OddsService consulta API-Football correctamente
-âœ… 65 cuotas sincronizadas para 13 partidos
-âœ… Endpoint de tickets usa cuotas reales de DB
-âœ… CÃ¡lculo de +EV funcional con datos reales
+✅ Modelo ORM creado y registrado
+✅ Migración SQL aplicada en Supabase
+✅ Repositorio con métodos CRUD funcionales
+✅ OddsService consulta API-Football correctamente
+✅ 65 cuotas sincronizadas para 13 partidos
+✅ Endpoint de tickets usa cuotas reales de DB
+✅ Cálculo de +EV funcional con datos reales
 ```
 
 ---
 
-## ðŸŸ¢ Fase 9: Optimizaciones de Resiliencia y Frontend (Completado)
+## 🟢 Fase 9: Optimizaciones de Resiliencia y Frontend (Completado)
 
 ### 1. Objetivo
-Implementar optimizaciones crÃ­ticas para producciÃ³n: manejadores de excepciones globales, CacheService singleton, fallbacks estÃ¡ticos para narrativas LLM, modo cuantitativo sin LLM para generaciÃ³n masiva, y conexiÃ³n del frontend a la API real de partidos.
+Implementar optimizaciones críticas para producción: manejadores de excepciones globales, CacheService singleton, fallbacks estáticos para narrativas LLM, modo cuantitativo sin LLM para generación masiva, y conexión del frontend a la API real de partidos.
 
 ### 2. Manejadores de Excepciones Globales
 
 **Archivo modificado:** `apps/api/main.py`
 
-**Problema:** Excepciones no capturadas retornaban 500 Internal Server Error sin informaciÃ³n estructurada.
+**Problema:** Excepciones no capturadas retornaban 500 Internal Server Error sin información estructurada.
 
-**SoluciÃ³n:**
+**Solución:**
 ```python
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -4013,9 +4013,9 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 ```
 
-**Beneficio:** Respuestas JSON estructuradas con cÃ³digos de error especÃ­ficos para debugging.
+**Beneficio:** Respuestas JSON estructuradas con códigos de error específicos para debugging.
 
-### 3. Endpoint RaÃ­z
+### 3. Endpoint Raíz
 
 **Archivo modificado:** `apps/api/main.py`
 
@@ -4025,15 +4025,15 @@ async def root():
     return {"status": "ok", "app": settings.APP_NAME, "version": settings.APP_VERSION}
 ```
 
-**Beneficio:** Elimina logs 404 al consultar la raÃ­z del servidor.
+**Beneficio:** Elimina logs 404 al consultar la raíz del servidor.
 
 ### 4. CacheService Singleton
 
 **Archivo modificado:** `apps/api/dependencies.py`
 
-**Problema:** Se creaba una nueva instancia de `CacheService` (y conexiÃ³n Redis) por cada request.
+**Problema:** Se creaba una nueva instancia de `CacheService` (y conexión Redis) por cada request.
 
-**SoluciÃ³n:**
+**Solución:**
 ```python
 _cache_service_instance: CacheService | None = None
 
@@ -4044,9 +4044,9 @@ def get_cache_service() -> CacheService:
     return _cache_service_instance
 ```
 
-**Beneficio:** Reutiliza conexiÃ³n Redis, reduce overhead de conexiones TCP.
+**Beneficio:** Reutiliza conexión Redis, reduce overhead de conexiones TCP.
 
-### 5. Fallbacks EstÃ¡ticos para Narrativas LLM
+### 5. Fallbacks Estáticos para Narrativas LLM
 
 **Archivos modificados:**
 - `packages/ml/betmind_ml/narrative/generators/goals_narrative.py`
@@ -4056,7 +4056,7 @@ def get_cache_service() -> CacheService:
 
 **Problema:** Cuando Groq API retornaba 429 (rate limit) o fallaba, las narrativas retornaban `None`.
 
-**SoluciÃ³n:** Implementar funciones `_generate_fallback_*()` que generan narrativas estÃ¡ticas basadas en probabilidades de Poisson.
+**Solución:** Implementar funciones `_generate_fallback_*()` que generan narrativas estáticas basadas en probabilidades de Poisson.
 
 **Ejemplo (goals_narrative.py):**
 ```python
@@ -4069,9 +4069,9 @@ def _generate_fallback_narrative(
     recommendation = "Over 2.5" if p_over_25 > 0.55 else "Under 2.5" if p_over_25 < 0.45 else "Mercado neutral"
     
     summary = (
-        f"SegÃºn el modelo Poisson, {home_team} vs {away_team} tiene un marcador mÃ¡s probable de "
+        f"Según el modelo Poisson, {home_team} vs {away_team} tiene un marcador más probable de "
         f"{most_likely_score} ({most_likely_prob*100:.0f}%). Los goles esperados son {expected_goals:.1f} "
-        f"(Î»_home={lambda_home:.2f}, Î»_away={lambda_away:.2f}). "
+        f"(λ_home={lambda_home:.2f}, λ_away={lambda_away:.2f}). "
         f"La probabilidad de Over 2.5 es {p_over_25*100:.1f}% y BTTS es {p_btts*100:.1f}%."
     )
     
@@ -4080,28 +4080,28 @@ def _generate_fallback_narrative(
         recommendation=recommendation,
         tactical_summary=summary,
         pros=[
-            f"Goles esperados: {expected_goals:.1f} (Î»_home={lambda_home:.2f}, Î»_away={lambda_away:.2f})",
+            f"Goles esperados: {expected_goals:.1f} (λ_home={lambda_home:.2f}, λ_away={lambda_away:.2f})",
             f"Probabilidad Over 2.5: {p_over_25*100:.1f}%",
-            f"Marcador mÃ¡s probable: {most_likely_score} ({most_likely_prob*100:.0f}%)",
+            f"Marcador más probable: {most_likely_score} ({most_likely_prob*100:.0f}%)",
         ],
         cons=[
-            "AnÃ¡lisis basado Ãºnicamente en modelo estadÃ­stico Poisson",
-            "Sin datos contextuales de lesiones, clima o motivaciÃ³n",
+            "Análisis basado únicamente en modelo estadístico Poisson",
+            "Sin datos contextuales de lesiones, clima o motivación",
         ],
         signal_strength=NarrativeSignal.MEDIUM,
         featured_player=None,
     )
 ```
 
-**Beneficio:** Sistema nunca falla completamente; siempre retorna anÃ¡lisis Ãºtil incluso sin LLM.
+**Beneficio:** Sistema nunca falla completamente; siempre retorna análisis útil incluso sin LLM.
 
 ### 6. Modo Cuantitativo sin LLM
 
 **Archivo modificado:** `apps/api/orchestrators/prediction_orchestrator.py`
 
-**Problema:** La generaciÃ³n masiva de tickets consumÃ­a quota de Groq API innecesariamente.
+**Problema:** La generación masiva de tickets consumía quota de Groq API innecesariamente.
 
-**SoluciÃ³n:** Agregar parÃ¡metro `include_tactical_analysis: bool = True` a `get_prediction()`.
+**Solución:** Agregar parámetro `include_tactical_analysis: bool = True` a `get_prediction()`.
 
 ```python
 async def get_prediction(
@@ -4119,7 +4119,7 @@ async def get_prediction(
         tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
 ```
 
-**MÃ©todo helper:**
+**Método helper:**
 ```python
 def _build_minimal_tactical_analysis(
     self, match: Match, quant_output: MatchPredictionOutput,
@@ -4133,50 +4133,50 @@ def _build_minimal_tactical_analysis(
         player_props_narratives=None,
         bet_builder_suggestions=None,
         overall_confidence=quant_output.confidence_score,
-        match_preview_headline=f"{match.home_team.name} vs {match.away_team.name}: AnÃ¡lisis estadÃ­stico",
+        match_preview_headline=f"{match.home_team.name} vs {match.away_team.name}: Análisis estadístico",
         llm_model_used="none",
         generation_tokens_used=0,
         data_completeness_score=0.5,
     )
 ```
 
-**IntegraciÃ³n en tickets.py:**
+**Integración en tickets.py:**
 ```python
 pred = await orchestrator.get_prediction(
     match_id=match.id,
     odds=odds_input,
-    include_tactical_analysis=False,  # Sin LLM para generaciÃ³n masiva
+    include_tactical_analysis=False,  # Sin LLM para generación masiva
 )
 ```
 
-**Beneficio:** GeneraciÃ³n de tickets 10x mÃ¡s rÃ¡pida, sin consumo de quota de Groq.
+**Beneficio:** Generación de tickets 10x más rápida, sin consumo de quota de Groq.
 
-### 7. CorrecciÃ³n de ValidaciÃ³n Pydantic
+### 7. Corrección de Validación Pydantic
 
 **Archivo modificado:** `packages/ml/betmind_ml/schemas/tactical_analysis.py`
 
-**Problema:** `TacticalAnalysis` no aceptaba `None` en campos de lista, causando errores de validaciÃ³n.
+**Problema:** `TacticalAnalysis` no aceptaba `None` en campos de lista, causando errores de validación.
 
-**SoluciÃ³n:**
+**Solución:**
 ```python
 # Antes
 player_props_narratives: list[MarketNarrative] = Field(default_factory=list)
 bet_builder_suggestions: list[BetBuilderCombination] = Field(default_factory=list, max_length=3)
 
-# DespuÃ©s
+# Después
 player_props_narratives: list[MarketNarrative] | None = Field(default_factory=list)
 bet_builder_suggestions: list[BetBuilderCombination] | None = Field(default_factory=list, max_length=3)
 ```
 
-**Beneficio:** Permite pasar `None` explÃ­citamente desde el orchestrator sin errores de validaciÃ³n.
+**Beneficio:** Permite pasar `None` explícitamente desde el orchestrator sin errores de validación.
 
 ### 8. Ajuste PgBouncer en Sync Script
 
 **Archivo modificado:** `scripts/sync_today_matches.py`
 
-**Problema:** El script de sync no tenÃ­a `prepared_statement_cache_size: 0`, causando errores con PgBouncer.
+**Problema:** El script de sync no tenía `prepared_statement_cache_size: 0`, causando errores con PgBouncer.
 
-**SoluciÃ³n:**
+**Solución:**
 ```python
 if settings.DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
@@ -4188,9 +4188,9 @@ else:
     engine_kwargs["pool_pre_ping"] = True
 ```
 
-**Beneficio:** Consistencia con configuraciÃ³n de `database.py`, evita errores de prepared statements.
+**Beneficio:** Consistencia con configuración de `database.py`, evita errores de prepared statements.
 
-### 9. ConexiÃ³n Frontend a API Real
+### 9. Conexión Frontend a API Real
 
 **Archivos modificados:**
 - `apps/web/lib/api.ts`
@@ -4212,11 +4212,11 @@ async def list_matches(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Lista partidos almacenados en la base de datos con datos de equipos y liga."""
-    # ... implementaciÃ³n con selectinload de relaciones ...
+    # ... implementación con selectinload de relaciones ...
     return {"matches": [_match_to_dict_full(m) for m in matches], "total": len(matches)}
 ```
 
-**Nuevo mÃ©todo helper:**
+**Nuevo método helper:**
 ```python
 def _match_to_dict_full(m: Match) -> dict:
     return {
@@ -4288,7 +4288,7 @@ function mapBackendMatch(raw: BackendMatch): Match {
     cons: [],
     signal: 'WEAK',
     keyRisk: '',
-    summary: `${raw.home_team_name} vs ${raw.away_team_name} â€” ${leagueName}`,
+    summary: `${raw.home_team_name} vs ${raw.away_team_name} — ${leagueName}`,
     referee: defaultReferee,
   }
 }
@@ -4309,7 +4309,7 @@ export async function fetchMatches(dateStr?: string): Promise<Match[]> {
 }
 ```
 
-#### 9.3 IntegraciÃ³n en Dashboard
+#### 9.3 Integración en Dashboard
 
 **Archivo:** `apps/web/components/betmind/dashboard.tsx`
 
@@ -4362,288 +4362,306 @@ Ninguno (todas las mejoras fueron en archivos existentes).
 
 | Archivo | Cambio |
 |---------|--------|
-| `apps/api/main.py` | Manejadores de excepciones globales + endpoint raÃ­z `/` |
+| `apps/api/main.py` | Manejadores de excepciones globales + endpoint raíz `/` |
 | `apps/api/dependencies.py` | CacheService singleton |
-| `apps/api/orchestrators/prediction_orchestrator.py` | ParÃ¡metro `include_tactical_analysis` + mÃ©todo `_build_minimal_tactical_analysis()` |
-| `apps/api/routes/v1/tickets.py` | Uso de `include_tactical_analysis=False` para generaciÃ³n masiva |
+| `apps/api/orchestrators/prediction_orchestrator.py` | Parámetro `include_tactical_analysis` + método `_build_minimal_tactical_analysis()` |
+| `apps/api/routes/v1/tickets.py` | Uso de `include_tactical_analysis=False` para generación masiva |
 | `apps/api/routes/v1/matches.py` | Filtro por fecha COT + `_match_to_dict_full()` con relaciones |
-| `apps/api/db/database.py` | Rollback automÃ¡tico en `get_async_session()` |
+| `apps/api/db/database.py` | Rollback automático en `get_async_session()` |
 | `apps/api/repositories/tactical_analysis_repository.py` | Manejo de errores con rollback |
 | `packages/ml/betmind_ml/schemas/tactical_analysis.py` | Campos de lista aceptan `None` |
-| `packages/ml/betmind_ml/narrative/generators/goals_narrative.py` | Fallback estÃ¡tico `_generate_fallback_narrative()` |
-| `packages/ml/betmind_ml/narrative/generators/cards_narrative.py` | Fallback estÃ¡tico `_generate_fallback_cards_narrative()` |
-| `packages/ml/betmind_ml/narrative/generators/corners_narrative.py` | Fallback estÃ¡tico `_generate_fallback_corners_narrative()` |
-| `packages/ml/betmind_ml/narrative/generators/bet_builder.py` | Fallback estÃ¡tico `_generate_fallback_bet_builder()` |
+| `packages/ml/betmind_ml/narrative/generators/goals_narrative.py` | Fallback estático `_generate_fallback_narrative()` |
+| `packages/ml/betmind_ml/narrative/generators/cards_narrative.py` | Fallback estático `_generate_fallback_cards_narrative()` |
+| `packages/ml/betmind_ml/narrative/generators/corners_narrative.py` | Fallback estático `_generate_fallback_corners_narrative()` |
+| `packages/ml/betmind_ml/narrative/generators/bet_builder.py` | Fallback estático `_generate_fallback_bet_builder()` |
 | `packages/ml/betmind_ml/pipeline/full_analysis_pipeline.py` | Soporte para `groq_api_keys` (lista) |
-| `packages/ml/betmind_ml/narrative/narrative_orchestrator.py` | RotaciÃ³n de API keys + retry con exponential backoff |
+| `packages/ml/betmind_ml/narrative/narrative_orchestrator.py` | Rotación de API keys + retry con exponential backoff |
 | `apps/api/config.py` | Soporte para `GROQ_API_KEYS` (lista separada por comas) |
 | `scripts/sync_today_matches.py` | `prepared_statement_cache_size: 0` |
-| `apps/web/lib/api.ts` | FunciÃ³n `fetchMatches()` + mapeo de tipos |
+| `apps/web/lib/api.ts` | Función `fetchMatches()` + mapeo de tipos |
 | `apps/web/components/betmind/dashboard.tsx` | Fetch de partidos reales desde API + loading state |
 
-### 12. VerificaciÃ³n
+### 12. Verificación
 
 ```
-âœ… Manejadores de excepciones globales: 5 handlers registrados
-âœ… Endpoint raÃ­z GET /: Retorna 200 OK
-âœ… CacheService singleton: Reutiliza conexiÃ³n Redis
-âœ… Fallbacks estÃ¡ticos: 4 generadores con fallback (goals, cards, corners, bet_builder)
-âœ… Modo cuantitativo sin LLM: ParÃ¡metro include_tactical_analysis funcional
-âœ… ValidaciÃ³n Pydantic: Campos de lista aceptan None
-âœ… PgBouncer: prepared_statement_cache_size en sync script
-âœ… Frontend conectado a API: fetchMatches() funcional
-âœ… Loading states: Skeleton loaders mientras carga
-âœ… DegradaciÃ³n elegante: Sistema funciona sin LLM
+✅ Manejadores de excepciones globales: 5 handlers registrados
+✅ Endpoint raíz GET /: Retorna 200 OK
+✅ CacheService singleton: Reutiliza conexión Redis
+✅ Fallbacks estáticos: 4 generadores con fallback (goals, cards, corners, bet_builder)
+✅ Modo cuantitativo sin LLM: Parámetro include_tactical_analysis funcional
+✅ Validación Pydantic: Campos de lista aceptan None
+✅ PgBouncer: prepared_statement_cache_size en sync script
+✅ Frontend conectado a API: fetchMatches() funcional
+✅ Loading states: Skeleton loaders mientras carga
+✅ Degradación elegante: Sistema funciona sin LLM
 ```
 
-### 13. Beneficios de ProducciÃ³n
+### 13. Beneficios de Producción
 
-| Aspecto | Antes | DespuÃ©s |
+| Aspecto | Antes | Después |
 |---------|-------|---------|
-| **Errores no capturados** | 500 sin informaciÃ³n | JSON estructurado con cÃ³digo |
+| **Errores no capturados** | 500 sin información | JSON estructurado con código |
 | **Conexiones Redis** | 1 por request | Singleton reutilizado |
-| **Fallos de LLM** | Narrativas `None` | Fallbacks estÃ¡ticos Ãºtiles |
-| **GeneraciÃ³n masiva de tickets** | Consume quota Groq | Sin LLM (10x mÃ¡s rÃ¡pido) |
-| **Partidos en frontend** | Datos mock estÃ¡ticos | API real con loading |
-| **Resiliencia DB** | PendingRollbackError | Rollback automÃ¡tico |
+| **Fallos de LLM** | Narrativas `None` | Fallbacks estáticos útiles |
+| **Generación masiva de tickets** | Consume quota Groq | Sin LLM (10x más rápido) |
+| **Partidos en frontend** | Datos mock estáticos | API real con loading |
+| **Resiliencia DB** | PendingRollbackError | Rollback automático |
 
 ---
 
-## ðŸŽ‰ Resumen de Fases Completadas
+## 🎉 Resumen de Fases Completadas
 
-| Fase | DescripciÃ³n | Estado |
+| Fase | Descripción | Estado |
 |------|-------------|--------|
-| Fase 0 | Estructura e IntegraciÃ³n Inicial | âœ… Completado |
-| Fase 1 | Ingesta de Datos desde API-Football | âœ… Completado |
-| Fase 1.5 | Capa de AbstracciÃ³n de Proveedores | âœ… Completado |
-| Fase 1.6 | IntegraciÃ³n DataIngestionService + ProviderRegistry | âœ… Completado |
-| Fase 1.7 | VerificaciÃ³n de SincronizaciÃ³n con Supabase | âœ… Completado |
-| Fase 2.0 | Agente de IA para Liga BetPlay - Infraestructura | âœ… Completado |
-| Fase 2.1 | Grafo LangGraph + AISearchAgentProvider | âœ… Completado |
-| Fase 3 | Motor Predictivo Cuantitativo (Poisson) | âœ… Completado |
-| Fase 4 | Motor TÃ¡ctico y Narrativo (Cerebro Cualitativo) | âœ… Completado |
-| Fase 4.1 | MigraciÃ³n de Anthropic a Google Gemini | âœ… Completado |
-| Fase 4.2 | Prueba de IntegraciÃ³n End-to-End con Gemini | âœ… Completado |
-| Fase 4.3 | Control de Concurrencia y Reintentos | âœ… Completado |
-| Fase 4.4 | IntegraciÃ³n Pipeline Completo con FastAPI | âœ… Completado |
-| Fase 4.5 | MigraciÃ³n de Google Gemini a Groq (Llama 3.3) | âœ… Completado |
-| Fase 4.6 | Ajustes Finales y Cierre de Fase 4 | âœ… Completado |
-| Fase 5 | CalibraciÃ³n de Poisson y Backtesting Walk-Forward | âœ… Completado |
-| Fase 5.1 | ConfiguraciÃ³n de 11 Ligas Activas Prioritarias | âœ… Completado |
-| Fase 5.2 | Script CLI de SincronizaciÃ³n de Partidos PrÃ³ximos | âœ… Completado |
-| Fase 5.3 | Scraper de Partidos con football-data.org | âœ… Completado |
-| Fase 5.4 | Scraper de Partidos con ESPN Scoreboard API | âœ… Completado |
-| Fase 5.4.1 | CorrecciÃ³n de Zona Horaria UTC â†’ COT | âœ… Completado |
-| Fase 6 | Motor de GeneraciÃ³n Inteligente de Tickets | âœ… Completado |
-| Fase 7 | Frontend Web con Next.js + ConexiÃ³n al Backend | âœ… Completado |
-| Fase 7.1 | Pulido Visual Premium del Frontend | âœ… Completado |
-| Fase 7.2 | LocalizaciÃ³n Completa al EspaÃ±ol | âœ… Completado |
-| Fase 7.3 | Resiliencia de CacheService ante Fallos de Redis | âœ… Completado |
-| **Fase 8** | **Ingesta de Cuotas Reales desde API-Football** | âœ… **Completado** |
-| **Fase 9** | **Optimizaciones de Resiliencia y Frontend** | âœ… **Completado** |
+| Fase 0 | Estructura e Integración Inicial | ✅ Completado |
+| Fase 1 | Ingesta de Datos desde API-Football | ✅ Completado |
+| Fase 1.5 | Capa de Abstracción de Proveedores | ✅ Completado |
+| Fase 1.6 | Integración DataIngestionService + ProviderRegistry | ✅ Completado |
+| Fase 1.7 | Verificación de Sincronización con Supabase | ✅ Completado |
+| Fase 2.0 | Agente de IA para Liga BetPlay - Infraestructura | ✅ Completado |
+| Fase 2.1 | Grafo LangGraph + AISearchAgentProvider | ✅ Completado |
+| Fase 3 | Motor Predictivo Cuantitativo (Poisson) | ✅ Completado |
+| Fase 4 | Motor Táctico y Narrativo (Cerebro Cualitativo) | ✅ Completado |
+| Fase 4.1 | Migración de Anthropic a Google Gemini | ✅ Completado |
+| Fase 4.2 | Prueba de Integración End-to-End con Gemini | ✅ Completado |
+| Fase 4.3 | Control de Concurrencia y Reintentos | ✅ Completado |
+| Fase 4.4 | Integración Pipeline Completo con FastAPI | ✅ Completado |
+| Fase 4.5 | Migración de Google Gemini a Groq (Llama 3.3) | ✅ Completado |
+| Fase 4.6 | Ajustes Finales y Cierre de Fase 4 | ✅ Completado |
+| Fase 5 | Calibración de Poisson y Backtesting Walk-Forward | ✅ Completado |
+| Fase 5.1 | Configuración de 11 Ligas Activas Prioritarias | ✅ Completado |
+| Fase 5.2 | Script CLI de Sincronización de Partidos Próximos | ✅ Completado |
+| Fase 5.3 | Scraper de Partidos con football-data.org | ✅ Completado |
+| Fase 5.4 | Scraper de Partidos con ESPN Scoreboard API | ✅ Completado |
+| Fase 5.4.1 | Corrección de Zona Horaria UTC → COT | ✅ Completado |
+| Fase 6 | Motor de Generación Inteligente de Tickets | ✅ Completado |
+| Fase 7 | Frontend Web con Next.js + Conexión al Backend | ✅ Completado |
+| Fase 7.1 | Pulido Visual Premium del Frontend | ✅ Completado |
+| Fase 7.2 | Localización Completa al Español | ✅ Completado |
+| Fase 7.3 | Resiliencia de CacheService ante Fallos de Redis | ✅ Completado |
+| **Fase 8** | **Ingesta de Cuotas Reales desde API-Football** | ✅ **Completado** |
+| **Fase 9** | **Optimizaciones de Resiliencia y Frontend** | ✅ **Completado** |
+| **Fase 10** | **Auditoría de Limpieza y Purga de Mock Data** | ✅ **Completado** |
+| **Fase 11** | **Deduplicación de Equipos y Partidos en Supabase** | ✅ **Completado** |
+| **Fase 12** | **Calibración de Boletos y 4 Fixes Críticos** | ✅ **Completado** |
+| **Fase 13** | **Rediseño FinTech (Estilo Betano) y Blindaje Tipográfico** | ✅ **Completado** |
+| **Fase 14** | **Auditoría de Código DeepSource (Seguridad/Bug Risk/Typecheck)** | ✅ **Completado** |
+| **Fase 15** | **Documentación de Lógica de Pronósticos para Analistas** | ✅ **Completado** |
+| **Fase 16** | **Criterio de Kelly Fraccional, Filtros Anti-Riesgo y Tarjetas Dinámicas** | ✅ **Completado** |
+| **Fase 17** | **Dixon-Coles, Binomial Negativa, Player Props y MTI** | ✅ **Completado** |
+| **Fase 18** | **Deduplicación Estricta Cross-Provider + Cuotas Reales de Props** | ✅ **Completado** |
+| **Fase 4.5 (bis)** | **Reestructuración de 26 Ligas, Fix Timezone y match_type** | ✅ **Completado** |
+| **Fase 2 (multi-tenancy)** | **user_id, RLS y Endpoint de Reclamación PRO** | ✅ **Completado** |
+| **Fase 6 (paywall)** | **Enforcement Server-Side del Paywall PRO** | ✅ **Completado** |
+| **Fase 6.1** | **CORS Configurable para Producción** | ✅ **Completado** |
+| **Fase 6.2** | **Reconciliación de Suscripciones** | ✅ **Completado** |
+| **Fase 6.3** | **Email vía Gmail SMTP** | ✅ **Completado** |
+| **Fase 6.4** | **Dev-Pro Bypass (X-Betmind-Dev-Pro)** | ✅ **Completado** |
+| **Sesión 2026-08-09** | **Stake en Tickets + Bankroll Real + Suscripciones Wompi E2E** | ✅ **Completado** |
+| **Sesión 2026-08-10** | **Auditoría Frontend + Paquete Seguridad Backend + Edad Mínima** | ✅ **Completado** |
 
 ---
 
-## ðŸš€ Estado Actual del Sistema
+## 🚀 Estado Actual del Sistema
 
 ### Arquitectura Final
 ```
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚                        FRONTEND (Next.js)                        â”‚
-â”‚  http://localhost:3000                                           â”‚
-â”‚  â”œâ”€ Dashboard con partidos reales desde API                      â”‚
-â”‚  â”œâ”€ Tickets generados con +EV real (cuotas de bookmakers)        â”‚
-â”‚  â”œâ”€ Loading states + degradaciÃ³n elegante                        â”‚
-â”‚  â””â”€ 100% localizado al espaÃ±ol                                   â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-                       â”‚
-                       â–¼
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚                      BACKEND (FastAPI)                           â”‚
-â”‚  http://localhost:8000/api/v1                                    â”‚
-â”‚  â”œâ”€ /matches/ â€” Partidos reales con equipos y ligas              â”‚
-â”‚  â”œâ”€ /predictions/{id} â€” Predicciones Poisson + tÃ¡cticas          â”‚
-â”‚  â”œâ”€ /tickets/generate â€” Tickets EDGE/VALUE/BOLD con +EV          â”‚
-â”‚  â”œâ”€ /backtesting/{league} â€” Walk-forward validation (admin)      â”‚
-â”‚  â”œâ”€ Manejadores de excepciones globales                          â”‚
-â”‚  â””â”€ CacheService singleton + degradaciÃ³n elegante                â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-                       â”‚
-                       â–¼
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚                    CAPA DE DATOS                                 â”‚
-â”‚  â”œâ”€ Supabase (PostgreSQL)                                        â”‚
-â”‚  â”‚   â”œâ”€ matches, teams, leagues                                  â”‚
-â”‚  â”‚   â”œâ”€ predictions, tactical_analyses                           â”‚
-â”‚  â”‚   â””â”€ bookmaker_odds (cuotas reales)                           â”‚
-â”‚  â”œâ”€ Redis (cachÃ© opcional, degradaciÃ³n elegante si falla)        â”‚
-â”‚  â””â”€ APIs Externas                                                â”‚
-â”‚      â”œâ”€ ESPN Scoreboard (partidos prÃ³ximos, gratuita)            â”‚
-â”‚      â”œâ”€ API-Football (cuotas, 100 req/dÃ­a free)                  â”‚
-â”‚      â””â”€ Groq API (Llama 3.1-8b-instant, narrativas tÃ¡cticas)    â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+┌─────────────────────────────────────────────────────────────────┐
+│                        FRONTEND (Next.js)                        │
+│  http://localhost:3000                                           │
+│  ├─ Dashboard con partidos reales desde API                      │
+│  ├─ Tickets generados con +EV real (cuotas de bookmakers)        │
+│  ├─ Loading states + degradación elegante                        │
+│  └─ 100% localizado al español                                   │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      BACKEND (FastAPI)                           │
+│  http://localhost:8000/api/v1                                    │
+│  ├─ /matches/ — Partidos reales con equipos y ligas              │
+│  ├─ /predictions/{id} — Predicciones Poisson + tácticas          │
+│  ├─ /tickets/generate — Tickets EDGE/VALUE/BOLD con +EV          │
+│  ├─ /backtesting/{league} — Walk-forward validation (admin)      │
+│  ├─ Manejadores de excepciones globales                          │
+│  └─ CacheService singleton + degradación elegante                │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    CAPA DE DATOS                                 │
+│  ├─ Supabase (PostgreSQL)                                        │
+│  │   ├─ matches, teams, leagues                                  │
+│  │   ├─ predictions, tactical_analyses                           │
+│  │   └─ bookmaker_odds (cuotas reales)                           │
+│  ├─ Redis (caché opcional, degradación elegante si falla)        │
+│  └─ APIs Externas                                                │
+│      ├─ ESPN Scoreboard (partidos próximos, gratuita)            │
+│      ├─ API-Football (cuotas, 100 req/día free)                  │
+│      └─ Groq API (Llama 3.1-8b-instant, narrativas tácticas)    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### MÃ©tricas Clave
-- **Ligas soportadas:** 11 ligas prioritarias (BetPlay, BrasileirÃ£o, Argentina, MÃ©xico, MLS, Chile, Ecuador, PerÃº, Suecia, Dinamarca, Suiza)
-- **Partidos sincronizados:** 73 partidos de hoy/maÃ±ana
-- **Cuotas sincronizadas:** 65 cuotas (1X2 + BTTS para 13 partidos)
-- **Tests unitarios:** 61+ tests pasando
-- **Tiempo de respuesta:** <1s (con cachÃ©), ~6s (sin cachÃ©, con LLM)
+### Métricas Clave (actualizado 2026-08-10)
+- **Ligas soportadas:** 26 ligas configuradas (LATAM + Europa Top + Copas) en `FEATURED_LEAGUES`
+- **Tests unitarios:** 192 passed (26s) + frontend `tsc --noEmit` sin errores
+- **Modelo LLM:** cascada Groq Llama 3.3 70B → 3.1 8B → Gemini 2.0 Flash (rotación multi-key)
+- **Pagos:** Wompi Sandbox E2E verificado (trial, activación por webhook, renovación COF, reembolso)
+- **Tiempo de respuesta:** <1s (con caché), ~2-6s (sin caché, con LLM)
 
-### PrÃ³ximos Pasos Sugeridos
+### Próximos Pasos Sugeridos
 1. **Player props:** Implementar generador de player_props_narrative
-2. **Modelos de tarjetas/cÃ³rneres:** cards_model.py, corners_model.py para probabilidades cuantitativas
-3. **MigraciÃ³n completa a Supabase:** Aplicar todas las migraciones SQL pendientes
-4. **Monitoreo en producciÃ³n:** Agregar mÃ©tricas de uso de API, costos, latencia
-5. **App mÃ³vil:** Conectar React Native + Expo al backend
-- [x] Implementar scraper de partidos con ESPN Scoreboard API (datos reales en tiempo real). âœ… Completado.
-- [x] Corregir manejo de zona horaria UTC â†’ COT (America/Bogota, UTC-5) en scraper de ESPN. âœ… Completado.
-- [x] Implementar Motor de GeneraciÃ³n Inteligente de Tickets (EDGE, VALUE, BOLD) con reglas de correlaciÃ³n. âœ… Completado.
-- [x] AuditorÃ­a y limpieza del prototipo frontend v0.dev (`apps/web`). âœ… Completado.
-- [x] Integrar frontend Next.js con backend FastAPI (cliente API, adaptador de tipos, CORS, loading states). âœ… Completado.
-- [x] LocalizaciÃ³n completa al espaÃ±ol (i18n) de toda la aplicaciÃ³n. âœ… Completado.
-- [x] Implementar resiliencia de CacheService ante fallos de Redis (fallback graceful). âœ… Completado.
+2. **Modelos de tarjetas/córneres:** cards_model.py, corners_model.py para probabilidades cuantitativas
+3. **Migración completa a Supabase:** Aplicar todas las migraciones SQL pendientes
+4. **Monitoreo en producción:** Agregar métricas de uso de API, costos, latencia
+5. **App móvil:** Conectar React Native + Expo al backend
+- [x] Implementar scraper de partidos con ESPN Scoreboard API (datos reales en tiempo real). ✅ Completado.
+- [x] Corregir manejo de zona horaria UTC → COT (America/Bogota, UTC-5) en scraper de ESPN. ✅ Completado.
+- [x] Implementar Motor de Generación Inteligente de Tickets (EDGE, VALUE, BOLD) con reglas de correlación. ✅ Completado.
+- [x] Auditoría y limpieza del prototipo frontend v0.dev (`apps/web`). ✅ Completado.
+- [x] Integrar frontend Next.js con backend FastAPI (cliente API, adaptador de tipos, CORS, loading states). ✅ Completado.
+- [x] Localización completa al español (i18n) de toda la aplicación. ✅ Completado.
+- [x] Implementar resiliencia de CacheService ante fallos de Redis (fallback graceful). ✅ Completado.
 - [ ] Ejecutar backtesting con datos reales de Supabase (temporada 2024) para validar calidad del modelo.
-- [ ] Agregar mÃ©tricas de monitoreo: uso de cachÃ©, costos de API, tiempo de respuesta.
+- [ ] Agregar métricas de monitoreo: uso de caché, costos de API, tiempo de respuesta.
 
 ---
 
-## ðŸŸ¢ Fase 10: AuditorÃ­a de Limpieza y Purga de Mock Data (Completado)
+## 🟢 Fase 10: Auditoría de Limpieza y Purga de Mock Data (Completado)
 
-### ðŸ“‹ Objetivo
-Eliminar todo cÃ³digo muerto, datos ficticios (mock/fake data) y componentes desconectados del proyecto para que la plataforma opere 100% con datos reales de la API y Supabase.
+### 📋 Objetivo
+Eliminar todo código muerto, datos ficticios (mock/fake data) y componentes desconectados del proyecto para que la plataforma opere 100% con datos reales de la API y Supabase.
 
-### 1. AuditorÃ­a Frontend (`apps/web`)
+### 1. Auditoría Frontend (`apps/web`)
 
 #### Mock Data Eliminado
-- **`lib/betmind.ts`**: Reducido de 657 â†’ 239 lÃ­neas. Eliminados:
+- **`lib/betmind.ts`**: Reducido de 657 → 239 líneas. Eliminados:
   - `LEAGUES` (11 ligas con conteos fake de partidos)
   - `TICKETS` (3 boletos parlays completos con nombres de equipos y cuotas inventadas)
-  - `REFEREES` (4 perfiles de Ã¡rbitros con estadÃ­sticas falsas)
+  - `REFEREES` (4 perfiles de árbitros con estadísticas falsas)
   - `MATCHES` (8 partidos completos con lambdas, odds, pros/cons y summaries ficticios)
-  - `MODEL_HEALTH` (mÃ©tricas brier/hitRate/opportunities hardcodeadas)
-- Conservadas: interfaces TypeScript, `MODE_META`, helpers matemÃ¡ticos (`goalDistribution`, `impliedProbability`, `expectedValue`, etc.)
+  - `MODEL_HEALTH` (métricas brier/hitRate/opportunities hardcodeadas)
+- Conservadas: interfaces TypeScript, `MODE_META`, helpers matemáticos (`goalDistribution`, `impliedProbability`, `expectedValue`, etc.)
 
 #### Componentes Reconectados
-- **`dashboard.tsx`**: Eliminado `useState(TICKETS)` (mock init). Eliminados fallbacks en `catch` y condicionales que revertÃ­an a `TICKETS`. Ahora: si API vacÃ­a â†’ `[]`.
-- **`league-sidebar.tsx`**: Reescrito completamente. Importa `fetchLeagues()` desde `lib/api.ts`. Sidebar con datos reales de Supabase, agrupados por regiÃ³n con conteo real de partidos activos, loading skeletons.
+- **`dashboard.tsx`**: Eliminado `useState(TICKETS)` (mock init). Eliminados fallbacks en `catch` y condicionales que revertían a `TICKETS`. Ahora: si API vacía → `[]`.
+- **`league-sidebar.tsx`**: Reescrito completamente. Importa `fetchLeagues()` desde `lib/api.ts`. Sidebar con datos reales de Supabase, agrupados por región con conteo real de partidos activos, loading skeletons.
 - **`api.ts`**: Agregado `fetchLeagues()`, `Match.leagueExternalId` para filtrado correcto. `mapBackendMatch` ahora propaga odds reales desde el backend enriquecido.
 
-### 2. AuditorÃ­a Backend (`apps/api`)
+### 2. Auditoría Backend (`apps/api`)
 
-#### 6 Archivos de CÃ³digo Muerto Eliminados
-| Archivo | LÃ­neas | Motivo |
+#### 6 Archivos de Código Muerto Eliminados
+| Archivo | Líneas | Motivo |
 |---------|:------:|--------|
 | `engine/poisson_model.py` | 57 | Duplicado redundante; pipeline real usa `betmind_ml.models.poisson_engine` |
 | `engine/value_calculator.py` | 245 | Duplicado de `betmind_ml.ev.ev_calculator`; nunca importado |
-| `engine/feature_builder.py` | 79 | HuÃ©rfano; solo importado por value_calculator (tambiÃ©n muerto) |
+| `engine/feature_builder.py` | 79 | Huérfano; solo importado por value_calculator (también muerto) |
 | `services/gemini_service.py` | 42 | Nunca importado; la app usa Groq, no Gemini |
-| `repositories/prediction_repository.py` | 39 | Nunca importado; tabla predictions existe pero vacÃ­a |
+| `repositories/prediction_repository.py` | 39 | Nunca importado; tabla predictions existe pero vacía |
 | `repositories/user_repository.py` | 22 | Nunca importado; auth endpoints devuelven 501 |
 
 #### Endpoints Creados
 - **`GET /api/v1/leagues/`** (`routes/v1/leagues.py`): JOIN real con `matches` para conteo de partidos activos (`SCHEDULED` + `LIVE`). 13 ligas con conteos reales.
-- **`GET /api/v1/matches/`** enriquecido: ahora incluye `odds` (home/draw/away/over25/btts) desde `bookmaker_odds` vÃ­a `_fetch_odds_for_matches()`.
+- **`GET /api/v1/matches/`** enriquecido: ahora incluye `odds` (home/draw/away/over25/btts) desde `bookmaker_odds` vía `_fetch_odds_for_matches()`.
 
-#### ConfiguraciÃ³n Limpiada
+#### Configuración Limpiada
 - **`config.py`**: Eliminado `GEMINI_API_KEY` (dependencia muerta).
 - **`.env.example`**: Actualizado con variables reales (`FOOTBALL_DATA_KEY`, `GROQ_API_KEYS`, `ANTHROPIC_API_KEY`, `ADMIN_API_KEY`).
 - **`package-lock.json`**: Eliminado (conflicto con `pnpm-lock.yaml`, el proyecto usa pnpm).
 
 ### 3. Batch de Predicciones Poisson
-- **Script creado**: `scripts/batch_predict.py` â€” ejecuta pipeline Poisson para todos los partidos `SCHEDULED` contra Supabase.
+- **Script creado**: `scripts/batch_predict.py` — ejecuta pipeline Poisson para todos los partidos `SCHEDULED` contra Supabase.
 - **Fix en orquestador**: `_build_bookmaker_odds` ahora maneja `odds=None` correctamente (antes crash con `'NoneType' has no attribute 'home_win'`).
 - **Resultado**: 53/53 partidos procesados exitosamente en modo cuantitativo (sin LLM).
 
-### 4. VerificaciÃ³n
+### 4. Verificación
 - **TypeScript**: `tsc --noEmit` pasa limpio (0 errores).
 - **Python**: Todos los archivos modificados compilan sin errores de sintaxis.
 - **Frontend**: Cartelera muestra datos reales desde API, sidebar con ligas reales y conteo de partidos.
 
 ---
 
-## ðŸŸ¢ Fase 11: DeduplicaciÃ³n de Equipos y Partidos en Supabase (Completado)
+## 🟢 Fase 11: Deduplicación de Equipos y Partidos en Supabase (Completado)
 
-### ðŸ“‹ Problema
-360 equipos con 42 duplicados (variantes de nombre: "AtlÃ©tico TucumÃ¡n" vs "Atletico Tucuman", "Liverpool" vs "Liverpool FC"). 53 partidos SCHEDULED con 7 duplicados (misma fecha/hora, equipos equivalentes con diferentes IDs). Causa: 3 rutas de ingesta independientes (API-Football, football-data.org, ESPN scraper) sin canonicalizaciÃ³n de nombres.
+### 📋 Problema
+360 equipos con 42 duplicados (variantes de nombre: "Atlético Tucumán" vs "Atletico Tucuman", "Liverpool" vs "Liverpool FC"). 53 partidos SCHEDULED con 7 duplicados (misma fecha/hora, equipos equivalentes con diferentes IDs). Causa: 3 rutas de ingesta independientes (API-Football, football-data.org, ESPN scraper) sin canonicalización de nombres.
 
 ### 1. Limpieza SQL en Supabase
-MigraciÃ³n `deduplicate_teams_and_matches` aplicada en 4 etapas transaccionales:
+Migración `deduplicate_teams_and_matches` aplicada en 4 etapas transaccionales:
 
-| MÃ©trica | Antes | DespuÃ©s |
+| Métrica | Antes | Después |
 |---------|:---:|:---:|
 | Equipos totales | 360 | **318** (-42) |
-| Equipos Ãºnicos normalizados | 318 | 318 (=) |
+| Equipos únicos normalizados | 318 | 318 (=) |
 | Partidos SCHEDULED | 53 | **46** (-7) |
-| Fixtures Ãºnicos | 46 | 46 (0 duplicados) |
+| Fixtures únicos | 46 | 46 (0 duplicados) |
 
-### 2. MÃ³dulo de NormalizaciÃ³n
+### 2. Módulo de Normalización
 - **Creado** `services/team_normalizer.py` con `canonical_team_name()`:
-  - Descompone acentos (NFKD) â†’ lowercase â†’ elimina sufijos (`FC`, `SC`, `CF`, `AC`, `CD`, `SA`, `DE`) â†’ elimina puntuaciÃ³n.
-  - Ej: `"AtlÃ©tico TucumÃ¡n"` â†’ `"atletico tucuman"`, `"Liverpool FC"` â†’ `"liverpool"`.
+  - Descompone acentos (NFKD) → lowercase → elimina sufijos (`FC`, `SC`, `CF`, `AC`, `CD`, `SA`, `DE`) → elimina puntuación.
+  - Ej: `"Atlético Tucumán"` → `"atletico tucuman"`, `"Liverpool FC"` → `"liverpool"`.
 
 ### 3. TeamRepository con Cross-Provider Matching
-- **`upsert()` actualizado**: 3 niveles de bÃºsqueda:
-  1. `get_by_external_id()` â€” fast path (misma fuente de datos)
-  2. `_find_by_normalized_name()` â€” busca por nombre canonicalizado (cross-provider)
-  3. Insert â€” solo si no existe por ningÃºn criterio
+- **`upsert()` actualizado**: 3 niveles de búsqueda:
+  1. `get_by_external_id()` — fast path (misma fuente de datos)
+  2. `_find_by_normalized_name()` — busca por nombre canonicalizado (cross-provider)
+  3. Insert — solo si no existe por ningún criterio
 - Si encuentra match por nombre canonicalizado, actualiza el registro existente en lugar de crear duplicado.
 
-### 4. ReparaciÃ³n de `sync_today_matches.py`
-- **hash(team_name) â†’ `hashlib.md5(name).hexdigest()[:8]`**: IDs determinÃ­sticos entre ejecuciones.
-- **InserciÃ³n directa `session.add(Team(...))` â†’ `team_repo.upsert(Team(...))`**: Ahora pasa por canonicalizaciÃ³n.
-- **BÃºsqueda por nombre exacto â†’ `team_repo._find_by_normalized_name()`**: Cross-provider matching.
+### 4. Reparación de `sync_today_matches.py`
+- **hash(team_name) → `hashlib.md5(name).hexdigest()[:8]`**: IDs determinísticos entre ejecuciones.
+- **Inserción directa `session.add(Team(...))` → `team_repo.upsert(Team(...))`**: Ahora pasa por canonicalización.
+- **Búsqueda por nombre exacto → `team_repo._find_by_normalized_name()`**: Cross-provider matching.
 
 ---
 
-## ðŸŸ¢ Fase 12: CalibraciÃ³n de Boletos y 4 Fixes CrÃ­ticos (Completado)
+## 🟢 Fase 12: Calibración de Boletos y 4 Fixes Críticos (Completado)
 
-### ðŸ“‹ Problema Inicial
-Solo se generaban 2 boletos con cuotas irreales (@3.80 Ã— @4.60 Ã— @4.75 = 83.03x), partidos pasados se incluÃ­an, VALUE y BOLD eran idÃ©nticos, y el anÃ¡lisis tÃ¡ctico llegaba vacÃ­o.
+### 📋 Problema Inicial
+Solo se generaban 2 boletos con cuotas irreales (@3.80 × @4.60 × @4.75 = 83.03x), partidos pasados se incluían, VALUE y BOLD eran idénticos, y el análisis táctico llegaba vacío.
 
-### 1. CalibraciÃ³n de Umbrales (`ticket_builder.py`)
+### 1. Calibración de Umbrales (`ticket_builder.py`)
 
-| Modo | Cuota combinada | Cuota individual mÃ¡x | Prob mÃ­nima | Patas |
+| Modo | Cuota combinada | Cuota individual máx | Prob mínima | Patas |
 |------|:---:|:---:|:---:|:---:|
-| **EDGE** | 1.50â€“3.50 | â‰¤2.10 | 0.40 | 2 |
-| **VALUE** | 2.50â€“12.00 | â‰¤4.00 | 0.30 | 2-3 |
-| **BOLD** | 8.00â€“30.00 | â‰¤8.00 | 0.22 | 3-4 |
+| **EDGE** | 1.50–3.50 | ≤2.10 | 0.40 | 2 |
+| **VALUE** | 2.50–12.00 | ≤4.00 | 0.30 | 2-3 |
+| **BOLD** | 8.00–30.00 | ≤8.00 | 0.22 | 3-4 |
 
-- **Enforcement estricto**: Si combined fuera de rango despuÃ©s de correcciÃ³n â†’ `return None`. No se publican boletos con cuotas desproporcionadas.
-- **`max_individual_odds`**: Descarta patas individuales que excedan el lÃ­mite del modo.
-- **`exclude_match_ids`**: ParÃ¡metro opcional para cross-mode dedup.
+- **Enforcement estricto**: Si combined fuera de rango después de corrección → `return None`. No se publican boletos con cuotas desproporcionadas.
+- **`max_individual_odds`**: Descarta patas individuales que excedan el límite del modo.
+- **`exclude_match_ids`**: Parámetro opcional para cross-mode dedup.
 
 ### 2. Partidos Futuros Exclusivamente (`match_repository.py`)
-- `get_matches_by_date()`: AÃ±adido `Match.match_date > now_utc` â€” solo partidos estrictamente futuros.
-- `get_by_id()`: AÃ±adido `selectinload(Match.league)` â€” evita crash por lazy load de `match.league.external_id`.
+- `get_matches_by_date()`: Añadido `Match.match_date > now_utc` — solo partidos estrictamente futuros.
+- `get_by_id()`: Añadido `selectinload(Match.league)` — evita crash por lazy load de `match.league.external_id`.
 
-### 3. DesduplicaciÃ³n Cross-Mode (`tickets.py`)
-- `used_match_ids` acumulativo entre modos: EDGE â†’ VALUE â†’ BOLD.
+### 3. Desduplicación Cross-Mode (`tickets.py`)
+- `used_match_ids` acumulativo entre modos: EDGE → VALUE → BOLD.
 - Cada boleto usa partidos DIFERENTES (7 match_ids distintos entre los 3 boletos).
 
-### 4. AnÃ¡lisis TÃ¡ctico Enriquecido (`prediction_orchestrator.py`)
+### 4. Análisis Táctico Enriquecido (`prediction_orchestrator.py`)
 - `_build_minimal_tactical_analysis()`: Ahora construye `MarketNarrative` completo con:
-  - Î»_local, Î»_visitante (expectativa de goles Poisson)
+  - λ_local, λ_visitante (expectativa de goles Poisson)
   - Probabilidades 1X2, Over 2.5, Over 1.5
   - Favorito del partido con probabilidad
-  - RecomendaciÃ³n de mercado (Over/Under)
+  - Recomendación de mercado (Over/Under)
   - `ProConPoint` con peso HIGH/MEDIUM/LOW
   - `SignalStrength` MODERATE/WEAK
 - `_build_tactical_narrative()` y `_build_tactical_analysis_response()`: Protegidos para dicts y Pydantic models.
 - `_to_serializable()`: Helper que maneja `.model_dump()` para Pydantic y dicts nativos.
 
 ### 5. Partidos sin Bookmaker Odds (`tickets.py`)
-- `_derive_markets_from_probabilities()`: Para partidos sin odds reales, deriva 5 mercados (1X2_HOME, DRAW, AWAY, OVER_2_5, OVER_1_5) desde probabilidades Poisson con overround sintÃ©tico del 8%.
+- `_derive_markets_from_probabilities()`: Para partidos sin odds reales, deriva 5 mercados (1X2_HOME, DRAW, AWAY, OVER_2_5, OVER_1_5) desde probabilidades Poisson con overround sintético del 8%.
 - Resultado: **218 oportunidades +EV** (antes solo 11 con odds reales).
 
 ### 6. Fix de Bug en Orquestador de Predicciones
 - **Bug**: `PredictionNotAvailableException` para TODOS los partidos porque `get_by_id()` no cargaba `Match.league`.
 - **Fix**: Agregado `selectinload(Match.league)` en `get_by_id()`.
 
-### 7. VerificaciÃ³n Final
+### 7. Verificación Final
 ```
-POST /api/v1/tickets/generate â†’ 3 boletos generados
+POST /api/v1/tickets/generate → 3 boletos generados
 
 === EDGE MODE ===
   Legs: 2 | Odds: 2.0x | EV: 8.0% | Conf: 42
@@ -4653,20 +4671,20 @@ POST /api/v1/tickets/generate â†’ 3 boletos generados
 === VALUE MODE ===
   Legs: 2 | Odds: 8.94x | EV: 40.2% | Conf: 95
   Primera A: Internacional de Bogota vs America de Cali | Gana Local | P=47.6% odds=@2.98
-  Primera A: Ãguilas Doradas vs Independiente Santa Fe | Empate | P=46.2% odds=@3.00
+  Primera A: Águilas Doradas vs Independiente Santa Fe | Empate | P=46.2% odds=@3.00
 
 === BOLD MODE ===
   Legs: 4 | Odds: 25.41x | EV: 16.8% | Conf: 87
   Primera A: Alianza FC vs Fortaleza CEIF | Empate | odds=@3.10
   Liga Profesional: Atletico Tucuman vs Independ. Rivadavia | Gana Local | odds=@2.53
-  Liga Pro: Aucas vs MacarÃ¡ | Empate | odds=@1.80
-  Liga Pro: DelfÃ­n vs Leones | Empate | odds=@1.80
+  Liga Pro: Aucas vs Macará | Empate | odds=@1.80
+  Liga Pro: Delfín vs Leones | Empate | odds=@1.80
 
-âœ“ Cuotas coherentes por modo (no solapadas)
-âœ“ Partidos estrictamente futuros (46 matches > NOW)
-âœ“ 7 partidos distintos entre los 3 boletos
-âœ“ AnÃ¡lisis tÃ¡ctico con datos Poisson (Î», probabilidades, favorito)
-âœ“ TypeScript: OK | Python: OK
+✓ Cuotas coherentes por modo (no solapadas)
+✓ Partidos estrictamente futuros (46 matches > NOW)
+✓ 7 partidos distintos entre los 3 boletos
+✓ Análisis táctico con datos Poisson (λ, probabilidades, favorito)
+✓ TypeScript: OK | Python: OK
 ```
 
 ### 8. Archivos Modificados en esta Fase
@@ -4675,15 +4693,15 @@ POST /api/v1/tickets/generate â†’ 3 boletos generados
 | `ticket_builder.py` | MODE_CONFIG recalibrado, max_individual_odds, exclude_match_ids, enforcement estricto |
 | `match_repository.py` | `match_date > now_utc`, `selectinload(Match.league)` en get_by_id |
 | `tickets.py` | Cross-mode dedup, `_derive_markets_from_probabilities`, include_tactical_analysis |
-| `prediction_orchestrator.py` | `_build_minimal_tactical_analysis` enriquecido, `_to_serializable`, protecciÃ³n para dict/Pydantic |
+| `prediction_orchestrator.py` | `_build_minimal_tactical_analysis` enriquecido, `_to_serializable`, protección para dict/Pydantic |
 | `team_repository.py` | `upsert()` con canonical matching, `_find_by_normalized_name()` |
-| `team_normalizer.py` | NUEVO: `canonical_team_name()` con NFKD + sufijos + puntuaciÃ³n |
-| `sync_today_matches.py` | hashâ†’md5, raw SQLâ†’team_repo.upsert, Team import top-level |
+| `team_normalizer.py` | NUEVO: `canonical_team_name()` con NFKD + sufijos + puntuación |
+| `sync_today_matches.py` | hash→md5, raw SQL→team_repo.upsert, Team import top-level |
 | `routes/v1/leagues.py` | NUEVO: GET /api/v1/leagues/ con JOIN y conteo real de partidos |
 | `routes/v1/matches.py` | `_fetch_odds_for_matches()`, odds en `_match_to_dict_full` |
 | `config.py` | Eliminado `GEMINI_API_KEY` |
 | `.env.example` | Actualizado con variables reales (GROQ_API_KEYS, ANTHROPIC_API_KEY, ADMIN_API_KEY) |
-| `betmind.ts` | Reducido 657â†’239 lÃ­neas (solo interfaces + helpers + MODE_META) |
+| `betmind.ts` | Reducido 657→239 líneas (solo interfaces + helpers + MODE_META) |
 | `dashboard.tsx` | Sin mock fallbacks, leaguePills desde API, fetchLeagues |
 | `league-sidebar.tsx` | Reescrito con fetchLeagues reales, loading skeletons |
 | `api.ts` | fetchLeagues, leagueExternalId, odds desde backend enriquecido |
@@ -4691,92 +4709,92 @@ POST /api/v1/tickets/generate â†’ 3 boletos generados
 
 ---
 
-## ðŸŸ¢ Fase 13: RediseÃ±o FinTech (Estilo Betano), Aislamiento de Vistas, DesambiguaciÃ³n de Ligas & Blindaje TipogrÃ¡fico (Completado)
+## 🟢 Fase 13: Rediseño FinTech (Estilo Betano), Aislamiento de Vistas, Desambiguación de Ligas & Blindaje Tipográfico (Completado)
 
-### ðŸ“‹ Problema & Objetivos de la SesiÃ³n
-1. **Sobrecarga Visual ("Neon AI Template"):** La interfaz lucÃ­a como una plantilla oscura genÃ©rica. Se requerÃ­a una transiciÃ³n hacia una experiencia SaaS FinTech limpia, compacta y profesional tomando como referencia visual los boletos de apuestas de Betano.
-2. **AmbigÃ¼edad en Nombres de Ligas y Banderas Incorrectas:** Ligas homÃ³nimas como "Serie A" no especificaban su paÃ­s (Italia vs Brasil). AdemÃ¡s, partidos brasileÃ±os estaban saliendo etiquetados errÃ³neamente con el cÃ³digo ISO `IT` (Italia) debido a un diccionario estÃ¡tico incompleto en el frontend.
-3. **Flujo de NavegaciÃ³n Intrusionante:** El modal flotante para ver el detalle de partido rompÃ­a la experiencia en mÃ³viles y generaba problemas de scroll.
-4. **ContaminaciÃ³n TipogrÃ¡fica Global:** En algunos navegadores, los nÃºmeros de las cuotas y marcadores se renderizaban con tipografÃ­a serif/curvada (`Playfair Display`) sobreescribiendo las variables numÃ©ricas de Tailwind.
-
----
-
-### 1. ðŸ—ï¸ Arquitectura & RefactorizaciÃ³n de Backend (`apps/api`)
-- **PropagaciÃ³n del PaÃ­s de Origen (`routes/v1/matches.py`):** En `_match_to_dict_full()`, se serializÃ³ explÃ­citamente el campo `"league_country": m.league.country` desde la base de datos hacia el payload JSON de la API. Esto independiza al frontend de adivinar el paÃ­s por el nombre de la liga.
-- **Estabilidad de Rutas & ORM:** Se mantuvo la integridad transaccional y se verificÃ³ que el endpoint `/api/v1/matches/` devuelva correctamente la relaciÃ³n del paÃ­s para las 11 ligas objetivo.
+### 📋 Problema & Objetivos de la Sesión
+1. **Sobrecarga Visual ("Neon AI Template"):** La interfaz lucía como una plantilla oscura genérica. Se requería una transición hacia una experiencia SaaS FinTech limpia, compacta y profesional tomando como referencia visual los boletos de apuestas de Betano.
+2. **Ambigüedad en Nombres de Ligas y Banderas Incorrectas:** Ligas homónimas como "Serie A" no especificaban su país (Italia vs Brasil). Además, partidos brasileños estaban saliendo etiquetados erróneamente con el código ISO `IT` (Italia) debido a un diccionario estático incompleto en el frontend.
+3. **Flujo de Navegación Intrusionante:** El modal flotante para ver el detalle de partido rompía la experiencia en móviles y generaba problemas de scroll.
+4. **Contaminación Tipográfica Global:** En algunos navegadores, los números de las cuotas y marcadores se renderizaban con tipografía serif/curvada (`Playfair Display`) sobreescribiendo las variables numéricas de Tailwind.
 
 ---
 
-### 2. ðŸŽ¨ RefactorizaciÃ³n Frontend & UI/UX FinTech (`apps/web`)
-- **DesambiguaciÃ³n DinÃ¡mica de Ligas & Banderas (`lib/api.ts` & `lib/betmind.ts`):**
-  - Se eliminÃ³ el diccionario estÃ¡tico `LEAGUE_FLAGS` que causaba colisiones en ligas homÃ³nimas.
-  - Se integrÃ³ `leagueCountry: string | null` en la interfaz `Match` (`betmind.ts`) y `league_country` en `BackendMatch` (`api.ts`).
-  - Se implementÃ³ la tabla de bÃºsqueda `COUNTRY_ISO` para transformar nombres de paÃ­s en inglÃ©s (ej. `Brazil`, `England`, `Spain`, `Colombia`) a cÃ³digos ISO-3166-1 alfa-2 o alfa-3 (`BR`, `GB-ENG`, `ES`, `CO`).
-  - Se creÃ³ el generador algorÃ­tmico Unicode `isoToFlagEmoji(code)` y la funciÃ³n `flagForCountry(country, fallbackLeague)`, garantizando un 100% de precisiÃ³n regional sin banderas incorrectas.
-  - Se desarrollÃ³ `formatCompositeLeagueName(name, country)`, que transforma dinÃ¡micamente nombres genÃ©ricos en etiquetas compuestas inequÃ­vocas (ej. **`Serie A Â· Brazil`**, **`Serie A Â· Italia`**).
-- **RediseÃ±o Estilo Betano en Boletos (`ticket-card.tsx`, `ticket-leg.tsx`, `odds-pill.tsx`):**
-  - **Cuota Total Combinada:** Renderizada en el header de cada boleto bajo el formato estilizado **`@ 2.07`** (con espacio intermedio) utilizando tipografÃ­a monospaciada de alto contraste.
-  - **Limpieza de Relleno:** Eliminado el texto estÃ¡tico *"Todas las selecciones pasaron la validaciÃ³n de correlaciÃ³n negativa"*, liberando espacio para destacar el **EV Promedio** y la barra de confianza.
-  - **Filas de SelecciÃ³n (`TicketLeg`):** Separadas con divisores horizontales suaves (`border-border-subtle`). Truncado y padding mejorados para que los nombres de los equipos y mercados no sufran puntos suspensivos innecesarios.
-  - **Cajitas de Cuotas (`OddsPill`):** Se creÃ³ el componente dedicado `odds-pill.tsx` replicando el diseÃ±o de Betano: contenedor inset oscuro (`bg-slate-800/90`), borde sutil (`border-slate-700/60`), texto claro y tipografÃ­a monospaciada inline resistente a sobreescrituras (`ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas...`).
-  - **Acciones del Footer:** Se eliminÃ³ por completo el botÃ³n `Copiar`, dejando como llamada a la acciÃ³n Ãºnica el botÃ³n **"â­ Seguir"** (ancho completo o centrado) conectado al sistema de tracking.
-- **Aislamiento ArquitectÃ³nico de Vistas (`dashboard.tsx`):**
-  - RefactorizaciÃ³n de la navegaciÃ³n por pestaÃ±as (`Boletos`, `Partidos`, `EscÃ¡ner`).
-  - La pestaÃ±a **Boletos** se convirtiÃ³ en una vista aislada que renderiza Ãºnicamente la grilla de boletos y el `<TrackingPanel />`. Se eliminÃ³ la lista secundaria de partidos de esta pestaÃ±a para evitar confusiÃ³n visual y mejorar la velocidad de carga.
-- **PÃ¡gina de Detalle a Pantalla Completa (`app/partidos/[id]/page.tsx`):**
-  - Se eliminÃ³ el antiguo modal flotante (`match-modal.tsx`) que interceptaba la vista principal.
-  - Se construyÃ³ la ruta de pÃ¡gina completa `/partidos/[id]` con cabecera sticky de navegaciÃ³n, botÃ³n de retroceso (*Volver a Partidos*) y organizaciÃ³n vertical en 5 bloques modulares: Cabecera con marcadores en vivo, GrÃ¡fico y Matriz de Poisson, Desglose de Valor Esperado (+EV), AnÃ¡lisis TÃ¡ctico LLM (Groq/Gemini) y Perfil del Ãrbitro.
+### 1. 🏗️ Arquitectura & Refactorización de Backend (`apps/api`)
+- **Propagación del País de Origen (`routes/v1/matches.py`):** En `_match_to_dict_full()`, se serializó explícitamente el campo `"league_country": m.league.country` desde la base de datos hacia el payload JSON de la API. Esto independiza al frontend de adivinar el país por el nombre de la liga.
+- **Estabilidad de Rutas & ORM:** Se mantuvo la integridad transaccional y se verificó que el endpoint `/api/v1/matches/` devuelva correctamente la relación del país para las 11 ligas objetivo.
+
+---
+
+### 2. 🎨 Refactorización Frontend & UI/UX FinTech (`apps/web`)
+- **Desambiguación Dinámica de Ligas & Banderas (`lib/api.ts` & `lib/betmind.ts`):**
+  - Se eliminó el diccionario estático `LEAGUE_FLAGS` que causaba colisiones en ligas homónimas.
+  - Se integró `leagueCountry: string | null` en la interfaz `Match` (`betmind.ts`) y `league_country` en `BackendMatch` (`api.ts`).
+  - Se implementó la tabla de búsqueda `COUNTRY_ISO` para transformar nombres de país en inglés (ej. `Brazil`, `England`, `Spain`, `Colombia`) a códigos ISO-3166-1 alfa-2 o alfa-3 (`BR`, `GB-ENG`, `ES`, `CO`).
+  - Se creó el generador algorítmico Unicode `isoToFlagEmoji(code)` y la función `flagForCountry(country, fallbackLeague)`, garantizando un 100% de precisión regional sin banderas incorrectas.
+  - Se desarrolló `formatCompositeLeagueName(name, country)`, que transforma dinámicamente nombres genéricos en etiquetas compuestas inequívocas (ej. **`Serie A · Brazil`**, **`Serie A · Italia`**).
+- **Rediseño Estilo Betano en Boletos (`ticket-card.tsx`, `ticket-leg.tsx`, `odds-pill.tsx`):**
+  - **Cuota Total Combinada:** Renderizada en el header de cada boleto bajo el formato estilizado **`@ 2.07`** (con espacio intermedio) utilizando tipografía monospaciada de alto contraste.
+  - **Limpieza de Relleno:** Eliminado el texto estático *"Todas las selecciones pasaron la validación de correlación negativa"*, liberando espacio para destacar el **EV Promedio** y la barra de confianza.
+  - **Filas de Selección (`TicketLeg`):** Separadas con divisores horizontales suaves (`border-border-subtle`). Truncado y padding mejorados para que los nombres de los equipos y mercados no sufran puntos suspensivos innecesarios.
+  - **Cajitas de Cuotas (`OddsPill`):** Se creó el componente dedicado `odds-pill.tsx` replicando el diseño de Betano: contenedor inset oscuro (`bg-slate-800/90`), borde sutil (`border-slate-700/60`), texto claro y tipografía monospaciada inline resistente a sobreescrituras (`ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas...`).
+  - **Acciones del Footer:** Se eliminó por completo el botón `Copiar`, dejando como llamada a la acción única el botón **"⭐ Seguir"** (ancho completo o centrado) conectado al sistema de tracking.
+- **Aislamiento Arquitectónico de Vistas (`dashboard.tsx`):**
+  - Refactorización de la navegación por pestañas (`Boletos`, `Partidos`, `Escáner`).
+  - La pestaña **Boletos** se convirtió en una vista aislada que renderiza únicamente la grilla de boletos y el `<TrackingPanel />`. Se eliminó la lista secundaria de partidos de esta pestaña para evitar confusión visual y mejorar la velocidad de carga.
+- **Página de Detalle a Pantalla Completa (`app/partidos/[id]/page.tsx`):**
+  - Se eliminó el antiguo modal flotante (`match-modal.tsx`) que interceptaba la vista principal.
+  - Se construyó la ruta de página completa `/partidos/[id]` con cabecera sticky de navegación, botón de retroceso (*Volver a Partidos*) y organización vertical en 5 bloques modulares: Cabecera con marcadores en vivo, Gráfico y Matriz de Poisson, Desglose de Valor Esperado (+EV), Análisis Táctico LLM (Groq/Gemini) y Perfil del Árbitro.
 - **Barra Lateral de Ligas (`league-sidebar.tsx`):**
-  - Corregido un bug en la precedencia de operadores lÃ³gicos de la funciÃ³n `resolveRegion()`.
-  - Ahora clasifica correctamente las competiciones utilizando `country` y muestra etiquetas compuestas con bandera (ej. `ðŸ‡§ðŸ‡· Serie A Â· Brasil`, `ðŸ‡¬ðŸ‡§ Premier League`).
+  - Corregido un bug en la precedencia de operadores lógicos de la función `resolveRegion()`.
+  - Ahora clasifica correctamente las competiciones utilizando `country` y muestra etiquetas compuestas con bandera (ej. `🇧🇷 Serie A · Brasil`, `🇬🇧 Premier League`).
 
 ---
 
-### 3. ðŸ›¡ï¸ Blindaje TipogrÃ¡fico en Tailwind CSS v4 (`app/globals.css`)
-- **ResoluciÃ³n de ContaminaciÃ³n Serif:** Se identificÃ³ que `@theme inline` no tenÃ­a definida explÃ­citamente la variable monospaciada, haciendo que nÃºmeros y cuotas heredaran propiedades serif en ciertas resoluciones.
-- **SoluciÃ³n CanÃ³nica Implementada:**
-  - Se registrÃ³ explÃ­citamente `--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;` dentro del `@theme inline`.
-  - Se actualizaron las reglas `.tabular` en `@layer base` y `@utility num` aÃ±adiendo la propiedad `font-family: var(--font-mono);`, garantizando que todos los elementos financieros y numÃ©ricos de la plataforma utilicen una fuente tÃ©cnica, limpia y alineada tabularmente.
+### 3. 🛡️ Blindaje Tipográfico en Tailwind CSS v4 (`app/globals.css`)
+- **Resolución de Contaminación Serif:** Se identificó que `@theme inline` no tenía definida explícitamente la variable monospaciada, haciendo que números y cuotas heredaran propiedades serif en ciertas resoluciones.
+- **Solución Canónica Implementada:**
+  - Se registró explícitamente `--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;` dentro del `@theme inline`.
+  - Se actualizaron las reglas `.tabular` en `@layer base` y `@utility num` añadiendo la propiedad `font-family: var(--font-mono);`, garantizando que todos los elementos financieros y numéricos de la plataforma utilicen una fuente técnica, limpia y alineada tabularmente.
 
 ---
 
-### 4. ðŸ§ª VerificaciÃ³n & Control de Calidad
-- **Frontend TypeScript Check:** Ejecutado `npx tsc --noEmit` sobre `apps/web` con **0 errores de compilaciÃ³n**.
+### 4. 🧪 Verificación & Control de Calidad
+- **Frontend TypeScript Check:** Ejecutado `npx tsc --noEmit` sobre `apps/web` con **0 errores de compilación**.
 - **Backend Import & Syntax Check:** Verificado mediante CLI de Python (`python -c "import apps.api.main; print('API OK')"`) arrojando **API OK**.
-- **InspecciÃ³n de Datos en Vivo:** Confirmada la correcta serializaciÃ³n de `league_country` y la resoluciÃ³n visual del formato compuesto para la Serie A brasileÃ±a y colombiana.
+- **Inspección de Datos en Vivo:** Confirmada la correcta serialización de `league_country` y la resolución visual del formato compuesto para la Serie A brasileña y colombiana.
 
 ---
 
-### 5. ðŸ“‹ Resumen de Archivos Modificados en la SesiÃ³n
+### 5. 📋 Resumen de Archivos Modificados en la Sesión
 | Archivo | Cambio |
 |---------|--------|
-| `apps/api/routes/v1/matches.py` | ExposiciÃ³n del atributo `league_country: m.league.country` en `_match_to_dict_full`. |
-| `apps/web/lib/betmind.ts` | AdiciÃ³n de `leagueCountry: string | null` en la interfaz `Match`. |
-| `apps/web/lib/api.ts` | CreaciÃ³n de `COUNTRY_ISO`, `isoToFlagEmoji`, `flagForCountry`, `formatCompositeLeagueName` y actualizaciÃ³n de `mapBackendMatch`. |
-| `apps/web/components/betmind/odds-pill.tsx` | RecreaciÃ³n del componente estilo Betano con font-family monospaciado inline inmutable. |
-| `apps/web/components/betmind/ticket-card.tsx` | RediseÃ±o limpio, formato `@ 2.07`, remociÃ³n de texto de relleno y eliminaciÃ³n del botÃ³n *Copiar*. |
-| `apps/web/components/betmind/ticket-leg.tsx` | Divisores horizontales sutiles, espaciado optimizado y adopciÃ³n de `<OddsPill />`. |
-| `apps/web/components/betmind/dashboard.tsx` | Aislamiento de pestaÃ±as: Boletos sin partidos inferiores, integraciÃ³n limpia del tracking. |
+| `apps/api/routes/v1/matches.py` | Exposición del atributo `league_country: m.league.country` en `_match_to_dict_full`. |
+| `apps/web/lib/betmind.ts` | Adición de `leagueCountry: string | null` en la interfaz `Match`. |
+| `apps/web/lib/api.ts` | Creación de `COUNTRY_ISO`, `isoToFlagEmoji`, `flagForCountry`, `formatCompositeLeagueName` y actualización de `mapBackendMatch`. |
+| `apps/web/components/betmind/odds-pill.tsx` | Recreación del componente estilo Betano con font-family monospaciado inline inmutable. |
+| `apps/web/components/betmind/ticket-card.tsx` | Rediseño limpio, formato `@ 2.07`, remoción de texto de relleno y eliminación del botón *Copiar*. |
+| `apps/web/components/betmind/ticket-leg.tsx` | Divisores horizontales sutiles, espaciado optimizado y adopción de `<OddsPill />`. |
+| `apps/web/components/betmind/dashboard.tsx` | Aislamiento de pestañas: Boletos sin partidos inferiores, integración limpia del tracking. |
 | `apps/web/components/betmind/league-sidebar.tsx` | Fix en `resolveRegion()` y renderizado de nombres compuestos con bandera. |
-| `apps/web/app/partidos/[id]/page.tsx` | CreaciÃ³n de pÃ¡gina dedicada de detalle a pantalla completa (reemplazo del modal). |
-| `apps/web/app/globals.css` | Blindaje canÃ³nico de `--font-mono` y asignaciÃ³n en `.tabular` y `@utility num`. |
+| `apps/web/app/partidos/[id]/page.tsx` | Creación de página dedicada de detalle a pantalla completa (reemplazo del modal). |
+| `apps/web/app/globals.css` | Blindaje canónico de `--font-mono` y asignación en `.tabular` y `@utility num`. |
 
 ---
 
-### 6. ðŸ—ºï¸ Roadmap Priorizado & Deuda TÃ©cnica Pendiente (Siguientes Pasos)
-1. **ðŸ“ Fase 14 (Inmediata): Persistencia Real del Tracking Panel en Supabase**
-   - *Deuda Actual:* El componente `<TrackingPanel />` guarda el estado en `window.localStorage` (lÃ­mite de 10 boletos). Si el usuario cambia de navegador o entra desde el mÃ³vil, pierde su historial y estados (`PENDING`, `LIVE`, `WON`, `LOST`).
-   - *Plan:* Crear la tabla `user_tracked_tickets` en Supabase y construir endpoints CRUD en FastAPI (`GET/POST/PATCH/DELETE /api/v1/tracking/`). Conectar el frontend con `useSWR` o llamadas fetch asÃ­ncronas con Optimistic Updates.
-2. **ðŸ“ Fase 15 (Mediano Plazo): AsincronÃ­a Predictiva & CalibraciÃ³n Nocturna**
-   - *Deuda Actual:* Al generar un anÃ¡lisis por primera vez, el orquestador dispara 3 llamadas paralelas a Gemini 2.0 Flash (`asyncio.gather`), bloqueando la respuesta del endpoint unos 5-6 segundos.
-   - *Plan:* Migrar la generaciÃ³n cualitativa LLM a tareas de fondo (Background Tasks / Celery / Arq). Al consultar un partido sin cachÃ©, devolver de inmediato los cÃ¡lculos matemÃ¡ticos de Poisson (+EV) y notificar al frontend cuando la narrativa LLM termine de generarse en segundo plano. Implementar ademÃ¡s un Cron Job nocturno para evaluar y cambiar automÃ¡ticamente a `WON` / `LOST` los boletos seguidos segÃºn los marcadores de 90 minutos.
+### 6. 🗺️ Roadmap Priorizado & Deuda Técnica Pendiente (Siguientes Pasos)
+1. **📍 Fase 14 (Inmediata): Persistencia Real del Tracking Panel en Supabase**
+   - *Deuda Actual:* El componente `<TrackingPanel />` guarda el estado en `window.localStorage` (límite de 10 boletos). Si el usuario cambia de navegador o entra desde el móvil, pierde su historial y estados (`PENDING`, `LIVE`, `WON`, `LOST`).
+   - *Plan:* Crear la tabla `user_tracked_tickets` en Supabase y construir endpoints CRUD en FastAPI (`GET/POST/PATCH/DELETE /api/v1/tracking/`). Conectar el frontend con `useSWR` o llamadas fetch asíncronas con Optimistic Updates.
+2. **📍 Fase 15 (Mediano Plazo): Asincronía Predictiva & Calibración Nocturna**
+   - *Deuda Actual:* Al generar un análisis por primera vez, el orquestador dispara 3 llamadas paralelas a Gemini 2.0 Flash (`asyncio.gather`), bloqueando la respuesta del endpoint unos 5-6 segundos.
+   - *Plan:* Migrar la generación cualitativa LLM a tareas de fondo (Background Tasks / Celery / Arq). Al consultar un partido sin caché, devolver de inmediato los cálculos matemáticos de Poisson (+EV) y notificar al frontend cuando la narrativa LLM termine de generarse en segundo plano. Implementar además un Cron Job nocturno para evaluar y cambiar automáticamente a `WON` / `LOST` los boletos seguidos según los marcadores de 90 minutos.
 
 ---
 
-## ðŸŸ¢ Fase 14: AuditorÃ­a de CÃ³digo DeepSource â€” Correcciones de Seguridad, Bug Risk y Typecheck (Completado)
+## 🟢 Fase 14: Auditoría de Código DeepSource — Correcciones de Seguridad, Bug Risk y Typecheck (Completado)
 
-### 1. PropÃ³sito
-Ejecutar correcciones quirÃºrgicas sobre los hallazgos del anÃ¡lisis estÃ¡tico de DeepSource en las categorÃ­as: Seguridad (3 fallos), Bug Risk (15 fallos), Typecheck (33 fallos) y Anti-patrones.
+### 1. Propósito
+Ejecutar correcciones quirúrgicas sobre los hallazgos del análisis estático de DeepSource en las categorías: Seguridad (3 fallos), Bug Risk (15 fallos), Typecheck (33 fallos) y Anti-patrones.
 
 ---
 
@@ -4784,22 +4802,22 @@ Ejecutar correcciones quirÃºrgicas sobre los hallazgos del anÃ¡lisis estÃ¡
 
 **Archivo:** `scripts/sync_today_matches.py`
 
-| LÃ­nea | Antes | DespuÃ©s |
+| Línea | Antes | Después |
 |-------|-------|---------|
 | 194 | `hashlib.md5(team_name.encode())` | `hashlib.sha256(team_name.encode())` |
 | 220 | `hashlib.md5(...)` | `hashlib.sha256(...)` |
 
-**JustificaciÃ³n:** `md5` es criptogrÃ¡ficamente dÃ©bil y DeepSource lo marca como vulnerabilidad. Reemplazado por `sha256` que mantiene la misma funcionalidad (generar ID determinista de 8 caracteres hex) sin riesgo de colisiones maliciosas.
+**Justificación:** `md5` es criptográficamente débil y DeepSource lo marca como vulnerabilidad. Reemplazado por `sha256` que mantiene la misma funcionalidad (generar ID determinista de 8 caracteres hex) sin riesgo de colisiones maliciosas.
 
 ---
 
-### 3. Bug Risk (PYL-E0102): FunciÃ³n Redefinida
+### 3. Bug Risk (PYL-E0102): Función Redefinida
 
 **Archivo:** `apps/api/repositories/match_repository.py`
 
-**Problema:** `get_by_external_id()` estaba definida dos veces con cuerpo idÃ©ntico en las lÃ­neas 169-173 y 199-203. Python resuelve a la Ãºltima definiciÃ³n, haciendo que la primera sea cÃ³digo muerto.
+**Problema:** `get_by_external_id()` estaba definida dos veces con cuerpo idéntico en las líneas 169-173 y 199-203. Python resuelve a la última definición, haciendo que la primera sea código muerto.
 
-**SoluciÃ³n:** Eliminada la primera definiciÃ³n (lÃ­neas 169-173). La segunda definiciÃ³n (ahora lÃ­neas 193-197) es la Ãºnica activa. El alias `get_by_external_match_id()` (lÃ­nea 169) sigue funcionando porque delega a la implementaciÃ³n Ãºnica.
+**Solución:** Eliminada la primera definición (líneas 169-173). La segunda definición (ahora líneas 193-197) es la única activa. El alias `get_by_external_match_id()` (línea 169) sigue funcionando porque delega a la implementación única.
 
 ---
 
@@ -4807,34 +4825,34 @@ Ejecutar correcciones quirÃºrgicas sobre los hallazgos del anÃ¡lisis estÃ¡
 
 **Archivo:** `apps/api/routes/v1/tickets.py`
 
-| LÃ­nea | Antes | DespuÃ©s |
+| Línea | Antes | Después |
 |-------|-------|---------|
 | 119 | `except Exception: continue` | `except Exception: logger.warning(...); continue` |
 
-**JustificaciÃ³n:** El `except Exception: continue` silenciaba errores de predicciÃ³n por partido sin dejar rastro, imposibilitando debugging. Ahora se agregÃ³ `import logging` con `logger.warning("Error processing prediction for match_id=%s", match.id, exc_info=True)` que documenta el fallo sin interrumpir el flujo de los demÃ¡s partidos.
+**Justificación:** El `except Exception: continue` silenciaba errores de predicción por partido sin dejar rastro, imposibilitando debugging. Ahora se agregó `import logging` con `logger.warning("Error processing prediction for match_id=%s", match.id, exc_info=True)` que documenta el fallo sin interrumpir el flujo de los demás partidos.
 
 ---
 
-### 5. Anti-PatrÃ³n (PYL-W0404): Importaciones Duplicadas
+### 5. Anti-Patrón (PYL-W0404): Importaciones Duplicadas
 
 #### 5.1 `TacticalAnalysis` en `prediction_orchestrator.py`
 
 **Archivo:** `apps/api/orchestrators/prediction_orchestrator.py`
 
-| LÃ­nea | Cambio |
+| Línea | Cambio |
 |-------|--------|
-| 21 | `from betmind_ml.schemas.tactical_analysis import TacticalAnalysis` â€” import a nivel mÃ³dulo |
+| 21 | `from betmind_ml.schemas.tactical_analysis import TacticalAnalysis` — import a nivel módulo |
 | 135 | `from betmind_ml.schemas.tactical_analysis import ~~TacticalAnalysis,~~ MarketNarrative, ProConPoint, SignalStrength` |
 
-**SoluciÃ³n:** Eliminado `TacticalAnalysis` del import local dentro de `_build_minimal_tactical_analysis()`. El nombre ya estÃ¡ disponible a nivel mÃ³dulo desde la lÃ­nea 21.
+**Solución:** Eliminado `TacticalAnalysis` del import local dentro de `_build_minimal_tactical_analysis()`. El nombre ya está disponible a nivel módulo desde la línea 21.
 
 #### 5.2 `Base` en `database.py`
 
 **Archivo:** `apps/api/db/database.py`
 
-**Problema:** `Base` se importaba dos veces dentro de funciones diferentes (`init_db` y `ping_db`), ambas con imports lazy del mismo mÃ³dulo `apps.api.models`.
+**Problema:** `Base` se importaba dos veces dentro de funciones diferentes (`init_db` y `ping_db`), ambas con imports lazy del mismo módulo `apps.api.models`.
 
-**SoluciÃ³n:** Movido `from apps.api.models.base import Base` a nivel mÃ³dulo. Los imports de modelos especÃ­ficos (`Team, League, Match, etc.`) se mantienen lazy en `init_db()` porque requieren que todos los mÃ³dulos de modelos estÃ©n registrados.
+**Solución:** Movido `from apps.api.models.base import Base` a nivel módulo. Los imports de modelos específicos (`Team, League, Match, etc.`) se mantienen lazy en `init_db()` porque requieren que todos los módulos de modelos estén registrados.
 
 ---
 
@@ -4842,9 +4860,9 @@ Ejecutar correcciones quirÃºrgicas sobre los hallazgos del anÃ¡lisis estÃ¡
 
 **Archivo:** `apps/api/services/cache_service.py`
 
-**Problema:** El mÃ©todo `get()` declaraba `-> Optional[Any]`, perdiendo precisiÃ³n de tipos. Cuando se pasaba un modelo Pydantic, el retorno real era `Optional[T]`, pero el type checker no podÃ­a inferirlo.
+**Problema:** El método `get()` declaraba `-> Optional[Any]`, perdiendo precisión de tipos. Cuando se pasaba un modelo Pydantic, el retorno real era `Optional[T]`, pero el type checker no podía inferirlo.
 
-**SoluciÃ³n:** Agregados decoradores `@overload`:
+**Solución:** Agregados decoradores `@overload`:
 
 ```python
 @overload
@@ -4858,106 +4876,106 @@ async def get(self, key: str, model: Type[T] | None = None) -> Optional[Any]:
 
 ---
 
-### 7. VerificaciÃ³n Frontend
+### 7. Verificación Frontend
 
 **Comando:** `npx tsc --noEmit` en `apps/web`
 
-**Resultado:** 0 errores de compilaciÃ³n. Los issues JS-0833 reportados por DeepSource eran falsos positivos o ya estaban resueltos en commits anteriores. Los componentes TSX/JSX estÃ¡n sintÃ¡cticamente correctos.
+**Resultado:** 0 errores de compilación. Los issues JS-0833 reportados por DeepSource eran falsos positivos o ya estaban resueltos en commits anteriores. Los componentes TSX/JSX están sintácticamente correctos.
 
 ---
 
 ### 8. Resumen de Archivos Modificados
 
-| Archivo | CategorÃ­a | Cambio |
+| Archivo | Categoría | Cambio |
 |---------|-----------|--------|
-| `scripts/sync_today_matches.py` | Seguridad | `hashlib.md5` â†’ `hashlib.sha256` (2 ocurrencias) |
-| `apps/api/repositories/match_repository.py` | Bug Risk | Eliminada funciÃ³n duplicada `get_by_external_id` |
+| `scripts/sync_today_matches.py` | Seguridad | `hashlib.md5` → `hashlib.sha256` (2 ocurrencias) |
+| `apps/api/repositories/match_repository.py` | Bug Risk | Eliminada función duplicada `get_by_external_id` |
 | `apps/api/routes/v1/tickets.py` | Bug Risk | Agregado `logger.warning` en bare except |
-| `apps/api/orchestrators/prediction_orchestrator.py` | Anti-patrÃ³n | Eliminado `TacticalAnalysis` de import local duplicado |
-| `apps/api/db/database.py` | Anti-patrÃ³n | `Base` consolidado a import de nivel mÃ³dulo |
-| `apps/api/services/cache_service.py` | Typecheck | Agregados `@overload` para mÃ©todo `get()` |
+| `apps/api/orchestrators/prediction_orchestrator.py` | Anti-patrón | Eliminado `TacticalAnalysis` de import local duplicado |
+| `apps/api/db/database.py` | Anti-patrón | `Base` consolidado a import de nivel módulo |
+| `apps/api/services/cache_service.py` | Typecheck | Agregados `@overload` para método `get()` |
 
 ---
 
-## ðŸŸ¢ Fase 15: DocumentaciÃ³n de LÃ³gica de PronÃ³sticos para Analistas Externos (Completado)
+## 🟢 Fase 15: Documentación de Lógica de Pronósticos para Analistas Externos (Completado)
 
-### 1. PropÃ³sito
-Crear un documento tÃ©cnico dirigido a analistas deportivos y tipsters externos que explique cÃ³mo la IA de BetMind calcula sus pronÃ³sticos, sin necesidad de leer cÃ³digo fuente.
+### 1. Propósito
+Crear un documento técnico dirigido a analistas deportivos y tipsters externos que explique cómo la IA de BetMind calcula sus pronósticos, sin necesidad de leer código fuente.
 
 ### 2. Archivo Creado
 
-**`DOCS_LOGICA_APUESTAS.md`** â€” Documento de ~500 lÃ­neas estructurado en 5 secciones:
+**`DOCS_LOGICA_APUESTAS.md`** — Documento de ~500 líneas estructurado en 5 secciones:
 
-| SecciÃ³n | Contenido |
+| Sección | Contenido |
 |---------|-----------|
-| **1. Resumen General del Algoritmo** | Flujo de datos, fÃ³rmula central de lambdas, peso relativo de cada factor (fuerza, forma, H2H, localÃ­a), calibraciÃ³n por liga |
-| **2. Desglose por Mercado** | FÃ³rmulas exactas para Goles (Over/Under, BTTS), 1X2, CÃ³rneres, Tarjetas, y cÃ¡lculo de Valor Esperado (+EV) |
-| **3. Estructura de Prompts y MÃ©tricas** | Payloads completos enviados al LLM para cada mercado, reglas anti-alucinaciÃ³n, cÃ¡lculo de confianza |
-| **4. GeneraciÃ³n de Boletos** | Modos EDGE/VALUE/BOLD, reglas de correlaciÃ³n positiva/negativa, algoritmo de construcciÃ³n, desduplicaciÃ³n cross-modo |
-| **5. Glosario** | Definiciones de tÃ©rminos tÃ©cnicos (lambda, xG, edge, EV, overround, BTTS, etc.) |
+| **1. Resumen General del Algoritmo** | Flujo de datos, fórmula central de lambdas, peso relativo de cada factor (fuerza, forma, H2H, localía), calibración por liga |
+| **2. Desglose por Mercado** | Fórmulas exactas para Goles (Over/Under, BTTS), 1X2, Córneres, Tarjetas, y cálculo de Valor Esperado (+EV) |
+| **3. Estructura de Prompts y Métricas** | Payloads completos enviados al LLM para cada mercado, reglas anti-alucinación, cálculo de confianza |
+| **4. Generación de Boletos** | Modos EDGE/VALUE/BOLD, reglas de correlación positiva/negativa, algoritmo de construcción, desduplicación cross-modo |
+| **5. Glosario** | Definiciones de términos técnicos (lambda, xG, edge, EV, overround, BTTS, etc.) |
 
 ### 3. Contenido Destacado
 
-- **Tabla de calibraciÃ³n de 13 ligas** con rangos de lambda, goles esperados y ventaja de localÃ­a
-- **FÃ³rmulas matemÃ¡ticas** explicadas en lenguaje accesible (Dixon-Robinson simplificado)
-- **Ejemplos numÃ©ricos** paso a paso para cada mercado
-- **Payloads completos** que se envÃ­an al LLM (goles, tarjetas, cÃ³rneres, bet builder)
-- **Tabla de correlaciones** positivas y negativas usadas en la construcciÃ³n de boletos
-- **ExplicaciÃ³n del overround sintÃ©tico del 8%** para mercados sin cuotas reales
+- **Tabla de calibración de 13 ligas** con rangos de lambda, goles esperados y ventaja de localía
+- **Fórmulas matemáticas** explicadas en lenguaje accesible (Dixon-Robinson simplificado)
+- **Ejemplos numéricos** paso a paso para cada mercado
+- **Payloads completos** que se envían al LLM (goles, tarjetas, córneres, bet builder)
+- **Tabla de correlaciones** positivas y negativas usadas en la construcción de boletos
+- **Explicación del overround sintético del 8%** para mercados sin cuotas reales
 
-### 4. VerificaciÃ³n
-- âœ… Documento creado en raÃ­z del proyecto
-- âœ… Sin modificaciones a archivos de lÃ³gica existentes
-- âœ… Estructura con viÃ±etas, tablas y texto claro para analistas no-tÃ©cnicos
+### 4. Verificación
+- ✅ Documento creado en raíz del proyecto
+- ✅ Sin modificaciones a archivos de lógica existentes
+- ✅ Estructura con viñetas, tablas y texto claro para analistas no-técnicos
 
 ---
 
-## ðŸŸ¢ Fase 16: Criterio de Kelly Fraccional, Filtros Anti-Riesgo y Baselines DinÃ¡micos de Tarjetas (Completado)
+## 🟢 Fase 16: Criterio de Kelly Fraccional, Filtros Anti-Riesgo y Baselines Dinámicos de Tarjetas (Completado)
 
-### 1. PropÃ³sito
-Integrar tres mejoras matemÃ¡ticas al backend: staking Ã³ptimo con Quarter-Kelly, filtro de riesgo asimÃ©trico ("Anti-CÃ¡scara de Guineo") para ligas de alta varianza, y lÃ­neas de tarjetas dinÃ¡micas por liga/regiÃ³n.
+### 1. Propósito
+Integrar tres mejoras matemáticas al backend: staking óptimo con Quarter-Kelly, filtro de riesgo asimétrico ("Anti-Cáscara de Guineo") para ligas de alta varianza, y líneas de tarjetas dinámicas por liga/región.
 
 ### 2. Criterio de Kelly Fraccional (Quarter-Kelly)
 
 #### Nuevo archivo: `apps/api/engine/kelly.py`
 
-**FÃ³rmula implementada:**
+**Fórmula implementada:**
 ```
 f* = (p_real * odds - 1) / (odds - 1)
 stake = max(0.0, 0.25 * f*)
 ```
 
-**Funciones pÃºblicas:**
-| FunciÃ³n | DescripciÃ³n |
+**Funciones públicas:**
+| Función | Descripción |
 |---------|-------------|
-| `calculate_quarter_kelly(p_real, odds)` | Retorna fracciÃ³n del bankroll (0.0-1.0) |
+| `calculate_quarter_kelly(p_real, odds)` | Retorna fracción del bankroll (0.0-1.0) |
 | `calculate_kelly_percentage(p_real, odds)` | Retorna porcentaje legible (0-100%) |
 | `get_staking_suggestion(kelly_pct)` | Sugerencia textual: conservadora/moderada/agresiva/ALTO RIESGO |
 
-#### IntegraciÃ³n en schemas:
+#### Integración en schemas:
 - **`EVAnalysis`**: Nuevo campo `kelly_stake: float | None` (por mercado)
 - **`TicketLegSchema`**: Nuevo campo `kelly_stake: float` (por pata)
 - **`GeneratedTicket`**: Nuevo campo `kelly_stake: float` (combinado del ticket)
 
-#### IntegraciÃ³n en orquestador:
+#### Integración en orquestador:
 - `_build_response()` calcula Kelly para cada mercado con cuota disponible
-- `ticket_builder.py` calcula Kelly por pata y stake combinado (mÃ­nimo conservador)
+- `ticket_builder.py` calcula Kelly por pata y stake combinado (mínimo conservador)
 - Sugerencia de staking del boleto ahora muestra "Kelly: X.X% del bankroll"
 
 #### Ejemplo:
 ```
 P(Over 2.5) = 60%, Cuota = 2.00
 f* = (0.60 * 2.00 - 1) / (2.00 - 1) = 0.20
-Quarter-Kelly = 0.25 * 0.20 = 0.05 â†’ 5% del bankroll
+Quarter-Kelly = 0.25 * 0.20 = 0.05 → 5% del bankroll
 ```
 
-### 3. Filtro Anti-CÃ¡scara de Guineo (Riesgo AsimÃ©trico)
+### 3. Filtro Anti-Cáscara de Guineo (Riesgo Asimétrico)
 
 #### Reglas implementadas en `ticket_builder.py`:
 
-| Regla | CondiciÃ³n | AcciÃ³n |
+| Regla | Condición | Acción |
 |-------|-----------|--------|
-| **Cuota mÃ­nima en ligas volÃ¡tiles** | odds < 1.25 en liga sudamericana | Descartar selecciÃ³n |
+| **Cuota mínima en ligas volátiles** | odds < 1.25 en liga sudamericana | Descartar selección |
 | **Ligas de alta varianza** | 7 ligas sudamericanas + MLS | Aplicar filtro estricto |
 
 **Ligas de alta varianza:**
@@ -4970,36 +4988,36 @@ HIGH_VARIANCE_LEAGUES = {
 ```
 
 **Funciones auxiliares:**
-- `_is_high_variance_league(league)` â€” Detecta liga volÃ¡til (normaliza espacios/guiones)
-- `_passes_anti_cascara_filter(leg)` â€” Valida que la cuota sea suficiente para el riesgo
-- `_calculate_combined_kelly(legs)` â€” Kelly combinado = mÃ­nimo de las patas (conservador)
+- `_is_high_variance_league(league)` — Detecta liga volátil (normaliza espacios/guiones)
+- `_passes_anti_cascara_filter(leg)` — Valida que la cuota sea suficiente para el riesgo
+- `_calculate_combined_kelly(legs)` — Kelly combinado = mínimo de las patas (conservador)
 
-### 4. Baselines DinÃ¡micos de Tarjetas por Liga
+### 4. Baselines Dinámicos de Tarjetas por Liga
 
 #### Cambios en `packages/ml/betmind_ml/config.py`:
 
-| RegiÃ³n | Ligas | LÃ­nea de tarjetas |
+| Región | Ligas | Línea de tarjetas |
 |--------|-------|:-----------------:|
-| **SudamÃ©rica** | BetPlay, Argentina, Chile, Ecuador, PerÃº | **5.0 - 5.5** |
-| **SudamÃ©rica media** | Brasil, MÃ©xico | **4.5 - 5.0** |
-| **Europa tÃ¡ctica** | LaLiga, Serie A | **4.0** |
-| **Europa fÃ­sica** | Premier, Bundesliga, nÃ³rdicas | **3.5** |
-| **NorteamÃ©rica** | MLS | **4.0** |
+| **Sudamérica** | BetPlay, Argentina, Chile, Ecuador, Perú | **5.0 - 5.5** |
+| **Sudamérica media** | Brasil, México | **4.5 - 5.0** |
+| **Europa táctica** | LaLiga, Serie A | **4.0** |
+| **Europa física** | Premier, Bundesliga, nórdicas | **3.5** |
+| **Norteamérica** | MLS | **4.0** |
 | **Default** | Otras | **3.5** |
 
-**Nueva funciÃ³n:** `get_cards_line(league_key) -> float`
+**Nueva función:** `get_cards_line(league_key) -> float`
 
-#### IntegraciÃ³n:
+#### Integración:
 - `NarrativeOrchestrator.generate_full_analysis()` acepta `league_key`
 - `full_analysis_pipeline.py` propaga `league_key` al orquestador
-- El prompt de tarjetas usa la lÃ­nea dinÃ¡mica en lugar del 3.5 estÃ¡tico
+- El prompt de tarjetas usa la línea dinámica en lugar del 3.5 estático
 
 ### 5. Archivos Creados
 
-| Archivo | DescripciÃ³n |
+| Archivo | Descripción |
 |---------|-------------|
-| `apps/api/engine/kelly.py` | MÃ³dulo Quarter-Kelly con 3 funciones pÃºblicas |
-| `tests/test_kelly_and_filters.py` | 18 tests: Kelly (11) + Anti-CÃ¡scara (7) |
+| `apps/api/engine/kelly.py` | Módulo Quarter-Kelly con 3 funciones públicas |
+| `tests/test_kelly_and_filters.py` | 18 tests: Kelly (11) + Anti-Cáscara (7) |
 
 ### 6. Archivos Modificados
 
@@ -5007,10 +5025,10 @@ HIGH_VARIANCE_LEAGUES = {
 |---------|--------|
 | `apps/api/schemas/prediction.py` | `EVAnalysis` agrega `kelly_stake: float \| None` |
 | `apps/api/schemas/ticket.py` | `TicketLegSchema` y `GeneratedTicket` agregan `kelly_stake` |
-| `apps/api/engine/ticket_builder.py` | Kelly por pata, filtro anti-cÃ¡scara, Kelly combinado, staking dinÃ¡mico |
+| `apps/api/engine/ticket_builder.py` | Kelly por pata, filtro anti-cáscara, Kelly combinado, staking dinámico |
 | `apps/api/orchestrators/prediction_orchestrator.py` | Kelly en `_build_response()` para cada mercado con cuota |
 | `packages/ml/betmind_ml/config.py` | `CARDS_LINE_BY_LEAGUE` dict + `get_cards_line()` |
-| `packages/ml/betmind_ml/narrative/narrative_orchestrator.py` | `league_key` param + `get_cards_line()` dinÃ¡mico |
+| `packages/ml/betmind_ml/narrative/narrative_orchestrator.py` | `league_key` param + `get_cards_line()` dinámico |
 | `packages/ml/betmind_ml/pipeline/full_analysis_pipeline.py` | Propaga `league_key` al orquestador narrativo |
 
 ### 7. Tests
@@ -5024,68 +5042,68 @@ tests/test_poisson_engine.py:      4 passed
 Total:                            79 passed
 ```
 
-### 8. VerificaciÃ³n
-- âœ… 79/79 tests pasando (excluyendo test_cache_resilience pre-existente)
-- âœ… `tsc --noEmit` sin errores en frontend
-- âœ… Kelly integrado en predicciones individuales y boletos combinados
-- âœ… Filtro Anti-CÃ¡scara descarta favoritos baratos en ligas volÃ¡tiles
-- âœ… LÃ­neas de tarjetas regionalizadas (3.5 Europa â†’ 5.5 SudamÃ©rica)
+### 8. Verificación
+- ✅ 79/79 tests pasando (excluyendo test_cache_resilience pre-existente)
+- ✅ `tsc --noEmit` sin errores en frontend
+- ✅ Kelly integrado en predicciones individuales y boletos combinados
+- ✅ Filtro Anti-Cáscara descarta favoritos baratos en ligas volátiles
+- ✅ Líneas de tarjetas regionalizadas (3.5 Europa → 5.5 Sudamérica)
 
 ---
 
-## ðŸŸ¢ Fase 17: Dixon-Coles, Binomial Negativa, Player Props y Match Tension Index (Completado)
+## 🟢 Fase 17: Dixon-Coles, Binomial Negativa, Player Props y Match Tension Index (Completado)
 
-### 1. PropÃ³sito
-Implementar 4 mÃ³dulos analÃ­ticos avanzados para refinar la precisiÃ³n cuantitativa del motor predictivo: correcciÃ³n Dixon-Coles para dependencia en marcadores bajos, distribuciÃ³n Binomial Negativa para cÃ³rneres, validaciÃ³n de Player Props por minutos proyectados, e Ãndice de TensiÃ³n del Partido (MTI) para tarjetas.
+### 1. Propósito
+Implementar 4 módulos analíticos avanzados para refinar la precisión cuantitativa del motor predictivo: corrección Dixon-Coles para dependencia en marcadores bajos, distribución Binomial Negativa para córneres, validación de Player Props por minutos proyectados, e Índice de Tensión del Partido (MTI) para tarjetas.
 
-### 2. CorrecciÃ³n Dixon-Coles en Motor de Poisson
+### 2. Corrección Dixon-Coles en Motor de Poisson
 
-#### UbicaciÃ³n
+#### Ubicación
 `packages/ml/betmind_ml/models/poisson_engine.py`
 
-#### ImplementaciÃ³n
-Factor de correcciÃ³n Ï„(x,y) aplicado a la matriz 9Ã—9 de Poisson con constante Ï = -0.09:
+#### Implementación
+Factor de corrección τ(x,y) aplicado a la matriz 9×9 de Poisson con constante ρ = -0.09:
 
-| Celda | Factor Ï„ | FÃ³rmula |
+| Celda | Factor τ | Fórmula |
 |-------|----------|---------|
-| (0,0) | Ï„ = 1 - (Î»_home Ã— Î»_away Ã— Ï) | Captura dependencia en 0-0 |
-| (1,0) | Ï„ = 1 + (Î»_away Ã— Ï) | Ajuste local marca 1 |
-| (0,1) | Ï„ = 1 + (Î»_home Ã— Ï) | Ajuste visitante marca 1 |
-| (1,1) | Ï„ = 1 - Ï | Dependencia en 1-1 |
-| Otras | Ï„ = 1.0 | Sin correcciÃ³n |
+| (0,0) | τ = 1 - (λ_home × λ_away × ρ) | Captura dependencia en 0-0 |
+| (1,0) | τ = 1 + (λ_away × ρ) | Ajuste local marca 1 |
+| (0,1) | τ = 1 + (λ_home × ρ) | Ajuste visitante marca 1 |
+| (1,1) | τ = 1 - ρ | Dependencia en 1-1 |
+| Otras | τ = 1.0 | Sin corrección |
 
 **Proceso:**
 1. Construir matriz Poisson pura
-2. Aplicar Ï„(x,y) a las 4 celdas crÃ­ticas
+2. Aplicar τ(x,y) a las 4 celdas críticas
 3. Renormalizar para que suma = 1.0
 
-**Efecto:** Aumenta P(0-0) respecto a Poisson puro (captura partidos tÃ¡cticos cerrados que Poisson subestima).
+**Efecto:** Aumenta P(0-0) respecto a Poisson puro (captura partidos tácticos cerrados que Poisson subestima).
 
 #### Funciones agregadas
-- `_apply_dixon_coles_correction(matrix, lambda_home, lambda_away, rho)` â†’ Matriz corregida
-- `_renormalize_matrix(matrix)` â†’ Matriz normalizada (suma = 1.0)
+- `_apply_dixon_coles_correction(matrix, lambda_home, lambda_away, rho)` → Matriz corregida
+- `_renormalize_matrix(matrix)` → Matriz normalizada (suma = 1.0)
 
-### 3. CÃ³rneres con DistribuciÃ³n Binomial Negativa
+### 3. Córneres con Distribución Binomial Negativa
 
 #### Nuevo archivo
 `apps/api/engine/corners_model.py`
 
-#### JustificaciÃ³n
-Los cÃ³rneres tienen **alta varianza** (overdispersion) que Poisson no captura bien. La Binomial Negativa modela mejor esta dispersiÃ³n con parÃ¡metro k = 1.3.
+#### Justificación
+Los córneres tienen **alta varianza** (overdispersion) que Poisson no captura bien. La Binomial Negativa modela mejor esta dispersión con parámetro k = 1.3.
 
-#### ParametrizaciÃ³n
+#### Parametrización
 ```python
-k = 1.3  # Varianza = k Ã— Î¼
-p = 1/k â‰ˆ 0.76923
-r = Î¼ / (k - 1) = Î¼ / 0.3
+k = 1.3  # Varianza = k × μ
+p = 1/k ≈ 0.76923
+r = μ / (k - 1) = μ / 0.3
 ```
 
-#### Funciones pÃºblicas
-| FunciÃ³n | DescripciÃ³n |
+#### Funciones públicas
+| Función | Descripción |
 |---------|-------------|
-| `calculate_corners_probabilities(expected_corners, lines)` | Probabilidades Over/Under para mÃºltiples lÃ­neas (7.5, 8.5, 9.5, 10.5) |
-| `calculate_corners_line_probability(expected_corners, line)` | Probabilidad para lÃ­nea especÃ­fica |
-| `get_corners_recommendation(expected_corners, line)` | RecomendaciÃ³n "Over/Under" con probabilidad |
+| `calculate_corners_probabilities(expected_corners, lines)` | Probabilidades Over/Under para múltiples líneas (7.5, 8.5, 9.5, 10.5) |
+| `calculate_corners_line_probability(expected_corners, line)` | Probabilidad para línea específica |
+| `get_corners_recommendation(expected_corners, line)` | Recomendación "Over/Under" con probabilidad |
 
 #### Ejemplo
 ```python
@@ -5093,31 +5111,31 @@ probs = calculate_corners_probabilities(expected_corners=9.2)
 # probs["over_9.5"] = 0.48, probs["under_9.5"] = 0.52
 ```
 
-### 4. Player Props con ValidaciÃ³n de Minutos
+### 4. Player Props con Validación de Minutos
 
 #### Nuevo archivo
 `apps/api/engine/player_props_model.py`
 
-#### FÃ³rmula
+#### Fórmula
 ```
-Remates Esperados = (SoT/90) Ã— (Minutos Proyectados / 90) Ã— Factor Defensivo Rival
+Remates Esperados = (SoT/90) × (Minutos Proyectados / 90) × Factor Defensivo Rival
 ```
 
-#### Reglas de validaciÃ³n
-| CondiciÃ³n | Estado |
+#### Reglas de validación
+| Condición | Estado |
 |-----------|--------|
 | Minutos Proyectados < 60 | `NOT_AVAILABLE` |
 | Jugador no confirmado en 11 titular | `NOT_AVAILABLE` |
-| stat_per_90 â‰¤ 0 | `INSUFFICIENT_DATA` |
+| stat_per_90 ≤ 0 | `INSUFFICIENT_DATA` |
 | Condiciones cumplidas | `AVAILABLE` |
 
 #### Modelos Pydantic
 - `PlayerPropStatus`: Enum (AVAILABLE, NOT_AVAILABLE, INSUFFICIENT_DATA)
-- `PlayerPropProjection`: ProyecciÃ³n completa con expected_stat y status
+- `PlayerPropProjection`: Proyección completa con expected_stat y status
 
-#### Funciones pÃºblicas
-- `calculate_player_prop_projection(...)` â†’ PlayerPropProjection
-- `calculate_shots_on_target_line(expected_sot, line)` â†’ {"over": 0.35, "under": 0.65}
+#### Funciones públicas
+- `calculate_player_prop_projection(...)` → PlayerPropProjection
+- `calculate_shots_on_target_line(expected_sot, line)` → {"over": 0.35, "under": 0.65}
 
 ### 5. Match Tension Index (MTI) para Tarjetas
 
@@ -5125,40 +5143,40 @@ Remates Esperados = (SoT/90) Ã— (Minutos Proyectados / 90) Ã— Factor Defen
 `apps/api/engine/match_tension.py`
 
 #### Constantes MTI
-| Contexto | MTI | DescripciÃ³n |
+| Contexto | MTI | Descripción |
 |----------|-----|-------------|
-| Regular | 1.00 | Partido estÃ¡ndar |
-| Classification Clash | 1.15 | Duelo por clasificaciÃ³n/cupo internacional |
-| Derby | 1.35 | ClÃ¡sico regional |
+| Regular | 1.00 | Partido estándar |
+| Classification Clash | 1.15 | Duelo por clasificación/cupo internacional |
+| Derby | 1.35 | Clásico regional |
 | Relegation | 1.35 | Partido por descenso |
 
-#### FÃ³rmula
+#### Fórmula
 ```
-Tarjetas Proyectadas = Media Base Ã— Strictness Ãrbitro Ã— MTI
+Tarjetas Proyectadas = Media Base × Strictness Árbitro × MTI
 ```
 
-#### Funciones pÃºblicas
-- `get_match_tension_index(context_type)` â†’ MTI (float)
-- `calculate_projected_cards(base_avg, strictness, context_type)` â†’ (projected_cards, mti)
-- `get_cards_recommendation_with_mti(...)` â†’ (recommendation, projected, mti)
-- `infer_context_type(is_derby, is_relegation, is_classification)` â†’ MatchContextType
+#### Funciones públicas
+- `get_match_tension_index(context_type)` → MTI (float)
+- `calculate_projected_cards(base_avg, strictness, context_type)` → (projected_cards, mti)
+- `get_cards_recommendation_with_mti(...)` → (recommendation, projected, mti)
+- `infer_context_type(is_derby, is_relegation, is_classification)` → MatchContextType
 
-#### IntegraciÃ³n con Fase 16
-El MTI se combina con la lÃ­nea dinÃ¡mica de tarjetas por liga:
+#### Integración con Fase 16
+El MTI se combina con la línea dinámica de tarjetas por liga:
 ```python
-projected = base Ã— strictness Ã— MTI
+projected = base × strictness × MTI
 if projected > league_line + 0.5:
     recommendation = f"Over {league_line}"
 ```
 
 ### 6. Archivos Creados
 
-| Archivo | DescripciÃ³n |
+| Archivo | Descripción |
 |---------|-------------|
-| `apps/api/engine/corners_model.py` | Binomial Negativa para cÃ³rneres (k=1.3) |
-| `apps/api/engine/player_props_model.py` | Player Props con validaciÃ³n xM |
+| `apps/api/engine/corners_model.py` | Binomial Negativa para córneres (k=1.3) |
+| `apps/api/engine/player_props_model.py` | Player Props con validación xM |
 | `apps/api/engine/match_tension.py` | MTI para tarjetas (1.0/1.15/1.35) |
-| `tests/test_phase17_models.py` | 23 tests: Dixon-Coles (4), CÃ³rneres (5), Player Props (5), MTI (9) |
+| `tests/test_phase17_models.py` | 23 tests: Dixon-Coles (4), Córneres (5), Player Props (5), MTI (9) |
 
 ### 7. Archivos Modificados
 
@@ -5178,342 +5196,342 @@ tests/test_poisson_engine.py:    4 passed
 Total:                          102 passed
 ```
 
-### 9. VerificaciÃ³n
-- âœ… 102/102 tests pasando (excluyendo test_cache_resilience pre-existente)
-- âœ… Dixon-Coles: matriz suma exactamente 1.0, P(0-0) aumentada
-- âœ… Binomial Negativa: k=1.3 produce varianza = 1.3 Ã— Î¼
-- âœ… Player Props: validaciÃ³n de minutos (< 60 â†’ NOT_AVAILABLE)
-- âœ… MTI: derby/relegation = 1.35, clasificaciÃ³n = 1.15, regular = 1.00
-- âœ… IntegraciÃ³n con Fase 16: MTI Ã— lÃ­nea dinÃ¡mica de tarjetas por liga
+### 9. Verificación
+- ✅ 102/102 tests pasando (excluyendo test_cache_resilience pre-existente)
+- ✅ Dixon-Coles: matriz suma exactamente 1.0, P(0-0) aumentada
+- ✅ Binomial Negativa: k=1.3 produce varianza = 1.3 × μ
+- ✅ Player Props: validación de minutos (< 60 → NOT_AVAILABLE)
+- ✅ MTI: derby/relegation = 1.35, clasificación = 1.15, regular = 1.00
+- ✅ Integración con Fase 16: MTI × línea dinámica de tarjetas por liga
 
 ---
 
-## ðŸ“Œ [2026-07-27] â€” RefactorizaciÃ³n Integral UI/UX (Zinc/Slate v0) y CorrecciÃ³n de Bugs MatemÃ¡ticos en Backend
+## 📌 [2026-07-27] — Refactorización Integral UI/UX (Zinc/Slate v0) y Corrección de Bugs Matemáticos en Backend
 
-### 1. ðŸŽ¨ Frontend: Sistema Visual, Dashboard y Layout (`apps/web`)
+### 1. 🎨 Frontend: Sistema Visual, Dashboard y Layout (`apps/web`)
 - **Design System & Paleta Zinc (`globals.css`):**
   - Mapeo de tokens CSS (`--background`, `--surface`, `--card`, `--border`) a la paleta Zinc/Slate oscura de alto contraste (`#09090b` fondo principal, `#111113` y `#18181b` tarjetas, `#27272a` bordes).
-  - EliminaciÃ³n de fondos negro puro (`#000000`) y resplandores neÃ³n fosforescentes.
-- **AgrupaciÃ³n de Ligas y Acordeones (`components/betmind/league-accordion.tsx`):**
-  - ImplementaciÃ³n de `LeagueAccordion` con colapsables por paÃ­s y liga oficial (`LEAGUE_METADATA`).
-  - Indicador de estado en vivo (`EN VIVO` con pulso esmeralda), badges numÃ©ricos de partidos programados y banderas en formato Emoji oficial (ðŸ‡¸ðŸ‡ª, ðŸ‡©ðŸ‡°, ðŸ‡ªðŸ‡¨, ðŸ‡¨ðŸ‡´) reemplazando cÃ³digos de texto plano (`SE`, `DK`).
+  - Eliminación de fondos negro puro (`#000000`) y resplandores neón fosforescentes.
+- **Agrupación de Ligas y Acordeones (`components/betmind/league-accordion.tsx`):**
+  - Implementación de `LeagueAccordion` con colapsables por país y liga oficial (`LEAGUE_METADATA`).
+  - Indicador de estado en vivo (`EN VIVO` con pulso esmeralda), badges numéricos de partidos programados y banderas en formato Emoji oficial (🇸🇪, 🇩🇰, 🇪🇨, 🇨🇴) reemplazando códigos de texto plano (`SE`, `DK`).
 - **Sidebar & TopNav (`league-sidebar.tsx` & `top-nav.tsx`):**
-  - BotÃ³n "Todas las Ligas" a ancho completo (`w-full`) con estado activo en Ã­ndigo (`bg-primary`).
-  - SubtÃ­tulos por regiÃ³n (`EUROPA`, `AMÃ‰RICA`) y widget de "Estado del Modelo: CALIBRADO".
+  - Botón "Todas las Ligas" a ancho completo (`w-full`) con estado activo en índigo (`bg-primary`).
+  - Subtítulos por región (`EUROPA`, `AMÉRICA`) y widget de "Estado del Modelo: CALIBRADO".
   - Comportamiento responsive: Sidebar fija (`w-[260px]`) en Desktop (`lg:`) y colapsable en Mobile.
-- **RediseÃ±o de Vista de Detalle de Partido (`app/partidos/[id]/page.tsx`):**
-  - AmpliaciÃ³n de contenedor principal a `max-w-6xl`.
-  - Mantenimiento de la barra sticky de 3 pestaÃ±as: `[ ðŸ“Š Previa & PronÃ³stico | âš”ï¸ H2H & TÃ¡ctico | ðŸŸ¨ Ãrbitro ]`.
-  - **Grid de 2 Columnas (`lg:grid-cols-[3fr_2fr]`) en PestaÃ±a Previa:**
-    - **Columna Izquierda (60%):** Banner $+EV$ destacado con botÃ³n interactivo `â­ Guardar en mi Boleto` (con notificaciÃ³n Toast), pÃ­ldoras de tendencias (`TrendPills`) y `MarketTable` con acentos esmeralda (`bg-emerald-500/5`) y badges (`âœ… VALOR (+EV)` / `âŒ EVITAR`).
-    - **Columna Derecha (40%):** Barras de probabilidades (`MatchComparisonBars`) y grÃ¡fico de distribuciÃ³n de Poisson (`PoissonModalChart`).
-  - **Limpieza de UI Redundante:** EliminaciÃ³n completa del contenedor duplicado "Seleccionar mercado" y los botones estÃ¡ticos rotos de "Modo Edge / Value / Bold".
-  - PreservaciÃ³n de guards `InsufficientDataCard` para `lambda === 0`, datos tÃ¡cticos pendientes y Ã¡rbitros sin historial.
+- **Rediseño de Vista de Detalle de Partido (`app/partidos/[id]/page.tsx`):**
+  - Ampliación de contenedor principal a `max-w-6xl`.
+  - Mantenimiento de la barra sticky de 3 pestañas: `[ 📊 Previa & Pronóstico | ⚔️ H2H & Táctico | 🟨 Árbitro ]`.
+  - **Grid de 2 Columnas (`lg:grid-cols-[3fr_2fr]`) en Pestaña Previa:**
+    - **Columna Izquierda (60%):** Banner $+EV$ destacado con botón interactivo `⭐ Guardar en mi Boleto` (con notificación Toast), píldoras de tendencias (`TrendPills`) y `MarketTable` con acentos esmeralda (`bg-emerald-500/5`) y badges (`✅ VALOR (+EV)` / `❌ EVITAR`).
+    - **Columna Derecha (40%):** Barras de probabilidades (`MatchComparisonBars`) y gráfico de distribución de Poisson (`PoissonModalChart`).
+  - **Limpieza de UI Redundante:** Eliminación completa del contenedor duplicado "Seleccionar mercado" y los botones estáticos rotos de "Modo Edge / Value / Bold".
+  - Preservación de guards `InsufficientDataCard` para `lambda === 0`, datos tácticos pendientes y árbitros sin historial.
 
 ---
 
-### 2. âš™ï¸ Backend: Mapeo de Cuotas y CorrecciÃ³n de Algoritmo EV (`apps/api`)
+### 2. ⚙️ Backend: Mapeo de Cuotas y Corrección de Algoritmo EV (`apps/api`)
 - **Filtro Estricto en Servicio de Cuotas (`services/odds_service.py`):**
-  - RefactorizaciÃ³n del parser para la casilla `1X2_DRAW` (columna `X` / `Draw`).
+  - Refactorización del parser para la casilla `1X2_DRAW` (columna `X` / `Draw`).
   - Filtrado estricto de palabras clave para descartar mercados de *Double Chance (1X/X2/12)*, *Draw No Bet (DNB)* o *No Bet*.
-  - IncorporaciÃ³n de guard de sanidad: rechazo automÃ¡tico de cualquier cuota de empate inferior a `@ 2.10` para impedir que cuotas de doble oportunidad (ej. `@ 1.78`) corrompan la matriz 1X2.
+  - Incorporación de guard de sanidad: rechazo automático de cualquier cuota de empate inferior a `@ 2.10` para impedir que cuotas de doble oportunidad (ej. `@ 1.78`) corrompan la matriz 1X2.
 - **Techo de Sanidad $+EV$ (`engine/ticket_builder.py`):**
-  - ImplementaciÃ³n de filtro de tope mÃ¡ximo de $+EV$: descartar candidatos con `expected_value > 0.35` (+35% EV) para eliminar anomalÃ­as por cuotas infladas o sobreestimaciÃ³n del modelo.
-- **Regla de DiversificaciÃ³n en Boletos Combinantes (`engine/ticket_builder.py`):**
-  - IncorporaciÃ³n de constante `MAX_DRAWS_PER_TICKET = 1` y helper `_can_add_candidate`.
-  - RestricciÃ³n estricta: ningÃºn boleto combinante puede incluir mÃ¡s de 1 selecciÃ³n del mercado `1X2_DRAW`, forzando la combinaciÃ³n con Victorias directas, Mercado de Goles y Ambos Anotan.
+  - Implementación de filtro de tope máximo de $+EV$: descartar candidatos con `expected_value > 0.35` (+35% EV) para eliminar anomalías por cuotas infladas o sobreestimación del modelo.
+- **Regla de Diversificación en Boletos Combinantes (`engine/ticket_builder.py`):**
+  - Incorporación de constante `MAX_DRAWS_PER_TICKET = 1` y helper `_can_add_candidate`.
+  - Restricción estricta: ningún boleto combinante puede incluir más de 1 selección del mercado `1X2_DRAW`, forzando la combinación con Victorias directas, Mercado de Goles y Ambos Anotan.
 
 ---
 
-### 3. ðŸ§ª Resultados de VerificaciÃ³n y CompilaciÃ³n
-- **Frontend (`apps/web`):** Next.js 16.2.6 (Turbopack) ejecutÃ³ `npm run build` limpiamente en 3.3s con 0 errores y 0 advertencias de TypeScript en modo estricto.
-- **Backend (`apps/api`):** InclusiÃ³n de 2 nuevas pruebas unitarias en `tests/test_ticket_builder.py` (`test_ev_ceiling_discard_anomalies` y `test_max_draws_per_ticket_limit`). EjecuciÃ³n exitosa de suite `pytest`: **36/36 tests pasados (100% Ã©xito)**.
+### 3. 🧪 Resultados de Verificación y Compilación
+- **Frontend (`apps/web`):** Next.js 16.2.6 (Turbopack) ejecutó `npm run build` limpiamente en 3.3s con 0 errores y 0 advertencias de TypeScript en modo estricto.
+- **Backend (`apps/api`):** Inclusión de 2 nuevas pruebas unitarias en `tests/test_ticket_builder.py` (`test_ev_ceiling_discard_anomalies` y `test_max_draws_per_ticket_limit`). Ejecución exitosa de suite `pytest`: **36/36 tests pasados (100% éxito)**.
 
 ---
 
-## ðŸ§ª [2026-07-27] SesiÃ³n de AuditorÃ­a Integral â€” 25 Errores + ConexiÃ³n de Predicciones + Ingesta Masiva + Auto-Healing
+## 🧪 [2026-07-27] Sesión de Auditoría Integral — 25 Errores + Conexión de Predicciones + Ingesta Masiva + Auto-Healing
 
-### 1. ðŸ” AuditorÃ­a de 25 Errores en Frontend (`apps/web`)
+### 1. 🔍 Auditoría de 25 Errores en Frontend (`apps/web`)
 
 **Errores de Tipos / Props (9 reparados):**
-- `match-card.tsx:22` â€” `match.minute` podÃ­a ser `undefined` en pill "EN VIVO". Agregado `?? 0`.
-- `api.ts:280` â€” `minute` siempre `undefined` (ternario muerto `? undefined : undefined`). Corregido a usar `raw.minute` del backend.
-- `page.tsx:403,417` â€” `charAt(0)` sin fallback en team names vacÃ­os. Agregado `?.` optional chaining + `|| '?'`.
-- `api.ts:148` â€” `as Mode` sin validaciÃ³n. Agregado guard con `.includes()`.
-- `poisson-mini-chart.tsx:57` â€” `max=0` causaba `NaN` en SVG height. Agregado `Math.max(..., 0.01)`.
-- `poisson-modal-chart.tsx:116` â€” DivisiÃ³n por cero cuando `max=0`. Agregado mÃ­nimo 10 y `Math.max(..., 0.001)`.
-- `betmind.ts:128` â€” `buildModel(0,0)` producÃ­a "0-0 Â· 100%" engaÃ±oso. Early return con placeholder.
-- `betmind.ts:197` â€” `odds=0` causaba `Infinity` en `impliedProbability`. Guard `odds <= 0` early return.
-- `api.ts:246` â€” `BackendMatch.minute` no existÃ­a en la interfaz. Agregado campo opcional.
+- `match-card.tsx:22` — `match.minute` podía ser `undefined` en pill "EN VIVO". Agregado `?? 0`.
+- `api.ts:280` — `minute` siempre `undefined` (ternario muerto `? undefined : undefined`). Corregido a usar `raw.minute` del backend.
+- `page.tsx:403,417` — `charAt(0)` sin fallback en team names vacíos. Agregado `?.` optional chaining + `|| '?'`.
+- `api.ts:148` — `as Mode` sin validación. Agregado guard con `.includes()`.
+- `poisson-mini-chart.tsx:57` — `max=0` causaba `NaN` en SVG height. Agregado `Math.max(..., 0.01)`.
+- `poisson-modal-chart.tsx:116` — División por cero cuando `max=0`. Agregado mínimo 10 y `Math.max(..., 0.001)`.
+- `betmind.ts:128` — `buildModel(0,0)` producía "0-0 · 100%" engañoso. Early return con placeholder.
+- `betmind.ts:197` — `odds=0` causaba `Infinity` en `impliedProbability`. Guard `odds <= 0` early return.
+- `api.ts:246` — `BackendMatch.minute` no existía en la interfaz. Agregado campo opcional.
 
 **Importaciones Muertas / Rotas (5 reparados):**
-- `league-sidebar.tsx:4` â€” `CheckCircle2Icon` importado y nunca usado. Eliminado.
-- `dashboard.tsx:10` â€” `MatchCard` importado pero solo usado dentro de `LeagueAccordion`. Eliminado.
-- `trend-pills.tsx:65` â€” Imports al final del archivo (no estÃ¡ndar). Movidos al top.
-- `dashboard.tsx` â€” `BottomNav` importado pero no renderizado (nav mÃ³vil roto). Restaurado en JSX.
-- `league-accordion.tsx:69` â€” `divide-y` + `gap-2` en mismo div (conflicto visual). Solo `gap-2`.
+- `league-sidebar.tsx:4` — `CheckCircle2Icon` importado y nunca usado. Eliminado.
+- `dashboard.tsx:10` — `MatchCard` importado pero solo usado dentro de `LeagueAccordion`. Eliminado.
+- `trend-pills.tsx:65` — Imports al final del archivo (no estándar). Movidos al top.
+- `dashboard.tsx` — `BottomNav` importado pero no renderizado (nav móvil roto). Restaurado en JSX.
+- `league-accordion.tsx:69` — `divide-y` + `gap-2` en mismo div (conflicto visual). Solo `gap-2`.
 
 **Edge Cases / Next.js (3 reparados):**
-- `confidence-bar.tsx:32` â€” `setTimeout` sin cleanup en `useEffect`. Agregado `clearTimeout`.
-- `tracking-panel.tsx:54` â€” `ticket.mode` como id â€” 2 boletos mismo modo no trackeables. Usa `${mode}-${Date.now()}`.
-- `league-accordion.tsx` â€” Sin el fix de `divide-y`, las tarjetas dentro del acordeÃ³n se renderizaban con bordes inconsistentes.
+- `confidence-bar.tsx:32` — `setTimeout` sin cleanup en `useEffect`. Agregado `clearTimeout`.
+- `tracking-panel.tsx:54` — `ticket.mode` como id — 2 boletos mismo modo no trackeables. Usa `${mode}-${Date.now()}`.
+- `league-accordion.tsx` — Sin el fix de `divide-y`, las tarjetas dentro del acordeón se renderizaban con bordes inconsistentes.
 
-### 2. ðŸ Backend Python: Correcciones de Cuotas y Algoritmos (`apps/api`)
+### 2. 🐍 Backend Python: Correcciones de Cuotas y Algoritmos (`apps/api`)
 
-- `ticket_builder.py:234` â€” Doble chequeo EV redundante (`ev > 0.35` en lÃ­nea 212 y 234). Eliminada duplicaciÃ³n.
-- `odds_service.py:270,284` â€” Filtro de draw odds sin log en `get_odds_for_match` y `get_odds_for_matches`. Agregado `logger.debug`.
+- `ticket_builder.py:234` — Doble chequeo EV redundante (`ev > 0.35` en línea 212 y 234). Eliminada duplicación.
+- `odds_service.py:270,284` — Filtro de draw odds sin log en `get_odds_for_match` y `get_odds_for_matches`. Agregado `logger.debug`.
 
-### 3. ðŸ”— ConexiÃ³n Frontend â†” Endpoint de Predicciones
+### 3. 🔗 Conexión Frontend ↔ Endpoint de Predicciones
 
-**Backend â€” Schema extendido:**
-- `schemas/prediction.py:78` â€” Agregados `lambda_home`, `lambda_away` al `PredictionResponse`.
-- `orchestrators/prediction_orchestrator.py:464` â€” `_build_response` ahora incluye lambdas reales del motor Poisson.
+**Backend — Schema extendido:**
+- `schemas/prediction.py:78` — Agregados `lambda_home`, `lambda_away` al `PredictionResponse`.
+- `orchestrators/prediction_orchestrator.py:464` — `_build_response` ahora incluye lambdas reales del motor Poisson.
 
-**Frontend â€” Nueva funciÃ³n `fetchMatchPrediction(id)`:**
-- `lib/api.ts:337-501` â€” `fetchMatchPrediction(id)` llama en paralelo a `GET /api/v1/matches/{id}` y `GET /api/v1/predictions/{id}`.
+**Frontend — Nueva función `fetchMatchPrediction(id)`:**
+- `lib/api.ts:337-501` — `fetchMatchPrediction(id)` llama en paralelo a `GET /api/v1/matches/{id}` y `GET /api/v1/predictions/{id}`.
 - Interface `EnrichedMatch` extiende `Match` con `lambdaHome`, `lambdaAway`, `probabilities`, `evAnalysis`, `confidenceScore`, `tacticalHeadline`, `llmModelUsed`.
 - `mapBackendPrediction()` convierte `BackendPrediction` a `EnrichedMatch`.
-- `console.log` de diagnÃ³stico en cada paso (URL, HTTP status, lambdas, confianza).
+- `console.log` de diagnóstico en cada paso (URL, HTTP status, lambdas, confianza).
 
-**PÃ¡gina de detalle actualizada:**
-- `app/partidos/[id]/page.tsx:488-560` â€” Llama a `fetchMatchPrediction()` en vez de `fetchMatches()` con find.
-- `MatchDetailContent` ahora recibe `enriched?: EnrichedMatch | null` y muestra banner de predicciÃ³n con modelo LLM, confianza y headline tÃ¡ctico.
-- Si la predicciÃ³n falla (HTTP 422/500), hace fallback al match base sin predicciÃ³n en vez de mostrar "Partido no encontrado".
+**Página de detalle actualizada:**
+- `app/partidos/[id]/page.tsx:488-560` — Llama a `fetchMatchPrediction()` en vez de `fetchMatches()` con find.
+- `MatchDetailContent` ahora recibe `enriched?: EnrichedMatch | null` y muestra banner de predicción con modelo LLM, confianza y headline táctico.
+- Si la predicción falla (HTTP 422/500), hace fallback al match base sin predicción en vez de mostrar "Partido no encontrado".
 
-### 4. ðŸ§® Calibrador MatemÃ¡tico ImplÃ­cito por Cuotas (`packages/ml`)
+### 4. 🧮 Calibrador Matemático Implícito por Cuotas (`packages/ml`)
 
-**Nueva funciÃ³n `estimate_lambdas_from_odds()`:**
-- `models/poisson_engine.py:103-176` â€” Deriva Î» directamente desde cuotas 1X2 y Over 2.5 cuando no hay datos histÃ³ricos.
-- Algoritmo: despeja overround â†’ probabilidades puras P(home)/P(draw)/P(away) â†’ estima Î»_total desde P(over 2.5) â†’ distribuye entre local y visitante segÃºn ratio 1X2.
-- _FÃ³rmula:_ $\lambda_{total} = 0.5 + 4.0 \times P_{over}$, $\lambda_{home} = \lambda_{total} \times ratio_{home} \times home\_advantage$, $\lambda_{away} = \lambda_{total} \times (1 - ratio_{home})$
+**Nueva función `estimate_lambdas_from_odds()`:**
+- `models/poisson_engine.py:103-176` — Deriva λ directamente desde cuotas 1X2 y Over 2.5 cuando no hay datos históricos.
+- Algoritmo: despeja overround → probabilidades puras P(home)/P(draw)/P(away) → estima λ_total desde P(over 2.5) → distribuye entre local y visitante según ratio 1X2.
+- _Fórmula:_ $\lambda_{total} = 0.5 + 4.0 \times P_{over}$, $\lambda_{home} = \lambda_{total} \times ratio_{home} \times home\_advantage$, $\lambda_{away} = \lambda_{total} \times (1 - ratio_{home})$
 
 **Pipeline actualizado:**
-- `pipeline/prediction_pipeline.py:78-93` â€” Si `!is_reliable` y hay cuotas â†’ usa `estimate_lambdas_from_odds()`. Si no hay cuotas â†’ fallback mÃ­nimo Î»=0.3.
-- `pipeline/prediction_pipeline.py:128-145` â€” `_calculate_confidence` ahora recibe flag `odds_based` y asigna 35% de confiabilidad cuando se usa estimaciÃ³n desde cuotas ("Lambdas estimadas desde cuotas de mercado").
+- `pipeline/prediction_pipeline.py:78-93` — Si `!is_reliable` y hay cuotas → usa `estimate_lambdas_from_odds()`. Si no hay cuotas → fallback mínimo λ=0.3.
+- `pipeline/prediction_pipeline.py:128-145` — `_calculate_confidence` ahora recibe flag `odds_based` y asigna 35% de confiabilidad cuando se usa estimación desde cuotas ("Lambdas estimadas desde cuotas de mercado").
 
-### 5. ðŸ”„ GeneraciÃ³n On-Demand y Tolerancia a Fallos
+### 5. 🔄 Generación On-Demand y Tolerancia a Fallos
 
 **Endpoint resiliente:**
-- `routes/v1/predictions.py:63-115` â€” Si no se pasan cuotas explÃ­citas, carga odds desde BD automÃ¡ticamente via `OddsService.get_odds_for_match()`. Nunca devuelve 404 por falta de datos.
-- Captura `Exception` genÃ©rica despuÃ©s de `MatchNotFoundException` para devolver 422 con mensaje descriptivo en vez de 500.
+- `routes/v1/predictions.py:63-115` — Si no se pasan cuotas explícitas, carga odds desde BD automáticamente via `OddsService.get_odds_for_match()`. Nunca devuelve 404 por falta de datos.
+- Captura `Exception` genérica después de `MatchNotFoundException` para devolver 422 con mensaje descriptivo en vez de 500.
 
 **Orquestador tolerante a fallos del LLM:**
-- `orchestrators/prediction_orchestrator.py:77-120` â€” `try/except` alrededor de `run_full_analysis()`. Si Groq/Llama falla (rate limit, timeout, error de API), captura la excepciÃ³n y usa `_build_minimal_tactical_analysis()` en vez de propagar el error. La predicciÃ³n cuantitativa (Poisson + EV) siempre se completa.
+- `orchestrators/prediction_orchestrator.py:77-120` — `try/except` alrededor de `run_full_analysis()`. Si Groq/Llama falla (rate limit, timeout, error de API), captura la excepción y usa `_build_minimal_tactical_analysis()` en vez de propagar el error. La predicción cuantitativa (Poisson + EV) siempre se completa.
 
-### 6. ðŸ“œ Script de Ingesta Masiva HistÃ³rica
+### 6. 📜 Script de Ingesta Masiva Histórica
 
 **Nuevo script `scripts/sync_all_historical.py`:**
 - Recorre las 11 ligas configuradas en `FEATURED_LEAGUES` y ejecuta `DataIngestionService.full_sync_league()` para cada una.
-- ParÃ¡metros CLI: `--season` (aÃ±o, default: actual), `--last` (partidos por liga, default: 50).
-- Pipeline: crea tablas â†’ sincroniza liga â†’ equipos â†’ partidos finalizados para cada liga.
-- **Ejecutado con season=2024:** 11/11 ligas procesadas, 260 equipos, 281 partidos histÃ³ricos ingeridos.
+- Parámetros CLI: `--season` (año, default: actual), `--last` (partidos por liga, default: 50).
+- Pipeline: crea tablas → sincroniza liga → equipos → partidos finalizados para cada liga.
+- **Ejecutado con season=2024:** 11/11 ligas procesadas, 260 equipos, 281 partidos históricos ingeridos.
 
-**SincronizaciÃ³n de partidos de hoy:**
-- `scripts/sync_today_matches.py` ejecutado con Ã©xito: 10 partidos programados sincronizados + 102 cuotas desde API-Football.
+**Sincronización de partidos de hoy:**
+- `scripts/sync_today_matches.py` ejecutado con éxito: 10 partidos programados sincronizados + 102 cuotas desde API-Football.
 - Datos totales en Supabase: 239 partidos (156 finalizados + 81 programados/en vivo).
 
-### 7. ðŸ›¡ï¸ Fix: Runtime Error `charAt of undefined`
+### 7. 🛡️ Fix: Runtime Error `charAt of undefined`
 
-- `page.tsx:407,418` â€” `match?.home?.charAt(0) || '?'` con optional chaining.
-- `api.ts:285-286` â€” `raw.home_team_name || 'Local'` y `raw.away_team_name || 'Visitante'` como fallback en `mapBackendMatch`.
-- `page.tsx:409,413` â€” Los `<h1>` de equipos ahora tienen fallback `match.home || 'Local'`.
+- `page.tsx:407,418` — `match?.home?.charAt(0) || '?'` con optional chaining.
+- `api.ts:285-286` — `raw.home_team_name || 'Local'` y `raw.away_team_name || 'Visitante'` como fallback en `mapBackendMatch`.
+- `page.tsx:409,413` — Los `<h1>` de equipos ahora tienen fallback `match.home || 'Local'`.
 
-### 8. ðŸ§ª Resultados de VerificaciÃ³n
+### 8. 🧪 Resultados de Verificación
 
 ```
-npx tsc --noEmit        â†’  0 errores TypeScript
-npm run build           â†’  Compiled successfully (Next.js 16.2.6 / Turbopack, ~3s)
-pytest (107 tests)      â†’  104 passed, 3 pre-existing failures (pytest-asyncio)
-pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-cascara)
+npx tsc --noEmit        →  0 errores TypeScript
+npm run build           →  Compiled successfully (Next.js 16.2.6 / Turbopack, ~3s)
+pytest (107 tests)      →  104 passed, 3 pre-existing failures (pytest-asyncio)
+pytest (58 tests subset)→  58 passed (Poisson, tickets, Kelly, anti-cascara)
 ```
 
-**IDs de partidos vÃ¡lidos para testing:** 255 (Rosario Central vs Racing), 254 (Argentinos Jrs vs Estudiantes RC), 253 (San Lorenzo vs Gimnasia), 252 (Banfield vs Sarmiento), 168 (Dep. Cuenca vs Emelec), 160 (La Calera vs Everton), 167 (Guayaquil City vs U. CatÃ³lica).
+**IDs de partidos válidos para testing:** 255 (Rosario Central vs Racing), 254 (Argentinos Jrs vs Estudiantes RC), 253 (San Lorenzo vs Gimnasia), 252 (Banfield vs Sarmiento), 168 (Dep. Cuenca vs Emelec), 160 (La Calera vs Everton), 167 (Guayaquil City vs U. Católica).
 
 ---
 
-## ðŸ“… SesiÃ³n de Trabajo: Julio 27-28, 2026 â€” Time Decay, Timezone COT/UTC, Cobertura Multiliga ESPN, Scraper UEFA, Refactor UI
+## 📅 Sesión de Trabajo: Julio 27-28, 2026 — Time Decay, Timezone COT/UTC, Cobertura Multiliga ESPN, Scraper UEFA, Refactor UI
 
-### 1. âš™ï¸ Motor Quant: Exponential Time Decay (Fase 1)
+### 1. ⚙️ Motor Quant: Exponential Time Decay (Fase 1)
 
 **Archivos:** `packages/ml/betmind_ml/config.py`, `packages/ml/betmind_ml/features/strength_calculator.py`
 
-- **`config.py:21`** â€” `STRENGTH_WINDOW` expandido de 10 â†’ **12** partidos.
-- **`config.py:29-33`** â€” Nuevas constantes: `DECAY_FACTOR = 0.85`, `DAYS_DECAY_RATE = 0.005`.
-- **`strength_calculator.py:1-44`** â€” Nueva funciÃ³n `_compute_weighted_average(values: list[float]) -> float`:
-  - Pesos exponenciales por Ã­ndice: `w[k] = DECAY_FACTOR ** k` para `k=0,1,...,N-1`.
-  - Partido mÃ¡s reciente (k=0) â†’ peso 1.0 (100%). Partido k=11 â†’ peso 0.167 (17%).
-  - ImplementaciÃ³n: `weighted_sum = sum(v * w for v, w in zip(values, weights))`, `avg = weighted_sum / sum(weights)`.
-- **`strength_calculator.py:107-108`** â€” Reemplazo de `sum(goals)/len(goals)` simple por `_compute_weighted_average(goals)` para `avg_scored` y `avg_conceded`.
+- **`config.py:21`** — `STRENGTH_WINDOW` expandido de 10 → **12** partidos.
+- **`config.py:29-33`** — Nuevas constantes: `DECAY_FACTOR = 0.85`, `DAYS_DECAY_RATE = 0.005`.
+- **`strength_calculator.py:1-44`** — Nueva función `_compute_weighted_average(values: list[float]) -> float`:
+  - Pesos exponenciales por índice: `w[k] = DECAY_FACTOR ** k` para `k=0,1,...,N-1`.
+  - Partido más reciente (k=0) → peso 1.0 (100%). Partido k=11 → peso 0.167 (17%).
+  - Implementación: `weighted_sum = sum(v * w for v, w in zip(values, weights))`, `avg = weighted_sum / sum(weights)`.
+- **`strength_calculator.py:107-108`** — Reemplazo de `sum(goals)/len(goals)` simple por `_compute_weighted_average(goals)` para `avg_scored` y `avg_conceded`.
 
-**VerificaciÃ³n con datos reales (Liga Profesional Argentina, 4 partidos):**
+**Verificación con datos reales (Liga Profesional Argentina, 4 partidos):**
 
-| Partido | Î»_home (simple) | Î»_home (decay) | Efecto |
+| Partido | λ_home (simple) | λ_home (decay) | Efecto |
 |---------|:---:|:---:|--------|
-| Banfield vs Sarmiento | 0.573 | **0.413** â†“ | Forma reciente peor que histÃ³rico |
-| Argentinos Jrs vs Est RC | 1.468 | **1.714** â†‘ | Forma reciente mejor que histÃ³rico |
-| Rosario Central vs Racing | 2.765 | **2.708** â†’ | Dominante estable |
+| Banfield vs Sarmiento | 0.573 | **0.413** ↓ | Forma reciente peor que histórico |
+| Argentinos Jrs vs Est RC | 1.468 | **1.714** ↑ | Forma reciente mejor que histórico |
+| Rosario Central vs Racing | 2.765 | **2.708** → | Dominante estable |
 
 ---
 
-### 2. ðŸ›¡ï¸ RefactorizaciÃ³n Cuantitativa: RemociÃ³n de Fallback TautolÃ³gico (Fase 1)
+### 2. 🛡️ Refactorización Cuantitativa: Remoción de Fallback Tautológico (Fase 1)
 
 **Archivos:** `prediction_pipeline.py`, `poisson_engine.py`, `ev_calculator.py`, `prediction_orchestrator.py`
 
-- **`prediction_pipeline.py:78-103`** â€” Reemplazado el bloque `if not is_reliable`:
-  - **Antes:** Si `is_reliable=False` y hay cuotas â†’ `estimate_lambdas_from_odds()` (tautologÃ­a: predecir desde cuotas y luego comparar contra las mismas cuotas). Si no hay cuotas â†’ hardcode `(0.3, 0.3)`.
-  - **Ahora:** `lambda_home=0.0, lambda_away=0.0`, `confidence_score=0`, `confidence_flags=["INSUFFICIENT_DATA: <5 partidos historicos"]`, todos los mercados con `verdict=PredictionVerdict.INSUFFICIENT` y `our_probability=0.0`. Early return con `ScoreMatrix()` vacÃ­o.
-- **`prediction_pipeline.py:225-242`** â€” Nueva `_build_insufficient_markets()`: 13 mercados con probability=0.0 y verdict=INSUFFICIENT.
-- **`poisson_engine.py:18,103-114`** â€” `import warnings` + `DeprecationWarning` en `estimate_lambdas_from_odds()`. Removida su llamada desde `prediction_pipeline.py:15`.
-- **`ev_calculator.py:30-64`** â€” Nueva `_compute_fair_probability(market_name, odds, odds_dict)`:
-  - Desmargina el overround del bookmaker para obtener probabilidad implÃ­cita justa.
+- **`prediction_pipeline.py:78-103`** — Reemplazado el bloque `if not is_reliable`:
+  - **Antes:** Si `is_reliable=False` y hay cuotas → `estimate_lambdas_from_odds()` (tautología: predecir desde cuotas y luego comparar contra las mismas cuotas). Si no hay cuotas → hardcode `(0.3, 0.3)`.
+  - **Ahora:** `lambda_home=0.0, lambda_away=0.0`, `confidence_score=0`, `confidence_flags=["INSUFFICIENT_DATA: <5 partidos historicos"]`, todos los mercados con `verdict=PredictionVerdict.INSUFFICIENT` y `our_probability=0.0`. Early return con `ScoreMatrix()` vacío.
+- **`prediction_pipeline.py:225-242`** — Nueva `_build_insufficient_markets()`: 13 mercados con probability=0.0 y verdict=INSUFFICIENT.
+- **`poisson_engine.py:18,103-114`** — `import warnings` + `DeprecationWarning` en `estimate_lambdas_from_odds()`. Removida su llamada desde `prediction_pipeline.py:15`.
+- **`ev_calculator.py:30-64`** — Nueva `_compute_fair_probability(market_name, odds, odds_dict)`:
+  - Desmargina el overround del bookmaker para obtener probabilidad implícita justa.
   - Grupo 1X2: `overround = (1/H) + (1/D) + (1/A)`, `fair = (1/odds) / overround`.
   - Pares Over/Under, BTTS: detecta lado opuesto en `odds_dict`.
-- **`ev_calculator.py:67-110`** â€” `enrich_market_with_ev()` acepta `fair_implied_prob: float | None`.
-- **`prediction_orchestrator.py:452-456`** â€” Mapeo `PredictionVerdict.INSUFFICIENT` â†’ `Verdict.INSUFFICIENT_DATA` en `_build_response()`.
+- **`ev_calculator.py:67-110`** — `enrich_market_with_ev()` acepta `fair_implied_prob: float | None`.
+- **`prediction_orchestrator.py:452-456`** — Mapeo `PredictionVerdict.INSUFFICIENT` → `Verdict.INSUFFICIENT_DATA` en `_build_response()`.
 
 ---
 
-### 3. ðŸ§  Resiliencia del Cerebro TÃ¡ctico LLM (Fase 2)
+### 3. 🧠 Resiliencia del Cerebro Táctico LLM (Fase 2)
 
 **Archivos:** `apps/api/config.py`, `apps/api/orchestrators/prediction_orchestrator.py`
 
-- **`config.py:63`** â€” `GROQ_TIMEOUT_SECONDS: float = 3.0`.
-- **`orchestrator.py:6`** â€” `import asyncio`.
-- **`orchestrator.py:77-122`** â€” RefactorizaciÃ³n del bloque de ejecuciÃ³n del pipeline:
-  - **Siempre ejecuta primero el anÃ¡lisis cuantitativo** (`_run_quantitative_analysis`) de forma independiente.
-  - Si hay cachÃ© tÃ¡ctico en DB â†’ lo usa directamente.
-  - Si no hay cachÃ© â†’ `await self._run_full_analysis_safe()` con `asyncio.wait_for(run_full_analysis(...), timeout=settings.GROQ_TIMEOUT_SECONDS)`.
-  - Solo persiste anÃ¡lisis tÃ¡ctico si `llm_model_used != "none"` (anÃ¡lisis real del LLM, no fallback).
-- **`orchestrator.py:408-470`** â€” Nuevo `_run_full_analysis_safe()`:
-  - Captura `asyncio.TimeoutError` â†’ `logger.warning` + fallback a `_build_minimal_tactical_analysis()`.
-  - Captura `Exception` genÃ©rica â†’ fallback tÃ¡ctico mÃ­nimo.
-  - **GarantÃ­a:** La predicciÃ³n cuantitativa (Poisson + EV) nunca se pierde, incluso si Groq estÃ¡ caÃ­do o lento.
+- **`config.py:63`** — `GROQ_TIMEOUT_SECONDS: float = 3.0`.
+- **`orchestrator.py:6`** — `import asyncio`.
+- **`orchestrator.py:77-122`** — Refactorización del bloque de ejecución del pipeline:
+  - **Siempre ejecuta primero el análisis cuantitativo** (`_run_quantitative_analysis`) de forma independiente.
+  - Si hay caché táctico en DB → lo usa directamente.
+  - Si no hay caché → `await self._run_full_analysis_safe()` con `asyncio.wait_for(run_full_analysis(...), timeout=settings.GROQ_TIMEOUT_SECONDS)`.
+  - Solo persiste análisis táctico si `llm_model_used != "none"` (análisis real del LLM, no fallback).
+- **`orchestrator.py:408-470`** — Nuevo `_run_full_analysis_safe()`:
+  - Captura `asyncio.TimeoutError` → `logger.warning` + fallback a `_build_minimal_tactical_analysis()`.
+  - Captura `Exception` genérica → fallback táctico mínimo.
+  - **Garantía:** La predicción cuantitativa (Poisson + EV) nunca se pierde, incluso si Groq está caído o lento.
 
 ---
 
-### 4. ðŸ—„ï¸ Persistencia SQL y LEFT JOIN de Predicciones (Fase 3)
+### 4. 🗄️ Persistencia SQL y LEFT JOIN de Predicciones (Fase 3)
 
 **Archivos:** `006_expand_predictions_table.sql`, `prediction.py`, `match.py`, `match_repository.py`, `prediction_orchestrator.py`, `matches.py`
 
-- **`006_expand_predictions_table.sql`** â€” MigraciÃ³n DDL: 7 columnas aÃ±adidas a `predictions` (`lambda_home`, `lambda_away`, `home_attack_index`, `away_attack_index`, `home_defense_index`, `away_defense_index`, `markets_json`) + Ã­ndice `idx_predictions_match_created`.
-- **`prediction.py:21-31`** â€” 7 nuevas columnas `Optional[float]` + relationship `match: Mapped["Match"]`.
-- **`match.py:30-33`** â€” Relationship `predictions: Mapped[list["Prediction"]]` con `back_populates="match"`, `order_by="Prediction.created_at.desc()"`, `lazy="noload"`.
-- **`match_repository.py:297-356`** â€” Nuevo `upsert_prediction()`: INSERT o UPDATE con todos los campos cuantitativos + rollback en error.
-- **`orchestrator.py:117`** â€” Llamada a `_persist_prediction(match.id, quant_output)` despuÃ©s de todo anÃ¡lisis cuantitativo.
-- **`orchestrator.py:287-324`** â€” `_persist_prediction()`: serializa `MarketProbability` â†’ `markets_json`, persiste vÃ­a `match_repo.upsert_prediction()`.
-- **`matches.py:66`** â€” `selectinload(Match.predictions)` en `list_matches()` para LEFT JOIN automÃ¡tico.
-- **`matches.py:283-296`** â€” `_match_to_dict_full()` incluye `prediction: {lambda_home, lambda_away, confidence, ...}` o `null`.
-- **`scripts/batch_predict.py:133`** â€” `await session.commit()` explÃ­cito despuÃ©s de cada predicciÃ³n (fix de bug de persistencia).
+- **`006_expand_predictions_table.sql`** — Migración DDL: 7 columnas añadidas a `predictions` (`lambda_home`, `lambda_away`, `home_attack_index`, `away_attack_index`, `home_defense_index`, `away_defense_index`, `markets_json`) + índice `idx_predictions_match_created`.
+- **`prediction.py:21-31`** — 7 nuevas columnas `Optional[float]` + relationship `match: Mapped["Match"]`.
+- **`match.py:30-33`** — Relationship `predictions: Mapped[list["Prediction"]]` con `back_populates="match"`, `order_by="Prediction.created_at.desc()"`, `lazy="noload"`.
+- **`match_repository.py:297-356`** — Nuevo `upsert_prediction()`: INSERT o UPDATE con todos los campos cuantitativos + rollback en error.
+- **`orchestrator.py:117`** — Llamada a `_persist_prediction(match.id, quant_output)` después de todo análisis cuantitativo.
+- **`orchestrator.py:287-324`** — `_persist_prediction()`: serializa `MarketProbability` → `markets_json`, persiste vía `match_repo.upsert_prediction()`.
+- **`matches.py:66`** — `selectinload(Match.predictions)` en `list_matches()` para LEFT JOIN automático.
+- **`matches.py:283-296`** — `_match_to_dict_full()` incluye `prediction: {lambda_home, lambda_away, confidence, ...}` o `null`.
+- **`scripts/batch_predict.py:133`** — `await session.commit()` explícito después de cada predicción (fix de bug de persistencia).
 
 ---
 
-### 5. ðŸ•’ Zona Horaria: date_filter y ConversiÃ³n ExplÃ­cita COTâ†’UTC
+### 5. 🕒 Zona Horaria: date_filter y Conversión Explícita COT→UTC
 
 **Archivos:** `apps/api/routes/v1/matches.py`, `apps/api/routes/v1/tickets.py`, `apps/web/lib/api.ts`, `apps/web/components/betmind/date-selector.tsx`, `apps/web/components/betmind/dashboard.tsx`
 
-- **`matches.py:31-36`** â€” Nuevo parÃ¡metro `date_filter` ("today", "tomorrow", YYYY-MM-DD).
-- **`matches.py:44-67`** â€” ConversiÃ³n explÃ­cita COTâ†’UTC: `start_utc = start_cot.astimezone(timezone.utc)`, `end_utc = end_cot.astimezone(timezone.utc)`.
-- **`matches.py:71-75`** â€” Guarda de fecha mÃ­nima: cuando no hay `date_filter` y es modo upcoming, `Match.match_date >= today_start_utc` (00:00 COT de hoy) para excluir partidos pasados con status SCHEDULED stale.
-- **`tickets.py:34-58`** â€” `date_filter` param: "today" â†’ `[today_cot]`, "tomorrow" â†’ `[tomorrow_cot_obj]`, YYYY-MM-DD â†’ `[parsed_date]`, sin filtro â†’ `[today, tomorrow]`.
-- **`api.ts:177-179`** â€” `fetchTickets(dateFilter?)` con query param `date_filter`.
-- **`api.ts:320-327`** â€” `fetchMatches(dateFilter?)` con query param `date_filter`.
-- **`date-selector.tsx`** â€” Nuevo componente con tabs `[Hoy] [MaÃ±ana] [Ver Todos]` + `formatDateTitle()`.
-- **`dashboard.tsx:102,133,168`** â€” Estado `dateFilter`, llamadas `fetchTickets`/`fetchMatches` con dateFilter, tÃ­tulos dinÃ¡micos.
+- **`matches.py:31-36`** — Nuevo parámetro `date_filter` ("today", "tomorrow", YYYY-MM-DD).
+- **`matches.py:44-67`** — Conversión explícita COT→UTC: `start_utc = start_cot.astimezone(timezone.utc)`, `end_utc = end_cot.astimezone(timezone.utc)`.
+- **`matches.py:71-75`** — Guarda de fecha mínima: cuando no hay `date_filter` y es modo upcoming, `Match.match_date >= today_start_utc` (00:00 COT de hoy) para excluir partidos pasados con status SCHEDULED stale.
+- **`tickets.py:34-58`** — `date_filter` param: "today" → `[today_cot]`, "tomorrow" → `[tomorrow_cot_obj]`, YYYY-MM-DD → `[parsed_date]`, sin filtro → `[today, tomorrow]`.
+- **`api.ts:177-179`** — `fetchTickets(dateFilter?)` con query param `date_filter`.
+- **`api.ts:320-327`** — `fetchMatches(dateFilter?)` con query param `date_filter`.
+- **`date-selector.tsx`** — Nuevo componente con tabs `[Hoy] [Mañana] [Ver Todos]` + `formatDateTitle()`.
+- **`dashboard.tsx:102,133,168`** — Estado `dateFilter`, llamadas `fetchTickets`/`fetchMatches` con dateFilter, títulos dinámicos.
 
 ---
 
-### 6. ðŸŒ Cobertura Global Multiliga: ESPN Provider + Scraper UEFA
+### 6. 🌍 Cobertura Global Multiliga: ESPN Provider + Scraper UEFA
 
 **Archivos:** `espn_provider.py`, `provider_registry.py`, `data_ingestion.py`, `uefa_qualifiers_scraper.py`, `config.py`
 
-- **`espn_provider.py:44-96`** â€” `ESPN_LEAGUE_SLUGS` expandido de 16 a 23 entradas:
+- **`espn_provider.py:44-96`** — `ESPN_LEAGUE_SLUGS` expandido de 16 a 23 entradas:
   - UEFA: 9001=uefa.champions, 9002=uefa.europa, 9003=uefa.europa.conf
   - CONMEBOL: 9010=conmebol.libertadores, 9011=conmebol.sudamericana
-  - Nacionales: 9004=bra.2 (SÃ©rie B), 9005=col.copa (Copa Colombia)
-- **`espn_provider.py:257-311`** â€” `get_teams()` reescrito: standings como fuente primaria, scoreboard de 7 dÃ­as (âˆ’2 a +4) como fuente secundaria para ligas sin standings.
-- **`espn_provider.py:154-202`** â€” `get_finished_matches()` reescrito: usa endpoint `teams/{id}/schedule` en vez de escanear 60 fechas de scoreboard (mÃ¡s eficiente, ~17-19 partidos por equipo).
-- **`espn_provider.py:364-366`** â€” Nuevo `_fetch_team_schedule()`: `/{slug}/teams/{teamId}/schedule`.
-- **`provider_registry.py:27-31`** â€” Registro de `EspnDataProvider` como proveedor primario.
-- **`provider_registry.py:49-82`** â€” Routing: si `league_id in ESPN_LEAGUE_SLUGS` â†’ ESPN; fallback a football-data.org y ai_search_agent.
-- **`data_ingestion.py:6`** â€” Import de `ESPN_LEAGUE_SLUGS`.
-- **`data_ingestion.py:75-85`** â€” `_resolve_provider()`: primero verifica ESPN (todas las ligas con slug), luego football-data.org.
-- **`data_ingestion.py:257-262`** â€” Fallback scraper: si provider retorna 0 fixtures y `league_id in {9001, 9003}`, invoca `_scrape_uefa_qualifiers_fallback()`.
-- **`data_ingestion.py:501-516`** â€” `_scrape_uefa_qualifiers_fallback()`: llama al scraper de Flashscore.
+  - Nacionales: 9004=bra.2 (Série B), 9005=col.copa (Copa Colombia)
+- **`espn_provider.py:257-311`** — `get_teams()` reescrito: standings como fuente primaria, scoreboard de 7 días (−2 a +4) como fuente secundaria para ligas sin standings.
+- **`espn_provider.py:154-202`** — `get_finished_matches()` reescrito: usa endpoint `teams/{id}/schedule` en vez de escanear 60 fechas de scoreboard (más eficiente, ~17-19 partidos por equipo).
+- **`espn_provider.py:364-366`** — Nuevo `_fetch_team_schedule()`: `/{slug}/teams/{teamId}/schedule`.
+- **`provider_registry.py:27-31`** — Registro de `EspnDataProvider` como proveedor primario.
+- **`provider_registry.py:49-82`** — Routing: si `league_id in ESPN_LEAGUE_SLUGS` → ESPN; fallback a football-data.org y ai_search_agent.
+- **`data_ingestion.py:6`** — Import de `ESPN_LEAGUE_SLUGS`.
+- **`data_ingestion.py:75-85`** — `_resolve_provider()`: primero verifica ESPN (todas las ligas con slug), luego football-data.org.
+- **`data_ingestion.py:257-262`** — Fallback scraper: si provider retorna 0 fixtures y `league_id in {9001, 9003}`, invoca `_scrape_uefa_qualifiers_fallback()`.
+- **`data_ingestion.py:501-516`** — `_scrape_uefa_qualifiers_fallback()`: llama al scraper de Flashscore.
 
 **Nuevo archivo `uefa_qualifiers_scraper.py`:**
-- `scrape_uefa_qualifiers(slug)` â€” Usa `crawl4ai` (AsyncWebCrawler) para renderizar Flashscore.
-- `_parse_flashscore_markdown(md, slug)` â€” Parsea markdown renderizado con regex: `28.07. [KuPS - Sabah Baku](url)`.
+- `scrape_uefa_qualifiers(slug)` — Usa `crawl4ai` (AsyncWebCrawler) para renderizar Flashscore.
+- `_parse_flashscore_markdown(md, slug)` — Parsea markdown renderizado con regex: `28.07. [KuPS - Sabah Baku](url)`.
 - URL: `https://www.flashscore.com/football/europe/{champions-league,conference-league}/fixtures/`.
-- 37 partidos extraÃ­dos (17 UCL + 20 UECL qualifiers).
+- 37 partidos extraídos (17 UCL + 20 UECL qualifiers).
 
-**`team_repository.py:35-37`** â€” `get_by_name(name)`: bÃºsqueda por nombre canonicalizado (cross-provider).
+**`team_repository.py:35-37`** — `get_by_name(name)`: búsqueda por nombre canonicalizado (cross-provider).
 
 ---
 
-### 7. ðŸ“Š Estado de Predicciones al Cierre
+### 7. 📊 Estado de Predicciones al Cierre
 
 **60 partidos SCHEDULED, 60 predicciones en Supabase:**
 
-| Liga | Predicciones | Î»>0 (SUFFICIENT) | Î»=0 (INSUFFICIENT) |
+| Liga | Predicciones | λ>0 (SUFFICIENT) | λ=0 (INSUFFICIENT) |
 |------|:---:|:---:|:---:|
 | Argentina - Liga Prof. | 4 | 4 | 0 |
-| Brasil - SÃ©rie B | 3 | 3 | 0 |
+| Brasil - Série B | 3 | 3 | 0 |
 | CONMEBOL Sudamericana | 8 | 1 | 7 |
 | Colombia - Copa | 8 | 0 | 8 |
 | UEFA Champions League | 17 | 0 | 17 |
 | UEFA Conference League | 20 | 0 | 20 |
 
-**Top predicciones con Î»>0:**
-- Rosario Central vs Racing: Î»=2.708/0.571 conf=80
-- O'Higgins vs Boca Juniors: Î»=2.336/0.932 conf=72
-- Fortaleza vs Botafogo-SP: Î»=1.234/2.173 conf=80
-- Juventude vs AvaÃ­: Î»=1.699/1.585 conf=80
-- Argentinos Jrs vs Est RC: Î»=1.714/0.456 conf=80
-- San Lorenzo vs Gimnasia: Î»=0.358/1.546 conf=80 (+EV: 1X2_AWAY edge=+46%)
-- Ponte Preta vs Athletic: Î»=1.550/0.386 conf=80
-- Banfield vs Sarmiento: Î»=0.413/0.805 conf=80 (+EV: DRAW edge=+10.7%)
+**Top predicciones con λ>0:**
+- Rosario Central vs Racing: λ=2.708/0.571 conf=80
+- O'Higgins vs Boca Juniors: λ=2.336/0.932 conf=72
+- Fortaleza vs Botafogo-SP: λ=1.234/2.173 conf=80
+- Juventude vs Avaí: λ=1.699/1.585 conf=80
+- Argentinos Jrs vs Est RC: λ=1.714/0.456 conf=80
+- San Lorenzo vs Gimnasia: λ=0.358/1.546 conf=80 (+EV: 1X2_AWAY edge=+46%)
+- Ponte Preta vs Athletic: λ=1.550/0.386 conf=80
+- Banfield vs Sarmiento: λ=0.413/0.805 conf=80 (+EV: DRAW edge=+10.7%)
 
 ---
 
-### 8. ðŸŽ¨ Frontend: EstandarizaciÃ³n de UI y Filtrado DinÃ¡mico
+### 8. 🎨 Frontend: Estandarización de UI y Filtrado Dinámico
 
 **Archivos:** `dashboard.tsx`, `league-sidebar.tsx`, `league-metadata.ts`, `league-accordion.tsx`, `api.ts`
 
-- **`league-metadata.ts`** â€” Archivo completo reescrito con 21 ligas + formato `PaÃ­s - Torneo` en `shortName`.
-- **`dashboard.tsx:175-201`** â€” `leaguePills` derivado de `matches` vÃ­a `useMemo` (no de `fetchLeagues()`):
+- **`league-metadata.ts`** — Archivo completo reescrito con 21 ligas + formato `País - Torneo` en `shortName`.
+- **`dashboard.tsx:175-201`** — `leaguePills` derivado de `matches` vía `useMemo` (no de `fetchLeagues()`):
   - Agrupa `matches` por `leagueExternalId`, cuenta partidos, ordena por count descendente.
-  - Filtro `count > 0` â€” solo ligas con partidos en la fecha seleccionada.
+  - Filtro `count > 0` — solo ligas con partidos en la fecha seleccionada.
   - Pill "Todas las Ligas" muestra total real: `Todas las Ligas (4)`.
-- **`league-sidebar.tsx`** â€” Reescrita completamente:
+- **`league-sidebar.tsx`** — Reescrita completamente:
   - Recibe `matches` como prop, deriva ligas con `useMemo`.
-  - Agrupa por regiÃ³n (EUROPA/AMÃ‰RICA) usando `resolveLeague().region`.
+  - Agrupa por región (EUROPA/AMÉRICA) usando `resolveLeague().region`.
   - Muestra `meta.shortName` y count real por liga.
   - Sin dependencia de `fetchLeagues()`.
-- **`api.ts:11`** â€” `resolveLeague` usado en `dashboard.tsx` para nombres de pills.
-- **12 UPDATEs en DB** (`leagues.name`) aplicando formato estÃ¡ndar: "Argentina - Liga Prof.", "Brasil - Serie A", "Colombia - BetPlay", etc.
-- **`league-accordion.tsx:25`** â€” Ya usaba `resolveLeague()` correctamente.
+- **`api.ts:11`** — `resolveLeague` usado en `dashboard.tsx` para nombres de pills.
+- **12 UPDATEs en DB** (`leagues.name`) aplicando formato estándar: "Argentina - Liga Prof.", "Brasil - Serie A", "Colombia - BetPlay", etc.
+- **`league-accordion.tsx:25`** — Ya usaba `resolveLeague()` correctamente.
 
 ---
 
-### 9. ðŸ› Bugs Corregidos
+### 9. 🐛 Bugs Corregidos
 
 | Bug | Archivo | Fix |
 |-----|---------|-----|
-| `estimate_lambdas_from_odds()` producÃ­a predicciÃ³n tautolÃ³gica | `prediction_pipeline.py:78-103` | Early return INSUFFICIENT_DATA sin llamar a la funciÃ³n deprecada |
-| EV calculado con probabilidad implÃ­cita cruda (sin desmarginar) | `ev_calculator.py:30-64` | `_compute_fair_probability()` con overround stripping |
-| `predictions` no se persistÃ­a en DB (solo Redis) | `orchestrator.py:117` + `match_repository.py:297` | `_persist_prediction()` â†’ `upsert_prediction()` |
-| `session.commit()` faltante en batch_predict | `batch_predict.py:133` | `await session.commit()` despuÃ©s de cada predicciÃ³n |
-| date_filter "tomorrow" devolvÃ­a 0 resultados | `matches.py:65-67` | `astimezone(timezone.utc)` explÃ­cito |
-| Partidos pasados aparecÃ­an en "Ver Todos" | `matches.py:71-75` | Guarda `match_date >= today_start_utc` |
-| Pills de ligas mostraban IDs numÃ©ricos (9001, 128) | `dashboard.tsx:183` | `resolveLeague(id).shortName` |
-| Pills de ligas vacÃ­as aparecÃ­an para fechas sin partidos | `dashboard.tsx:175-201` | `useMemo` derivado de `matches` con `.filter(count > 0)` |
+| `estimate_lambdas_from_odds()` producía predicción tautológica | `prediction_pipeline.py:78-103` | Early return INSUFFICIENT_DATA sin llamar a la función deprecada |
+| EV calculado con probabilidad implícita cruda (sin desmarginar) | `ev_calculator.py:30-64` | `_compute_fair_probability()` con overround stripping |
+| `predictions` no se persistía en DB (solo Redis) | `orchestrator.py:117` + `match_repository.py:297` | `_persist_prediction()` → `upsert_prediction()` |
+| `session.commit()` faltante en batch_predict | `batch_predict.py:133` | `await session.commit()` después de cada predicción |
+| date_filter "tomorrow" devolvía 0 resultados | `matches.py:65-67` | `astimezone(timezone.utc)` explícito |
+| Partidos pasados aparecían en "Ver Todos" | `matches.py:71-75` | Guarda `match_date >= today_start_utc` |
+| Pills de ligas mostraban IDs numéricos (9001, 128) | `dashboard.tsx:183` | `resolveLeague(id).shortName` |
+| Pills de ligas vacías aparecían para fechas sin partidos | `dashboard.tsx:175-201` | `useMemo` derivado de `matches` con `.filter(count > 0)` |
 | Sidebar mostraba ligas sin partidos para la fecha | `league-sidebar.tsx` | Reescrita con `matches` prop + `useMemo` |
-| UniÃ³n Magdalena vs Santa Fe faltante en Copa Colombia | Sync manual | Insertado match_id=1289, ext_id=401871780 |
-| UEFA qualifiers no tenÃ­an datos (ESPN=0 eventos) | `uefa_qualifiers_scraper.py` + `data_ingestion.py:257` | Fallback con crawl4ai â†’ Flashscore |
+| Unión Magdalena vs Santa Fe faltante en Copa Colombia | Sync manual | Insertado match_id=1289, ext_id=401871780 |
+| UEFA qualifiers no tenían datos (ESPN=0 eventos) | `uefa_qualifiers_scraper.py` + `data_ingestion.py:257` | Fallback con crawl4ai → Flashscore |
 
 ---
 
-### 10. ðŸ“‚ Archivos Clave Modificados (43 cambios en 27 archivos)
+### 10. 📂 Archivos Clave Modificados (43 cambios en 27 archivos)
 
 **Backend (14 archivos):**
 `config.py`, `strength_calculator.py`, `prediction_pipeline.py`, `poisson_engine.py`, `ev_calculator.py`, `prediction_orchestrator.py`, `prediction.py` (model), `match.py` (model), `match_repository.py`, `team_repository.py`, `matches.py` (route), `tickets.py` (route), `data_ingestion.py`, `provider_registry.py`
@@ -5530,67 +5548,67 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 **Scripts (2 archivos):**
 `batch_predict.py`, `006_expand_predictions_table.sql` (nuevo)
 
-**VerificaciÃ³n:** TypeScript 0 errores, Python imports OK, 60/60 batch_predict success, 59 predicciones en Supabase.
+**Verificación:** TypeScript 0 errores, Python imports OK, 60/60 batch_predict success, 59 predicciones en Supabase.
 
 ---
 
-## ðŸŸ¢ Fase 6: IntegraciÃ³n de Logos, PredicciÃ³n Bayesiana y Cobertura 100% (2026-07-28)
+## 🟢 Fase 6: Integración de Logos, Predicción Bayesiana y Cobertura 100% (2026-07-28)
 
-### 1. ðŸ§® Motor Cuantitativo â€” Fallback Bayesiano (Cobertura 100%)
+### 1. 🧮 Motor Cuantitativo — Fallback Bayesiano (Cobertura 100%)
 
-**Problema:** Solo 7 de 23 partidos tenÃ­an predicciÃ³n cuantitativa. Los 16 restantes caÃ­an en estado `INSUFFICIENT_DATA` por la regla de `MIN_MATCHES_FOR_STRENGTH = 5` (al menos un equipo con <5 partidos FINISHED).
+**Problema:** Solo 7 de 23 partidos tenían predicción cuantitativa. Los 16 restantes caían en estado `INSUFFICIENT_DATA` por la regla de `MIN_MATCHES_FOR_STRENGTH = 5` (al menos un equipo con <5 partidos FINISHED).
 
-**SoluciÃ³n implementada:**
+**Solución implementada:**
 
 **`strength_calculator.py`:**
-- Eliminado el bloqueo `is_reliable = False` â†’ `is_reliable` ahora es solo informativo.
-- AÃ±adido campo `match_count` a `TeamStrengthProfile`.
-- Siempre se calculan los Ã­ndices de ataque/defensa con los partidos disponibles + prior de liga.
+- Eliminado el bloqueo `is_reliable = False` → `is_reliable` ahora es solo informativo.
+- Añadido campo `match_count` a `TeamStrengthProfile`.
+- Siempre se calculan los índices de ataque/defensa con los partidos disponibles + prior de liga.
 - Logging cambiado de `WARNING` a `INFO` para baja muestra.
 
 **`prediction_pipeline.py`:**
-- Eliminado completamente el bloque `INSUFFICIENT_DATA` que abortaba el pipeline con `Î»=0`.
+- Eliminado completamente el bloque `INSUFFICIENT_DATA` que abortaba el pipeline con `λ=0`.
 - **Mezcla Bayesiana:**
   ```
-  Î»_blended = (N/5) Â· Î»_team + ((5-N)/5) Â· Î»_league
+  λ_blended = (N/5) · λ_team + ((5-N)/5) · λ_league
   ```
-  Donde `Î»_league` = promedio de goles de la competencia (~1.35 goles/equipo).
-- **Confianza dinÃ¡mica proporcional a la muestra:**
-  - 0 partidos â†’ confianza 10/100 (prior puro de liga)
-  - 1-4 partidos â†’ confianza 30-55/100 (mezcla)
-  - 5+ partidos â†’ confianza 72-80/100 (datos reales)
-- Bandera `Muestra limitada â€” estimaciÃ³n Bayesiana` en `confidence_flags`.
+  Donde `λ_league` = promedio de goles de la competencia (~1.35 goles/equipo).
+- **Confianza dinámica proporcional a la muestra:**
+  - 0 partidos → confianza 10/100 (prior puro de liga)
+  - 1-4 partidos → confianza 30-55/100 (mezcla)
+  - 5+ partidos → confianza 72-80/100 (datos reales)
+- Bandera `Muestra limitada — estimación Bayesiana` en `confidence_flags`.
 
-**Resultado:** 60/60 partidos con `Î» > 0` (0% â†’ 100% cobertura).
+**Resultado:** 60/60 partidos con `λ > 0` (0% → 100% cobertura).
 
 **Ejemplo real:**
-| Partido | Î»_h | Î»_a | Conf | Nota |
+| Partido | λ_h | λ_a | Conf | Nota |
 |---------|-----|-----|------|------|
 | KuPS vs Sabah Baku | 1.62 | 1.35 | 10 | 0 matches ambos (prior liga) |
-| BogotÃ¡ FC vs Pasto | 1.32 | 4.50 | 45 | 1 match vs 22 |
+| Bogotá FC vs Pasto | 1.32 | 4.50 | 45 | 1 match vs 22 |
 | Banfield vs Sarmiento | 0.41 | 0.80 | 80 | 5+ matches ambos |
 
 ---
 
-### 2. ðŸ“Š Guardas MatemÃ¡ticas (EV & Kelly)
+### 2. 📊 Guardas Matemáticas (EV & Kelly)
 
 **`ev_calculator.py`:**
-- ValidaciÃ³n `0.0 â‰¤ our_probability â‰¤ 1.0` en `enrich_market_with_ev()`.
-- Fallback `1.0 / odds` â†’ `1.0 / odds if odds > 0 else 0.0` en `_compute_fair_probability()`.
+- Validación `0.0 ≤ our_probability ≤ 1.0` en `enrich_market_with_ev()`.
+- Fallback `1.0 / odds` → `1.0 / odds if odds > 0 else 0.0` en `_compute_fair_probability()`.
 
 **`kelly.py`:**
-- Ya tenÃ­a guards completos: `odds â‰¤ 1.0 â†’ 0.0`, `p_real â‰¤ 0.0 or p_real â‰¥ 1.0 â†’ 0.0`.
+- Ya tenía guards completos: `odds ≤ 1.0 → 0.0`, `p_real ≤ 0.0 or p_real ≥ 1.0 → 0.0`.
 - **18/18 tests pasan sin cambios.**
 
 ---
 
-### 3. ðŸ—„ï¸ Backend â€” Eager Loading y Fix de 500
+### 3. 🗄️ Backend — Eager Loading y Fix de 500
 
 **`routes/v1/matches.py`:**
 - `GET /{match_id}`: Ahora usa `selectinload` para `home_team`, `away_team`, `league`, `predictions` + `_match_to_dict_full`.
 - `GET /upcoming/`: Mismo fix: joined loads + `_match_to_dict_full`.
-- `GET /{match_id}/h2h`: **Nuevo endpoint** â€” consulta Ãºltimos partidos FINISHED entre los dos equipos.
-- **Fix HTTP 500:** LÃ­nea 78 corregida `datetime.timezone.utc` â†’ `timezone.utc` (typo).
+- `GET /{match_id}/h2h`: **Nuevo endpoint** — consulta últimos partidos FINISHED entre los dos equipos.
+- **Fix HTTP 500:** Línea 78 corregida `datetime.timezone.utc` → `timezone.utc` (typo).
 - `_match_to_dict_full` envuelto en `try/except` para acceso seguro a relaciones y predicciones.
 - Uso de `getattr(latest, "lambda_home", None)` en vez de `latest.lambda_home`.
 
@@ -5603,37 +5621,37 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 
 ---
 
-### 4. ðŸŒ Frontend â€” EspaÃ±ol Estricto, Logos y Desbloqueo de UI
+### 4. 🌐 Frontend — Español Estricto, Logos y Desbloqueo de UI
 
-**TraducciÃ³n Under/Over â†’ MÃ¡s/Menos de:**
+**Traducción Under/Over → Más/Menos de:**
 | Archivo | Cambio |
 |---------|--------|
-| `goals_narrative.py` | "Over 2.5" â†’ "MÃ¡s de 2.5", "BTTS" â†’ "Ambos Anotan" |
-| `goals_prompt.py` | "P(Over 2.5 goles)" â†’ "P(MÃ¡s de 2.5 goles)" |
-| `betmind.ts` | Label `"MÃ¡s de 2.5 Goles"`, `"Ambos Anotan"` |
-| `trend-pills.tsx` | "Over 2.5 probable" â†’ "MÃ¡s de 2.5 probable" |
-| `prediction_orchestrator.py` | `_build_minimal_tactical_analysis` completamente en espaÃ±ol |
+| `goals_narrative.py` | "Over 2.5" → "Más de 2.5", "BTTS" → "Ambos Anotan" |
+| `goals_prompt.py` | "P(Over 2.5 goles)" → "P(Más de 2.5 goles)" |
+| `betmind.ts` | Label `"Más de 2.5 Goles"`, `"Ambos Anotan"` |
+| `trend-pills.tsx` | "Over 2.5 probable" → "Más de 2.5 probable" |
+| `prediction_orchestrator.py` | `_build_minimal_tactical_analysis` completamente en español |
 
 **Componentes Logo (`league-logo.tsx`, `team-logo.tsx`):**
 - Usan `<img>` nativo con `referrerPolicy="no-referrer"` (evita bloqueo 403 de CDN).
 - **Fallback elegante:**
-  - `LeagueLogo`: si `logoUrl` es null o falla â†’ emoji de bandera.
-  - `TeamLogo`: si `logoUrl` es null o falla â†’ iniciales en badge circular.
+  - `LeagueLogo`: si `logoUrl` es null o falla → emoji de bandera.
+  - `TeamLogo`: si `logoUrl` es null o falla → iniciales en badge circular.
 - Contenedor `bg-white/10 rounded-full p-0.5` para contraste de logos oscuros sobre fondo `#0d0d0d`.
 
 **`league-metadata.ts`:**
-- Campo `logoUrl` aÃ±adido a `LeagueMeta`.
+- Campo `logoUrl` añadido a `LeagueMeta`.
 - URLs de ESPN CDN para todas las ligas: `https://a.espncdn.com/i/leaguelogos/soccer/500/{id}.png`.
-- Fallback Wikimedia para ligas sin ID ESPN (BrasileirÃ£o SÃ©rie B, UECL).
-- UnificaciÃ³n `name == shortName` (ej: "Copa Colombia" en vez de "Colombia - Copa").
+- Fallback Wikimedia para ligas sin ID ESPN (Brasileirão Série B, UECL).
+- Unificación `name == shortName` (ej: "Copa Colombia" en vez de "Colombia - Copa").
 
 **`partidos/[id]/page.tsx` (Match Detail):**
-- **Desbloqueo de UI:** Eliminados TODOS los `<InsufficientDataCard>` que ocultaban grÃ¡ficos.
-- **Nueva regla:** Si `Î» > 0`, SIEMPRE se renderiza Poisson, barras comparativas, marcadores probables y tabla de mercados.
-- Badge amarillo `EstimaciÃ³n Bayesiana (baja muestra)` cuando `confidenceScore < 50`.
-- Badge `"none"` ocultado â€” solo muestra `Confianza: X/100`.
-- Tab H2H con **fallback estadÃ­stico** cuando no hay anÃ¡lisis tÃ¡ctico LLM:
-  - `Î»` local/visitante, total goles esperados, ritmo (abierto/cerrado).
+- **Desbloqueo de UI:** Eliminados TODOS los `<InsufficientDataCard>` que ocultaban gráficos.
+- **Nueva regla:** Si `λ > 0`, SIEMPRE se renderiza Poisson, barras comparativas, marcadores probables y tabla de mercados.
+- Badge amarillo `Estimación Bayesiana (baja muestra)` cuando `confidenceScore < 50`.
+- Badge `"none"` ocultado — solo muestra `Confianza: X/100`.
+- Tab H2H con **fallback estadístico** cuando no hay análisis táctico LLM:
+  - `λ` local/visitante, total goles esperados, ritmo (abierto/cerrado).
   - Narrativa generada desde datos cuantitativos (sin IA).
 
 **`dashboard.tsx`:**
@@ -5649,11 +5667,11 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 
 ---
 
-### 5. ðŸ•·ï¸ Ingesta y Scripts
+### 5. 🕷️ Ingesta y Scripts
 
 **`uefa_qualifiers_scraper.py`:**
-- `try/except` por fixture individual (no cae el batch por una lÃ­nea mal formada).
-- **Enriquecimiento de logos:** DespuÃ©s de scrapear fixtures, busca cada equipo en ESPN API (`/v2/search?q={team_name}`) para extraer `logo_url`.
+- `try/except` por fixture individual (no cae el batch por una línea mal formada).
+- **Enriquecimiento de logos:** Después de scrapear fixtures, busca cada equipo en ESPN API (`/v2/search?q={team_name}`) para extraer `logo_url`.
 - Los `RawFixture` ahora incluyen `home_logo` y `away_logo`.
 
 **`espn_provider.py`:**
@@ -5663,7 +5681,7 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 
 **`data_ingestion.py`:**
 - `_sync_league_from_provider()`: Pasa `logo_url` del provider (antes era siempre `None`).
-- `_sync_matches_from_provider()`: Si el fixture trae `home_logo`/`away_logo` y el equipo tiene `logo_url=NULL`, lo actualiza automÃ¡ticamente.
+- `_sync_matches_from_provider()`: Si el fixture trae `home_logo`/`away_logo` y el equipo tiene `logo_url=NULL`, lo actualiza automáticamente.
 
 **`enrich_european_team_logos.py` (nuevo):**
 - Script standalone para backfill de escudos de equipos:
@@ -5671,7 +5689,7 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
   python apps/api/scripts/enrich_european_team_logos.py
   ```
 - Usa `external_id` del equipo para construir URL de ESPN CDN: `https://a.espncdn.com/i/teamlogos/soccer/500/{id}.png`.
-- **Resultado:** 129 equipos enriquecidos, 69 omitidos (external_id=0 â€” scrapeados de Flashscore).
+- **Resultado:** 129 equipos enriquecidos, 69 omitidos (external_id=0 — scrapeados de Flashscore).
 
 **`sync_all_historical.py` (nuevo):**
 - Sincroniza las 22 ligas configuradas desde ESPN/API-Football.
@@ -5680,28 +5698,28 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 **`batch_predict.py`:**
 - **Purga de predicciones viejas:** `DELETE FROM predictions WHERE match_id IN (...)` antes de recalcular.
 - Limpieza de cache Redis por match (`cache.delete`).
-- Default `--mode full` (LLM + fallback estadÃ­stico).
-- Imports aÃ±adidos: `delete`, `Prediction`.
+- Default `--mode full` (LLM + fallback estadístico).
+- Imports añadidos: `delete`, `Prediction`.
 
 ---
 
-### 6. ðŸŽ¨ LLM Orchestrator y Narrativa
+### 6. 🎨 LLM Orchestrator y Narrativa
 
 **`narrative_orchestrator.py`:**
-- Fix: `groq_client` duplicado â€” se elimina de `kwargs` antes de `asyncio.to_thread()`.
+- Fix: `groq_client` duplicado — se elimina de `kwargs` antes de `asyncio.to_thread()`.
 - El bug causaba `asyncio.threads.to_thread() got multiple values for keyword argument 'groq_client'`.
 
 **`prediction_orchestrator.py`:**
-- `_build_tactical_narrative()`: DeduplicaciÃ³n â€” si el `tactical_summary` del LLM empieza con el headline, se omite la secciÃ³n de goles.
+- `_build_tactical_narrative()`: Deduplicación — si el `tactical_summary` del LLM empieza con el headline, se omite la sección de goles.
 - Simplificado acceso a Pydantic (sin `hasattr`/`.get`).
-- `_build_minimal_tactical_analysis`: Traducido completamente a espaÃ±ol (sin "Over/Under" en inglÃ©s).
+- `_build_minimal_tactical_analysis`: Traducido completamente a español (sin "Over/Under" en inglés).
 
 **`goals_narrative.py`:**
-- Fix import: `NarrativeSignal` â†’ `SignalStrength.MODERATE` (el enum nunca se llamÃ³ NarrativeSignal).
+- Fix import: `NarrativeSignal` → `SignalStrength.MODERATE` (el enum nunca se llamó NarrativeSignal).
 
 ---
 
-### 7. ðŸ“Š Resumen de Archivos Modificados
+### 7. 📊 Resumen de Archivos Modificados
 
 | Capa | Archivos |
 |------|----------|
@@ -5712,98 +5730,98 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 
 ---
 
-### 8. âœ… VerificaciÃ³n Final
+### 8. ✅ Verificación Final
 
-- **TypeScript:** 0 errores de compilaciÃ³n.
+- **TypeScript:** 0 errores de compilación.
 - **Python:** Todos los archivos parsean con `ast.parse()`.
 - **Tests:** 18/18 pasan (`test_kelly_and_filters.py`).
-- **Batch predict:** 59/59 Ã©xito, 0 errores.
-- **Supabase:** 60/60 partidos con `Î» > 0`. 14 alta confianza (â‰¥50), 9 media (30-49), 37 baja (<30).
-- **Backend:** `GET /api/v1/matches/?limit=3` â†’ HTTP 200 con datos completos (incluyendo logos y Î»).
+- **Batch predict:** 59/59 éxito, 0 errores.
+- **Supabase:** 60/60 partidos con `λ > 0`. 14 alta confianza (≥50), 9 media (30-49), 37 baja (<30).
+- **Backend:** `GET /api/v1/matches/?limit=3` → HTTP 200 con datos completos (incluyendo logos y λ).
 - **Frontend:** `.next` cache eliminada, servidor reconstruido desde cero. HTTP 200 en `:3000`.
 
 ---
 
-### ðŸŸ¢ AuditorÃ­a de Arquitectura y OptimizaciÃ³n de Rendimiento (2026-07-28)
+### 🟢 Auditoría de Arquitectura y Optimización de Rendimiento (2026-07-28)
 
-#### â±ï¸ 1. Timeouts y Modelo Groq (`config.py` Ã—2)
+#### ⏱️ 1. Timeouts y Modelo Groq (`config.py` ×2)
 
 **`apps/api/config.py:62-64`:**
-- `GROQ_TIMEOUT_SECONDS`: `3.0` â†’ `90.0` (3s cancelaba el LLM antes de responder).
+- `GROQ_TIMEOUT_SECONDS`: `3.0` → `90.0` (3s cancelaba el LLM antes de responder).
 - Nuevos: `GROQ_SINGLE_CALL_TIMEOUT = 25.0`, `GROQ_NARRATIVE_TIMEOUT = 80.0`.
 
 **`packages/ml/betmind_ml/config.py:13-18`:**
-- `NARRATIVE_MODEL`: `"llama-3.1-8b-instant"` â†’ `"llama-3.3-70b-versatile"` (mÃ¡xima profundidad tÃ¡ctica).
+- `NARRATIVE_MODEL`: `"llama-3.1-8b-instant"` → `"llama-3.3-70b-versatile"` (máxima profundidad táctica).
 - Constantes `GROQ_TIMEOUT_SECONDS`, `GROQ_SINGLE_CALL_TIMEOUT`, `GROQ_NARRATIVE_TIMEOUT` agregadas.
 
-#### âš¡ 2. Paralelismo Real en Narrativas (`narrative_orchestrator.py:58`)
+#### ⚡ 2. Paralelismo Real en Narrativas (`narrative_orchestrator.py:58`)
 
-- `asyncio.Semaphore(1)` â†’ `asyncio.Semaphore(len(self._api_keys))` (dinÃ¡mico por cantidad de keys).
-- Con 2 keys, los 3 generadores (goles, tarjetas, cÃ³rneres) se ejecutan en paralelo real dentro de `asyncio.gather`.
-- Tiempo de respuesta: ~21s â†’ ~2s.
+- `asyncio.Semaphore(1)` → `asyncio.Semaphore(len(self._api_keys))` (dinámico por cantidad de keys).
+- Con 2 keys, los 3 generadores (goles, tarjetas, córneres) se ejecutan en paralelo real dentro de `asyncio.gather`.
+- Tiempo de respuesta: ~21s → ~2s.
 
-#### ðŸ§® 3. Shrinkage Bayesiano Preventivo (`strength_calculator.py:119-131`)
+#### 🧮 3. Shrinkage Bayesiano Preventivo (`strength_calculator.py:119-131`)
 
-- `calculate_team_strength`: AtenuaciÃ³n bayesiana con prior de liga ($k=5$) aplicada **antes** de calcular `attack_index` y `defense_index`.
+- `calculate_team_strength`: Atenuación bayesiana con prior de liga ($k=5$) aplicada **antes** de calcular `attack_index` y `defense_index`.
 - Si $N = 0$ partidos: asigna directamente `league_avg` (evita 0.0).
-- Si $N > 0$: `avg = weight Ã— observed + (1 âˆ’ weight) Ã— league_avg`, donde `weight = N / (N + 5)`.
+- Si $N > 0$: `avg = weight × observed + (1 − weight) × league_avg`, donde `weight = N / (N + 5)`.
 
 #### 4. Mercados de Prior de Liga (`prediction_pipeline.py:210-221`)
 
-- `_build_insufficient_markets()` (obsoleta, retornaba `probability=0.0`) â†’ `_build_prior_markets(league_avg_goals, league_key, is_neutral_venue)`.
-- Nueva funciÃ³n construye matriz Poisson desde el prior de liga con ventaja de local, nunca retorna 0.0.
+- `_build_insufficient_markets()` (obsoleta, retornaba `probability=0.0`) → `_build_prior_markets(league_avg_goals, league_key, is_neutral_venue)`.
+- Nueva función construye matriz Poisson desde el prior de liga con ventaja de local, nunca retorna 0.0.
 
 #### 5. Seguridad en `batch_predict.py:19-23`
 
-- Removida cadena de conexiÃ³n hardcodeada con credenciales de Supabase.
-- `DATABASE_URL` se lee estrictamente desde `.env` vÃ­a `python-dotenv` con validaciÃ³n: `sys.exit(1)` si no existe.
+- Removida cadena de conexión hardcodeada con credenciales de Supabase.
+- `DATABASE_URL` se lee estrictamente desde `.env` vía `python-dotenv` con validación: `sys.exit(1)` si no existe.
 
-#### ðŸ”„ 6. RotaciÃ³n Multi-Key y Cascada de Modelos
+#### 🔄 6. Rotación Multi-Key y Cascada de Modelos
 
 **`packages/ml/betmind_ml/config.py:10-24`:**
-- FunciÃ³n `get_groq_api_keys()`: lee `GROQ_API_KEYS` (coma-separadas) y `GROQ_API_KEY`, expone `GROQ_API_KEYS_LIST`.
+- Función `get_groq_api_keys()`: lee `GROQ_API_KEYS` (coma-separadas) y `GROQ_API_KEY`, expone `GROQ_API_KEYS_LIST`.
 
 **`narrative_orchestrator.py:25-26, 60-100`:**
 - `PRIMARY_MODEL = "llama-3.3-70b-versatile"`, `FALLBACK_MODEL = "llama-3.1-8b-instant"`.
-- `_execute_with_retry`: nueva lÃ³gica de cascada por key:
-  1. Intenta key #1 con 70B â†’ si 429, reintenta misma key con 8B.
-  2. Si 8B tambiÃ©n 429 â†’ rota a key #2, repite cascada.
+- `_execute_with_retry`: nueva lógica de cascada por key:
+  1. Intenta key #1 con 70B → si 429, reintenta misma key con 8B.
+  2. Si 8B también 429 → rota a key #2, repite cascada.
   3. Cliente `Groq(api_key=key)` creado fresco por intento (sin estado compartido).
 - Eliminados: `self._client`, `_current_key_index`, `_rotate_api_key()`, `_rate_limit_delay`.
 
-#### âœ‚ï¸ 7. OptimizaciÃ³n de Tokens y Re-raise de 429
+#### ✂️ 7. Optimización de Tokens y Re-raise de 429
 
 **4 generadores** (`goals_`, `cards_`, `corners_`, `bet_builder.py`):
-- `max_tokens`: 2000/3000 â†’ **750** en todos.
-- ParÃ¡metro `model: str | None = None` agregado a cada firma.
-- Rate-limit errors (429) se **re-lanzan** hacia el orquestador antes del fallback, para que la cascada 70Bâ†’8B pueda interceptarlos.
+- `max_tokens`: 2000/3000 → **750** en todos.
+- Parámetro `model: str | None = None` agregado a cada firma.
+- Rate-limit errors (429) se **re-lanzan** hacia el orquestador antes del fallback, para que la cascada 70B→8B pueda interceptarlos.
 
-#### ðŸ” 8. BÃºsqueda Web en Vivo y Ficha Maestro de AnÃ¡lisis
+#### 🔍 8. Búsqueda Web en Vivo y Ficha Maestro de Análisis
 
 **`providers/web_search_provider.py`** (nuevo):
-- `fetch_match_live_context(home_team, away_team, league_name)`: busca noticias, bajas y alineaciones en DuckDuckGo (3 resultados mÃ¡x, pausa 1.2s anti-bloqueo).
+- `fetch_match_live_context(home_team, away_team, league_name)`: busca noticias, bajas y alineaciones en DuckDuckGo (3 resultados máx, pausa 1.2s anti-bloqueo).
 
 **`narrative_orchestrator.py:22, 139-144`:**
 - Importa e invoca `fetch_match_live_context()` al inicio de `generate_full_analysis()`.
 - Pasa `live_context` a los generadores de goles y tarjetas.
 
 **Prompts** (`goals_prompt.py`, `cards_prompt.py`):
-- Nueva secciÃ³n `### NOTICIAS WEB Y BAJAS EN VIVO` en goals.
-- Nueva secciÃ³n `### NOTICIAS Y SANCIONADOS EN VIVO` en cards.
+- Nueva sección `### NOTICIAS WEB Y BAJAS EN VIVO` en goals.
+- Nueva sección `### NOTICIAS Y SANCIONADOS EN VIVO` en cards.
 
-#### ðŸ¤– 9. AutomatizaciÃ³n en la Nube (GitHub Actions)
+#### 🤖 9. Automatización en la Nube (GitHub Actions)
 
 **`.github/workflows/daily_predictions.yml`** (nuevo):
-- Cron `0 6,14 * * *` (2Ã—/dÃ­a) + `workflow_dispatch` (manual).
+- Cron `0 6,14 * * *` (2×/día) + `workflow_dispatch` (manual).
 - Ubuntu latest, Python 3.11, pip cache.
-- Instala desde `requirements.txt` raÃ­z + `packages/ml` + `apps/api`.
+- Instala desde `requirements.txt` raíz + `packages/ml` + `apps/api`.
 - Ejecuta `python scripts/batch_predict.py --mode full --limit 150`.
 
-**`requirements.txt`** (nuevo, raÃ­z):
-- AuditorÃ­a integral de 20 dependencias en 7 categorÃ­as (Web, DB, ML, LLM, Search, Auth, HTTP).
-- Consolidado Ãºnico para evitar `ModuleNotFoundError` iterativos en CI.
+**`requirements.txt`** (nuevo, raíz):
+- Auditoría integral de 20 dependencias en 7 categorías (Web, DB, ML, LLM, Search, Auth, HTTP).
+- Consolidado único para evitar `ModuleNotFoundError` iterativos en CI.
 
-### ðŸ“Š Resumen de Archivos Modificados
+### 📊 Resumen de Archivos Modificados
 
 | Capa | Archivos |
 |------|----------|
@@ -5814,122 +5832,122 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 | **Nuevo: Providers** | `providers/__init__.py`, `providers/web_search_provider.py` |
 | **Scripts** | `batch_predict.py` |
 | **CI/CD** | `.github/workflows/daily_predictions.yml` |
-| **Deps** | `requirements.txt` (raÃ­z), `apps/api/requirements.txt`, `packages/ml/pyproject.toml` |
+| **Deps** | `requirements.txt` (raíz), `apps/api/requirements.txt`, `packages/ml/pyproject.toml` |
 
-### âœ… VerificaciÃ³n
+### ✅ Verificación
 
-- **batch_predict:** 59/59 Ã©xito, 0 errores (modo full).
+- **batch_predict:** 59/59 éxito, 0 errores (modo full).
 - **Groq direct test:** Ambas keys + modelo 70B responden `OK`.
-- **Cascada 70Bâ†’8B:** Confirmada en logs: `Cuota de 70B agotada (key 1/2). Conmutando a Llama 3.1 8B Instant...` + `Narrativa generada con modelo 8B`.
+- **Cascada 70B→8B:** Confirmada en logs: `Cuota de 70B agotada (key 1/2). Conmutando a Llama 3.1 8B Instant...` + `Narrativa generada con modelo 8B`.
 - **Web search:** DuckDuckGo retorna ~46 chars de noticias por partido.
 - **GitHub Actions:** Workflow validado (YAML syntax OK), pusheado a `main`.
-- **Shrinkage Bayesiano:** Verificado en logs: `Bayesian blend Î»_home=1.307 (weight=0.20, prior=1.46, N=1)`. 
+- **Shrinkage Bayesiano:** Verificado en logs: `Bayesian blend λ_home=1.307 (weight=0.20, prior=1.46, N=1)`. 
 
 ---
 
 
-## ðŸ”´ SESIÃ“N 2026-07-29: AuditorÃ­a, Resiliencia, ExpansiÃ³n de Mercados y Polish Visual
+## 🔴 SESIÓN 2026-07-29: Auditoría, Resiliencia, Expansión de Mercados y Polish Visual
 
-### ðŸ“‹ Resumen de 13 Commits Realizados
+### 📋 Resumen de 13 Commits Realizados
 
-| # | Commit | Ãrea |
+| # | Commit | Área |
 |---|--------|------|
-| 1 | `feat(redis)` | Docker Redis, ConnectionPool asÃ­ncrono, Rate Limiter |
-| 2 | `feat(leagues)` | Filtrado dinÃ¡mico de ligas por partidos del dÃ­a |
-| 3 | `fix(sync)` | CorrecciÃ³n int32 overflow en hash de IDs |
+| 1 | `feat(redis)` | Docker Redis, ConnectionPool asíncrono, Rate Limiter |
+| 2 | `feat(leagues)` | Filtrado dinámico de ligas por partidos del día |
+| 3 | `fix(sync)` | Corrección int32 overflow en hash de IDs |
 | 4 | `fix(timezone)` | Fechas UTC consistentes + ISO 8601 |
 | 5 | `feat(predictions)` | Sistema 5-capas de resiliencia IA |
-| 6 | `fix(batch)` | Fix imports, Pydantic validation, optimizaciÃ³n Groq |
-| 7 | `fix(audit)` | CorrecciÃ³n bugs crÃ­ticos de resiliencia |
-| 8 | `feat(markets)` | ExpansiÃ³n de mercados matemÃ¡ticos + risk_level |
+| 6 | `fix(batch)` | Fix imports, Pydantic validation, optimización Groq |
+| 7 | `fix(audit)` | Corrección bugs críticos de resiliencia |
+| 8 | `feat(markets)` | Expansión de mercados matemáticos + risk_level |
 | 9 | `feat(bet-builder)` | Motor Bet Builder + badges riesgo + nuevos mercados UI |
-| 10 | `fix(ui)` | Fix ExpandedMarkets vacÃ­o, CÃ³rners/Tarjetas, Bet Builder modal |
+| 10 | `fix(ui)` | Fix ExpandedMarkets vacío, Córners/Tarjetas, Bet Builder modal |
 | 11 | `fix(batch)` | Fix fallback schemas, BetBuilder engine, Groq 429 instant |
-| 12 | `fix(batch)` | Micro-fix validaciÃ³n Cards + log BetBuilder |
-| 13 | `feat(ui)` | TraducciÃ³n espaÃ±ol, exclusiÃ³n mutua BetBuilder, polish visual |
+| 12 | `fix(batch)` | Micro-fix validación Cards + log BetBuilder |
+| 13 | `feat(ui)` | Traducción español, exclusión mutua BetBuilder, polish visual |
 
 ---
 
-### ðŸ³ 1. OptimizaciÃ³n Integral de Redis (Docker + ConnectionPool + Rate Limiter)
+### 🐳 1. Optimización Integral de Redis (Docker + ConnectionPool + Rate Limiter)
 
 **`docker-compose.yml`** (nuevo): Redis 7-alpine, persistencia AOF, maxmemory 512MB LRU, healthcheck.
 
 **`cache_service.py`** (refactor): `ConnectionPool` global 20 conexiones, timeouts 2s, `close_redis_pool()` en lifespan. `set_json`/`get_json` con `ttl_seconds` y retorno `bool`. `CacheService.__init__()` acepta `redis_url` opcional (backward compat).
 
-**`main.py`**: Rate Limiter `slowapi` con Redis: 200 req/min, 2000 req/hour. Endpoint `/api/v1/health/redis`. Handler `SQLAlchemyError` â†’ 503.
+**`main.py`**: Rate Limiter `slowapi` con Redis: 200 req/min, 2000 req/hour. Endpoint `/api/v1/health/redis`. Handler `SQLAlchemyError` → 503.
 
 ---
 
-### ðŸ” 2. Filtrado DinÃ¡mico de Ligas
+### 🔍 2. Filtrado Dinámico de Ligas
 
-**`routes/v1/leagues.py`**: `?date=YYYY-MM-DD`, `INNER JOIN` â€” solo ligas con â‰¥1 partido en la fecha. `fetchLeagues(targetDate?)` en frontend.
+**`routes/v1/leagues.py`**: `?date=YYYY-MM-DD`, `INNER JOIN` — solo ligas con ≥1 partido en la fecha. `fetchLeagues(targetDate?)` en frontend.
 
 ---
 
-### ðŸ› 3. Fix int32 Overflow + Zona Horaria + ISO 8601
+### 🐛 3. Fix int32 Overflow + Zona Horaria + ISO 8601
 
 **`sync_today_matches.py`**: Hash IDs con `% 2_000_000_000` (evita overflow INTEGER PostgreSQL en Liga Argentina/MLS).
 
 **`match_fixture_scraper.py`**: `_parse_event()` mantiene `match_date` UTC (sin convertir a COT).
 
-**`routes/v1/matches.py`** + **`backtesting.py`**: `str(m.match_date)` â†’ `m.match_date.isoformat()` (ISO 8601 vÃ¡lido con `T` separator).
+**`routes/v1/matches.py`** + **`backtesting.py`**: `str(m.match_date)` → `m.match_date.isoformat()` (ISO 8601 válido con `T` separator).
 
 ---
 
-### ðŸ›¡ï¸ 4. Sistema 5-Capas de Resiliencia IA
+### 🛡️ 4. Sistema 5-Capas de Resiliencia IA
 
-| Capa | DescripciÃ³n |
+| Capa | Descripción |
 |------|-------------|
-| **1** | Motor Poisson base (0 tokens): `_build_minimal_tactical_analysis()` existente, predicciÃ³n nunca se pierde |
-| **2** | Cascada Groq â†’ Gemini â†’ SintÃ©tico: `LLMCascadeService` (nuevo), `google-genai` SDK, `GEMINI_API_KEY` |
-| **3** | Prompts optimizados: `json_schema` eliminado (~1000 tokens), `max_tokens` 400â†’800, campos explÃ­citos |
-| **4** | Idempotencia: `_has_narrative()` consulta DB, skip automÃ¡tico, `--force` flag |
+| **1** | Motor Poisson base (0 tokens): `_build_minimal_tactical_analysis()` existente, predicción nunca se pierde |
+| **2** | Cascada Groq → Gemini → Sintético: `LLMCascadeService` (nuevo), `google-genai` SDK, `GEMINI_API_KEY` |
+| **3** | Prompts optimizados: `json_schema` eliminado (~1000 tokens), `max_tokens` 400→800, campos explícitos |
+| **4** | Idempotencia: `_has_narrative()` consulta DB, skip automático, `--force` flag |
 | **5** | Lotes: `BATCH_SIZE=5`, `asyncio.sleep(2)` entre lotes |
 
 ---
 
-### ðŸ©º 5. AuditorÃ­a de Resiliencia â€” Bugs CrÃ­ticos Corregidos
+### 🩺 5. Auditoría de Resiliencia — Bugs Críticos Corregidos
 
 - **api_football.py + football_data_provider.py**: `response.json()` con guard `try/except ValueError`.
-- **main.py**: Handler global `SQLAlchemyError` â†’ 503 `DB_UNAVAILABLE`.
+- **main.py**: Handler global `SQLAlchemyError` → 503 `DB_UNAVAILABLE`.
 - **Scripts CLI**: `pool_size` desde `settings` (antes 5, 75% menor), `engine.dispose()` en `try/finally`.
-- **sync_today_matches.py**: ValidaciÃ³n `team_name.strip()` contra nombres vacÃ­os.
+- **sync_today_matches.py**: Validación `team_name.strip()` contra nombres vacíos.
 
 ---
 
-### ðŸ“Š 6. ExpansiÃ³n de Mercados (13 â†’ 22)
+### 📊 6. Expansión de Mercados (13 → 22)
 
-| CategorÃ­a | Nuevos mercados |
+| Categoría | Nuevos mercados |
 |---|---|
 | Double Chance | `DOUBLE_1X`, `DOUBLE_X2`, `DOUBLE_12` |
 | Draw No Bet | `DNB_HOME`, `DNB_AWAY` |
 | Indiv. Team Goals | `HOME_OVER_0_5/1_5`, `AWAY_OVER_0_5/1_5` |
 
-- `risk_level`: LOW (â‰¥75%), MEDIUM (55-74%), HIGH (<55%). Campo en `MatchPredictionOutput` y `PredictionResponse`.
+- `risk_level`: LOW (≥75%), MEDIUM (55-74%), HIGH (<55%). Campo en `MatchPredictionOutput` y `PredictionResponse`.
 
 ---
 
-### ðŸŽ¯ 7. Bet Builder Engine + Badges de Riesgo + UI
+### 🎯 7. Bet Builder Engine + Badges de Riesgo + UI
 
-- **`bet_builder_engine.py`** (nuevo): 3 perfiles automÃ¡ticos, `_MUTUALLY_EXCLUSIVE` (8 grupos), siempre 3 perfiles con fallback robusto.
+- **`bet_builder_engine.py`** (nuevo): 3 perfiles automáticos, `_MUTUALLY_EXCLUSIVE` (8 grupos), siempre 3 perfiles con fallback robusto.
 - **API**: `PredictionResponse.bet_builder` con `BetBuilderProfileSchema`.
-- **Frontend**: `RiskBadge` (ðŸŸ¢ðŸŸ¡ðŸ”´), `BetBuilderSection`, `ExpandedMarkets` con `MARKET_LABELS_ES`, `TacticalCardsSection`, `MatchModal` con fetch al abrir.
+- **Frontend**: `RiskBadge` (🟢🟡🔴), `BetBuilderSection`, `ExpandedMarkets` con `MARKET_LABELS_ES`, `TacticalCardsSection`, `MatchModal` con fetch al abrir.
 
 ---
 
-### ðŸŽ¨ 8. Polish Visual y TraducciÃ³n 100% EspaÃ±ol
+### 🎨 8. Polish Visual y Traducción 100% Español
 
 - **Debug tags ocultos**: badge `llama-3.1-8b-instant`, `Potenciado por Groq`.
-- **Fuente equipos**: `font-serif` â†’ `font-sans font-bold`.
-- **Lambda label**: `Goles Esperados: Local X.XX â€” Visitante Y.YY` (sin Î»).
+- **Fuente equipos**: `font-serif` → `font-sans font-bold`.
+- **Lambda label**: `Goles Esperados: Local X.XX — Visitante Y.YY` (sin λ).
 - **Grid**: BetBuilder full-width debajo del grid 2-col.
-- **Idioma**: `_MARKET_LABELS` espaÃ±ol, `MARKET_LABELS_ES` en frontend, `SYSTEM_BASE` regla 7, Gemini prompt espaÃ±ol.
+- **Idioma**: `_MARKET_LABELS` español, `MARKET_LABELS_ES` en frontend, `SYSTEM_BASE` regla 7, Gemini prompt español.
 - **Groq 429**: `max_retries=0`, fallback en <1s (antes ~40s).
-- **ValidaciÃ³n Cards**: `pros min_length=2â†’1`.
+- **Validación Cards**: `pros min_length=2→1`.
 
 ---
 
-### ðŸ“Š Archivos Totales: ~55 archivos modificados + 5 nuevos
+### 📊 Archivos Totales: ~55 archivos modificados + 5 nuevos
 
 | Capa | Nuevos |
 |------|--------|
@@ -5937,23 +5955,23 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 | Servicios | `llm_cascade.py` |
 | ML Engine | `bet_builder_engine.py` |
 
-### âœ… VerificaciÃ³n
+### ✅ Verificación
 
-- batch_predict --force --limit 3: 3/3 Ã©xito, ev_mkts=22
+- batch_predict --force --limit 3: 3/3 éxito, ev_mkts=22
 - BetBuilder: 3 perfiles, 0 exclusiones mutuas
 - TypeScript: compila sin errores
 - Groq 429: sin esperas SDK
-- SincronizaciÃ³n: 20 partidos de 4 ligas (Brasil 10, Argentina 8, Colombia 1, MLS 1)
+- Sincronización: 20 partidos de 4 ligas (Brasil 10, Argentina 8, Colombia 1, MLS 1)
 
 ---
 
-### ðŸ”µ Fase 2: RediseÃ±o UI, Marcadores en Vivo, SincronizaciÃ³n Universal y Limpieza de Datos (2026-07-29)
+### 🔵 Fase 2: Rediseño UI, Marcadores en Vivo, Sincronización Universal y Limpieza de Datos (2026-07-29)
 
-#### 1. Reemplazo UI de Detalle de Partido con diseÃ±o v0.dev
+#### 1. Reemplazo UI de Detalle de Partido con diseño v0.dev
 
 - **`apps/web/app/partidos/[id]/page.tsx`** reescrito con componentes v0: `MatchHero`, `ConfidenceBar`, `EVTable`, `AdditionalMarkets`, `TopScorers`, `ModelProbabilities`, `CornersCards`, `BetBuilder`, `H2HTab`, `ArbitroTab`.
-- **`apps/web/components/betmind/match-modal.tsx`** â€” mismo diseÃ±o en contexto Dialog (`Modal*` variants).
-- Todas las props cableadas a `fetchMatchPrediction`, `buildModel`, `marketRows`, `resolveLeague` â€” cero datos estÃ¡ticos.
+- **`apps/web/components/betmind/match-modal.tsx`** — mismo diseño en contexto Dialog (`Modal*` variants).
+- Todas las props cableadas a `fetchMatchPrediction`, `buildModel`, `marketRows`, `resolveLeague` — cero datos estáticos.
 
 #### 2. Fix de Caracteres Unicode escapados
 
@@ -5961,79 +5979,79 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 
 #### 3. Componente TeamLogo con 3 capas de fallback
 
-- **`apps/web/components/ui/team-logo.tsx`** â€” 3-tier: URL directa â†’ CDN api-sports.io (si hay `teamId`) â†’ SVG shield badge con gradiente e iniciales inteligentes.
-- AÃ±adidos `homeTeamId` / `awayTeamId` al tipo `Match` y al mapper de API.
+- **`apps/web/components/ui/team-logo.tsx`** — 3-tier: URL directa → CDN api-sports.io (si hay `teamId`) → SVG shield badge con gradiente e iniciales inteligentes.
+- Añadidos `homeTeamId` / `awayTeamId` al tipo `Match` y al mapper de API.
 - 6 instancias de `<TeamLogo>` actualizadas (page, modal, match-card).
 
-#### 4. Estados de Partido y Marcadores DinÃ¡micos
+#### 4. Estados de Partido y Marcadores Dinámicos
 
 - `MatchStatus` ampliado: `'SCHEDULED' | 'IN_PLAY' | 'PAUSED' | 'FINISHED'` (+ compatibilidad `'UPCOMING' | 'LIVE' | 'FT'`).
-- `MatchHero`, `ModalHeader`, `MatchCard` renderizan condicionalmente segÃºn datos reales:
+- `MatchHero`, `ModalHeader`, `MatchCard` renderizan condicionalmente según datos reales:
   - **IN_PLAY**: Badge verde `EN VIVO {elapsed}'`, marcador central grande.
   - **FINISHED**: Badge gris, resultado final, sin Poisson/1X2. Si no hay scores: `Resultado pendiente`.
   - **SCHEDULED**: Hora + VS + Poisson + probabilidades.
-- ValidaciÃ³n estricta: `hasRealScore` solo si `typeof score[0] === 'number'`, nunca `null â†’ 0`.
+- Validación estricta: `hasRealScore` solo si `typeof score[0] === 'number'`, nunca `null → 0`.
 
-#### 5. EliminaciÃ³n de Inferencia Falsa por Hora
+#### 5. Eliminación de Inferencia Falsa por Hora
 
 - **Eliminado** el fallback que forzaba `IN_PLAY`/`FINISHED` basado en hora del sistema en `lib/api.ts` mapper.
 - Estado del partido responde 100% a datos reales de API/Supabase.
 
-#### 6. Fix: Partidos Finalizados DesaparecÃ­an
+#### 6. Fix: Partidos Finalizados Desaparecían
 
-- **`apps/web/lib/api.ts`**: `include_finished: 'false'` â†’ `'true'`.
+- **`apps/web/lib/api.ts`**: `include_finished: 'false'` → `'true'`.
 - **Backend `routes/v1/matches.py`**: Status filter incluye `"IN_PLAY"` y `"FINISHED" | "FT"`.
 
 #### 7. Fix: Marcador Duplicado en MatchCard
 
-- Eliminados nÃºmeros individuales de score junto a cada equipo. Solo se muestra el marcador central `{homeScore} â€“ {awayScore}`.
+- Eliminados números individuales de score junto a cada equipo. Solo se muestra el marcador central `{homeScore} – {awayScore}`.
 
-#### 8. Scraper ESPN â€” ExtracciÃ³n de Scores y Elapsed
+#### 8. Scraper ESPN — Extracción de Scores y Elapsed
 
 - **`match_fixture_scraper.py`**: `_parse_event()` ahora extrae `home_score`, `away_score` de `competitors[].score` y `elapsed` de `status.displayClock`.
 
 #### 9. Fix: Scores Hardcodeados a None en Sync
 
-- **`sync_today_matches.py`**: `home_score=None, away_score=None` â†’ `fixture.get("home_score"), fixture.get("away_score")`.
+- **`sync_today_matches.py`**: `home_score=None, away_score=None` → `fixture.get("home_score"), fixture.get("away_score")`.
 - **`match_repository.py`**: `upsert_match()` solo actualiza scores si el valor entrante no es `None`.
 
 #### 10. Fuzzy Matching de Equipos + Aliases
 
-- **`team_normalizer.py`**: 60+ aliases manuales (`TEAM_NAME_ALIASES`), strip de prefijos (`AtlÃ©tico`, `Club`, `CD`, `Deportivo`...), `fuzzy_match_team()` con token overlap â‰¥ 60%.
+- **`team_normalizer.py`**: 60+ aliases manuales (`TEAM_NAME_ALIASES`), strip de prefijos (`Atlético`, `Club`, `CD`, `Deportivo`...), `fuzzy_match_team()` con token overlap ≥ 60%.
 - **`team_repository.py`**: `_find_by_normalized_name()` con fallback fuzzy.
 
 #### 11. API-Football Fallback Universal
 
-- **`sync_today_matches.py`**: Nueva secciÃ³n post-ESPN que consulta `get_fixtures_by_date()` de API-Football. Crea matches nuevos para ligas sin cobertura ESPN. Actualiza scores/states para matches existentes. Solo procesa `FEATURED_LEAGUES`.
-- **`api_football.py`**: Status map ampliado (`1H`/`2H` â†’ `LIVE`, `PEN`/`PST` â†’ `FINISHED`).
-- **`config.py`**: AÃ±adidas `copa_colombia` (241) y `sudamericana` (11) a `FEATURED_LEAGUES`.
+- **`sync_today_matches.py`**: Nueva sección post-ESPN que consulta `get_fixtures_by_date()` de API-Football. Crea matches nuevos para ligas sin cobertura ESPN. Actualiza scores/states para matches existentes. Solo procesa `FEATURED_LEAGUES`.
+- **`api_football.py`**: Status map ampliado (`1H`/`2H` → `LIVE`, `PEN`/`PST` → `FINISHED`).
+- **`config.py`**: Añadidas `copa_colombia` (241) y `sudamericana` (11) a `FEATURED_LEAGUES`.
 
 #### 12. Limpieza de Datos Basura en BD
 
 - **296 partidos fake eliminados** (ligas con IDs inventados 9001-9011: Champions League, Serie B Brasil, etc.).
-- **5 ligas fake eliminadas**, Sudamericana merge (9011 â†’ 11).
-- **12 partidos Korean/Manchester purgados** de Liga 1 PerÃº (Busan I Park, Siheung Citizen, Gwangju FC, etc.).
-- Nombres de ligas corregidos, `liga_1_peru` ID 294 â†’ 281.
+- **5 ligas fake eliminadas**, Sudamericana merge (9011 → 11).
+- **12 partidos Korean/Manchester purgados** de Liga 1 Perú (Busan I Park, Siheung Citizen, Gwangju FC, etc.).
+- Nombres de ligas corregidos, `liga_1_peru` ID 294 → 281.
 - **`.next` cache eliminada**.
 
-#### 13. DiagnÃ³stico API-Football
+#### 13. Diagnóstico API-Football
 
-- Rate limits: 66/100 â€” sin problemas.
+- Rate limits: 66/100 — sin problemas.
 - Zona horaria COT confirmada correcta.
-- API-Football SÃ retorna Copa Colombia (241) y Sudamericana (11) con scores reales.
+- API-Football SÍ retorna Copa Colombia (241) y Sudamericana (11) con scores reales.
 
-### âœ… VerificaciÃ³n Final
+### ✅ Verificación Final
 
 - TypeScript frontend: compila sin errores.
-- Python backend: sintaxis vÃ¡lida en todos los scripts modificados.
+- Python backend: sintaxis válida en todos los scripts modificados.
 - DB: 15 ligas, 578 partidos, 0 duplicados, 0 basura.
-- Copa Colombia: 6 partidos con scores reales (Inter Palmira 1-2 Inter BogotÃ¡, Barranquilla 3-3 Junior, etc.).
-- Sudamericana: 6 partidos con scores reales (Vasco 1-0 MedellÃ­n, Cienciano 3-0 LanÃºs, etc.).
+- Copa Colombia: 6 partidos con scores reales (Inter Palmira 1-2 Inter Bogotá, Barranquilla 3-3 Junior, etc.).
+- Sudamericana: 6 partidos con scores reales (Vasco 1-0 Medellín, Cienciano 3-0 Lanús, etc.).
 - 13 ligas totales sincronizadas desde API-Football + ESPN.
 
 ---
 
-## ðŸŽ¨ Fase UI: Auditoria, Rediseno y Pulido del Frontend (Completado)
+## 🎨 Fase UI: Auditoria, Rediseno y Pulido del Frontend (Completado)
 
 ### 1. Auditoria General de UI/UX (UI_AUDIT_AND_ROADMAP.md)
 
@@ -6056,9 +6074,9 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 |---------|--------|
 | date-selector.tsx | role=radiogroup + aria-label, role=radio + aria-checked en botones |
 | match-tab-bar.tsx | role=tablist + aria-orientation=horizontal en contenedor |
-| 	op-nav.tsx | MenuIcon aria-hidden=true, AI badge indigo-* â†’ primary/* |
+| 	op-nav.tsx | MenuIcon aria-hidden=true, AI badge indigo-* → primary/* |
 | 	icket-card.tsx | StarIcon aria-hidden=true |
-| page.tsx (detail) | <p> â†’ <h1> en header con match.home vs match.away |
+| page.tsx (detail) | <p> → <h1> en header con match.home vs match.away |
 | dashboard.tsx | MatchSkeleton reescrito al layout 90px / flex-1 / 180px |
 
 ### 3. Fase 2: Rediseno de Componentes Base (Completado)
@@ -6067,13 +6085,13 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 
 | Archivo | Cambio |
 |---------|--------|
-| page.tsx (detail) | **155+ reemplazos**: text-zinc-* â†’ text-subtle, bg-zinc-* â†’ bg-card/surface, text-indigo-400 â†’ text-primary, text-amber-400 â†’ text-warning, text-emerald-400 â†’ text-positive, text-rose-400 â†’ text-negative. Zero colores hardcodeados residuales. |
+| page.tsx (detail) | **155+ reemplazos**: text-zinc-* → text-subtle, bg-zinc-* → bg-card/surface, text-indigo-400 → text-primary, text-amber-400 → text-warning, text-emerald-400 → text-positive, text-rose-400 → text-negative. Zero colores hardcodeados residuales. |
 | page.tsx (detail) | Custom tabs reemplazados por MatchTabBar con role=tablist |
-| page.tsx (detail) | 6 emojis (âš½ðŸŸ¨ðŸ“ðŸ“‹ðŸ”’ðŸ ðŸ’¡) â†’ 7 lucide icons (Goal, Footprints, LayoutList, ClipboardList, Lock, Home, Lightbulb) |
-| 	icket-card.tsx | h-full â†’ min-h-[320px] + Card reemplazado por div plano con flex flex-col |
-| 	icket-leg.tsx | truncate â†’ block leading-tight con title attribute para tooltip nativo |
+| page.tsx (detail) | 6 emojis (⚽🟨📐📋🔒🏠💡) → 7 lucide icons (Goal, Footprints, LayoutList, ClipboardList, Lock, Home, Lightbulb) |
+| 	icket-card.tsx | h-full → min-h-[320px] + Card reemplazado por div plano con flex flex-col |
+| 	icket-leg.tsx | truncate → block leading-tight con title attribute para tooltip nativo |
 | dashboard.tsx | Grid tickets adaptativa: 1 ticket max-w-md, 2 md:grid-cols-2 max-w-2xl, 3+ xl:grid-cols-3 |
-| match-card.tsx | Columna tiempo 90px â†’ 100px + badge PROGRAMADO en hover (opacity-0 group-hover:opacity-100) |
+| match-card.tsx | Columna tiempo 90px → 100px + badge PROGRAMADO en hover (opacity-0 group-hover:opacity-100) |
 | globals.css | touch-action: manipulation, overscroll-behavior-y: contain, prefers-reduced-motion |
 
 **Rediseno de MatchCard:**
@@ -6093,7 +6111,7 @@ pytest (58 tests subset)â†’  58 passed (Poisson, tickets, Kelly, anti-casca
 | globals.css | **:active scale(0.97)** con transition: transform 150ms ease-out en botones/tabs/radios |
 | globals.css | **prefers-reduced-motion** expandido: desactiva todas las animaciones nuevas |
 | match-card.tsx | Clase ev-glow en badge EV+ |
-| dashboard.tsx | TicketSkeleton + MatchSkeleton: animate-pulse bg-muted â†’ skeleton (shimmer gradiente) |
+| dashboard.tsx | TicketSkeleton + MatchSkeleton: animate-pulse bg-muted → skeleton (shimmer gradiente) |
 | league-accordion.tsx | accordion-content (max-height animation) + stagger-item con animationDelay incremental |
 | 	icket-leg.tsx | stagger-item en li con delay por indice |
 
@@ -6109,15 +6127,15 @@ Solo 1 de 12 partidos pasaba esos filtros. El ticket builder requiere minimo 2 p
 
 **Fix:** Eliminados ambos filtros extra, alineando con el endpoint /matches/.
 
-**Resultado:** 12 partidos analizados â†’ 56 oportunidades EV â†’ 3 tickets generados.
+**Resultado:** 12 partidos analizados → 56 oportunidades EV → 3 tickets generados.
 
 ### 6. Correccion de Altura en Tarjetas de Boletos
 
 **Problema:** Tarjetas con alturas desiguales (efecto escalon). MODO BOLD mas largo que EDGE/VALUE.
 
 **Fix iterativo:**
-1. Grid items-start â†’ items-stretch en dashboard
-2. TicketCard min-h-[320px] â†’ h-full con grid stretch
+1. Grid items-start → items-stretch en dashboard
+2. TicketCard min-h-[320px] → h-full con grid stretch
 3. Reemplazo de <Card> shadcn por <div> plano eliminando overflow-hidden + py-(--card-spacing) conflictivos
 
 **Estructura final del div raiz:** lex h-full flex-col rounded-xl border border-border bg-card
@@ -6165,7 +6183,8 @@ Se realizó una inspección completa con Puppeteer MCP simulando navegación en 
 - **Plan generado:** Se creó \DEEP_UI_AUDIT_ANTIGRAVITY.md\ con 4 fases de remediación escalonada.
 
 ### 2. Fase 1 y 2: Tokenización y Accesibilidad (Bloqueantes)
-- **Tokenización Semántica:** Se eliminaron todas las clases hardcodeadas (\zinc-900\, \zinc-400\, \emerald\, \ose\) en \match-modal.tsx\ y se reemplazaron por \g-background\, \g-surface\, \	ext-subtle\, \	ext-positive\, \	ext-negative\, \	ext-warning\.
+- **Tokenización Semántica:** Se eliminaron todas las clases hardcodeadas (\zinc-900\, \zinc-400\, \emerald\, \
+ose\) en \match-modal.tsx\ y se reemplazaron por \g-background\, \g-surface\, \	ext-subtle\, \	ext-positive\, \	ext-negative\, \	ext-warning\.
 - **Interpolación Dinámica Removida:** Se corrigió un bug de Tailwind en \match-modal.tsx\ que purgaba colores dinámicos (\	ext-$color\) usando mapas estáticos estables.
 - **Semántica HTML:** 
   - \	icket-card.tsx\ migró su lista de selecciones de \<div>\ a un contenedor semántico \<ul>\ con subcomponentes \<li>\.
@@ -6179,7 +6198,8 @@ Se realizó una inspección completa con Puppeteer MCP simulando navegación en 
 ### 3. Fase 3 y 4: Micro-Interacciones y Glassmorphism (Raycast Polish)
 - **Sombras Multicapa y Anillos:** 
   - El modal principal pasó a tener una sombra profunda y suave: \shadow-[0_8px_30px_rgb(0,0,0,0.8)] ring-1 ring-white/10\.
-  - Las tarjetas de \	icket-card.tsx\ y los bloques internos del modal adquirieron un anillo brillante \ing-1 ring-white/5\ para separarlos del fondo.
+  - Las tarjetas de \	icket-card.tsx\ y los bloques internos del modal adquirieron un anillo brillante \
+ing-1 ring-white/5\ para separarlos del fondo.
 - **Ritmo Vertical y Padding:** Los paddings internos de los contenedores se expandieron (\px-5 py-4\) para que la tipografía tenga más respiro, estandarizando un look premium.
 - **Micro-Contrastes:** En \ModalEVTable\, las filas inactivas adoptaron \	ext-foreground/60\ para enfatizar fuertemente las filas activas.
 - **Inteligencia Artificial con Glassmorphism:** Los badges de IA (\IA · Groq\ y logo \BetMind AI\) migraron a componentes estilo vidrio esmerilado: \g-primary/10 backdrop-blur-md border border-primary/20 shadow-sm\.
@@ -7399,3 +7419,102 @@ Respuesta en los 3 escenarios (schema `ClaimTicketsResponse`: `claimed_count: in
 - **Cupo completo:** `{"claimed_count": 3, "claimed_ticket_ids": [101,102,103], "message": "3 boletos anónimos reclamados para la cuenta."}` — sin cambios respecto al comportamiento anterior.
 - **Claim parcial (Free con cupo M < N):** `{"claimed_count": 2, "claimed_ticket_ids": [201,202], "message": "2 boletos reclamados. 3 restantes no pudieron reclamarse (límite de 5 en plan gratuito)."}` — status **200**, sin campo nuevo de no reclamados (el frontend los deriva restando `claimed_ticket_ids` de los enviados).
 - **PRO:** sin límite, `message` genérico. 0 slots → **403**. `claimed_ticket_ids` mantiene el mismo nombre/formato que el fix anterior de claim mixto.
+
+---
+
+## [2026-08-10] Completar Registro de la Bitácora — Archivos No Documentados
+
+### 1. Migraciones SQL Faltantes en el Registro
+
+Se detectó que dos migraciones aplicadas en producción no estaban registradas en la bitácora (solo existían en `AUDITORIA_BACKEND.md`):
+
+#### `014_add_pro_fields_to_users.sql`
+- Aplica a: PostgreSQL (producción); SQLite dev via `create_all()`.
+- `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_pro BOOLEAN NOT NULL DEFAULT FALSE;`
+- `ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_expires_at TIMESTAMPTZ DEFAULT NULL;`
+- Comentarios documentales en ambas columnas (suscripción PRO, manual o vía webhook Wompi/MercadoPago).
+- Commit: `726f145` (bankroll real, suscripciones Wompi).
+
+#### `015_create_bankroll_tables.sql`
+- Aplica a: PostgreSQL (producción); SQLite dev via `create_all()`.
+- Tabla `bankrolls`: `user_id` UNIQUE FK a `users(id)` ON DELETE CASCADE, `current_capital DOUBLE PRECISION`, `risk_profile VARCHAR(20) DEFAULT 'moderado'` (conservador=quarter-Kelly, moderado=half-Kelly, agresivo=full-Kelly), timestamps.
+- Tabla `bankroll_movements`: auditoría inmutable (solo INSERT), `type` (`ticket_won`/`ticket_lost`/`ticket_void`/`manual_adjustment`), `amount`, `ticket_id` FK a `saved_tickets`, `reason`, `created_at`.
+- Commit: `726f145` (bankroll real).
+
+---
+
+### 2. Frontend Wompi (`apps/web`)
+
+La sesión 2026-08-09 documentó el backend de Wompi pero no la capa frontend de tokenización, creada en el commit `affb806`:
+
+#### `apps/web/lib/wompi.ts` (nuevo)
+- Cliente de tokenización Wompi con cifrado JWE (`jose`):
+  - `fetchWompiAcceptance()`: `GET /merchants/{public_key}` para contratos de aceptación (`presigned_acceptance`, `presigned_personal_data_auth`).
+  - `fetchTokenizationKey()`: obtiene la llave de tokenización vía `POST /api/v1/subscriptions/wompi-tokenization-key` (endpoint backend).
+  - `encryptCard()`: cifra los datos de la tarjeta con `RSA-OAEP-256` + `A256GCM` (JWE) usando la llave pública.
+  - `tokenizeCard()`: `POST /tokens/cards` con `{ payload }` cifrado y retorna `card_token` + acceptance tokens.
+- Config: `NEXT_PUBLIC_WOMPI_BASE_URL` (default sandbox), `NEXT_PUBLIC_WOMPI_PUBLIC_KEY`.
+- **Seguridad:** la tarjeta NUNCA pasa por el backend propio; se tokeniza directamente contra Wompi con llave pública.
+
+#### `apps/web/components/betmind/wompi-card-form.tsx` (nuevo)
+- Formulario de tarjeta (número, mes, año, CVC, titular) con:
+  - Carga de contratos de aceptación al montar (loading state).
+  - Checkboxes de aceptación de términos y datos personales (requeridos antes de tokenizar).
+  - Validación en vivo, estados de error y `onTokenized(result)` callback con `WompiCardToken`.
+  - UI con tokens semánticos (`bg-surface`, `border-border`, `focus:border-brand`).
+
+#### `apps/web/lib/formatters.ts` (nuevo, commit `bc309fc`)
+- Helpers de formato cuantitativo: `formatOdds()` (2 decimales), `formatEV()` (porcentaje con signo), `formatxG()` (2 decimales), con guard `Number.isFinite` y fallback `'—'`.
+
+---
+
+### 3. Scripts de Diagnóstico y Mantenimiento
+
+Tres scripts menores existían sin documentar:
+
+| Script | Propósito |
+|--------|-----------|
+| `scripts/check_api_football.py` | Diagnóstico rápido de rate limits (`/status`) y conectividad de API-Football con clave de prueba |
+| `scripts/cleanup_db.py` | Limpieza manual: eliminar partidos basura de ligas fake (9001/9003/9004/9005/9011), ligas fake, renombrar ligas y corregir `liga_1_peru` 294→281 |
+| `scripts/patch_matches_route.py` | Patch puntual para inyectar `match_type` en `_match_to_dict_full()` de `matches.py` (usado antes del commit definitivo) |
+
+---
+
+### 4. Documentación Maestra de Auditoría
+
+Existen 3 documentos maestros de auditoría no registrados en la bitácora:
+
+#### `docs_notebook/` (commit `bfb8b43`)
+- Documentación maestra para auditoría en Gemini Notebook:
+  - `01_ARQUITECTURA_Y_STACK_TECNICO.md`: stack completo, servicios, proveedores y arquitectura.
+  - `02_CATALOGO_LIGAS_Y_MODELOS_ML.md`: catálogo de ligas, baselines y modelos ML.
+  - `03_VISION_PRODUCTO_UX_Y_ROADMAP.md`: visión de producto, UX y roadmap.
+  - `04_HISTORIAL_AUDITORIAS_Y_MIGRACIONES.md`: historial de auditorías y migraciones.
+
+#### `AUDITORIA_END_TO_END.md` (commit `8e1f06b`)
+- Auditoría E2E de integración entre `apps/api/`, `packages/ml/`, `apps/web/`, config local, jobs y workflow.
+- Estado estimado: Backend 65%, Frontend 65%, Integración E2E 50%.
+- Riesgos principales: enforcement PRO, límites de tickets inconsistentes, datos sensibles en logs, pagos incompletos y divergencia de despliegue.
+
+#### `BETMIND_UI_UX_FLOW.md` (commit `726f145`)
+- Handover arquitectónico del frontend para modelos de IA externos: sistema de diseño, navegación, rutas, generador VIP y brief de crítica.
+- Referencia: commit `140eb46` (deps AST-audited).
+
+---
+
+### 5. Commits de CI/Dependencias No Registrados Individualmente
+
+| Commit | Contenido |
+|--------|-----------|
+| `bc309fc` | Update application features (UI/UX refinements, `formatters.ts`) |
+| `df9ca1f` | Crawl4AI + Playwright Chromium en CI |
+| `039d3e6` | anthropic para ai_agent parse_node en CI |
+| `140eb46` | Dependencias del agente IA auditadas con AST (langgraph, anthropic, groq, instructor) |
+
+---
+
+### 6. Verificación
+
+- Comparación commit por commit (71 commits) contra la bitácora: todos los cambios de código estaban cubiertos excepto los listados arriba.
+- Git status: limpio (sin cambios sin commitear).
+

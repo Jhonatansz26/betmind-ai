@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { IBM_Plex_Mono, Inter, Playfair_Display } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
+import { SWRProvider } from '@/lib/hooks/use-swr-config'
 import './globals.css'
 
 const themeInitScript = `
@@ -71,8 +72,10 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body className="font-sans antialiased">
-        {children}
-        <Toaster position="bottom-right" />
+        <SWRProvider>
+          {children}
+          <Toaster position="bottom-right" />
+        </SWRProvider>
       </body>
     </html>
   )

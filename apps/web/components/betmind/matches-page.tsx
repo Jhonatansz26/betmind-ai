@@ -5,9 +5,10 @@ import { Filter, RefreshCw } from 'lucide-react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 import { type Match, buildModel, marketRows, bestOpportunity } from '@/lib/betmind'
-import { fetchLeagues, fetchMatches, type LeagueData } from '@/lib/api'
 import { resolveLeague } from '@/lib/league-metadata'
 import { cn } from '@/lib/utils'
+import { useMatches } from '@/lib/hooks/use-matches'
+import { useLeagues } from '@/lib/hooks/use-leagues'
 
 import { AppShell } from './app-shell'
 import { DateSelector, formatDateKey, formatDateTitle, type DateFilter } from './date-selector'
@@ -52,43 +53,17 @@ export function MatchesPage() {
 
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const [cardFilter, setCardFilter] = React.useState<'all' | 'high_confidence' | 'best_value'>('all')
-  const [matches, setMatches] = React.useState<Match[]>([])
-  const [leagues, setLeagues] = React.useState<LeagueData[]>([])
-  const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState(false)
-  const [retryKey, setRetryKey] = React.useState(0)
-  const [updatedAt, setUpdatedAt] = React.useState<string | null>(null)
   const [openLeagues, setOpenLeagues] = React.useState<Record<string, boolean>>({})
 
-  React.useEffect(() => {
-    let cancelled = false
-    async function load() {
-      setLoading(true)
-      setError(false)
-      const result = await fetchMatches(apiDate)
-      if (cancelled) return
-      if (result.ok) {
-        setMatches(result.data)
-        setUpdatedAt(new Date().toISOString())
-      } else {
-        setMatches([])
-        setError(true)
-      }
-      setLoading(false)
-    }
-    void load()
-    return () => { cancelled = true }
-  }, [apiDate, retryKey])
+  // SWR-backed — shared with HomePage and GeneratorPage for the same apiDate.
+  const { matches, isLoading: loading, error, revalidate } = useMatches(apiDate)
+  const { leagues } = useLeagues(formatDateKey(dateFilter, new Date()))
 
-  React.useEffect(() => {
-    let cancelled = false
-    async function loadLeagues() {
-      const result = await fetchLeagues(formatDateKey(dateFilter, new Date()))
-      if (!cancelled) setLeagues(result.ok ? result.data : [])
-    }
-    void loadLeagues()
-    return () => { cancelled = true }
-  }, [dateFilter, retryKey])
+  const updatedAt = React.useMemo(
+    () => !loading && matches.length > 0 ? new Date().toISOString() : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [loading],
+  )
 
   function updateQuery(changes: { liga?: string; fecha?: string }) {
     const next = new URLSearchParams(searchParams.toString())
@@ -176,7 +151,7 @@ export function MatchesPage() {
             </div>
           </div>
 
-          {loading ? <MatchesSkeleton /> : error ? <RouteError label="los partidos" onRetry={() => setRetryKey((key) => key + 1)} /> : groupedMatches.length > 0 ? <div className="flex flex-col gap-3">{groupedMatches.map((group) => <LeagueAccordion key={group.key} leagueExternalId={group.externalId} leagueName={group.name} matches={group.matches} isOpen={openLeagues[group.key] !== false} onToggle={() => setOpenLeagues((current) => ({ ...current, [group.key]: current[group.key] === false }))} />)}</div> : <EmptyMatches onRetry={() => setRetryKey((key) => key + 1)} />}
+          {loading ? <MatchesSkeleton /> : error ? <RouteError label="los partidos" onRetry={revalidate} /> : groupedMatches.length > 0 ? <div className="flex flex-col gap-3">{groupedMatches.map((group) => <LeagueAccordion key={group.key} leagueExternalId={group.externalId} leagueName={group.name} matches={group.matches} isOpen={openLeagues[group.key] !== false} onToggle={() => setOpenLeagues((current) => ({ ...current, [group.key]: current[group.key] === false }))} />)}</div> : <EmptyMatches onRetry={revalidate} />}
           {updatedAt && <p className="text-right text-[10px] font-mono text-subtle">Actualizado {new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }).format(new Date(updatedAt))}</p>}
         </section>
       </div>
