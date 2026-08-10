@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models.subscription import Subscription, SubscriptionTransaction
 from apps.api.models.user import User
+from apps.api.config import settings
 
 
 def utc_now() -> datetime:
@@ -83,7 +84,17 @@ async def apply_transaction_status(
             subscription.recurrence_enabled = True
     elif status in {"DECLINED", "ERROR", "VOIDED"}:
         subscription.status = "past_due" if transaction.kind == "renewal" else "cancelled"
-        user.is_pro = False
-        user.pro_expires_at = now
+        if transaction.kind == "renewal":
+            # Período de gracia: la renovación falló pero el usuario conserva
+            # PRO hasta el fin de la ventana (base = fin del período actual
+            # vencido, o ahora si quedó atrás).
+            grace_end = max(as_utc(subscription.current_period_end), now) + timedelta(
+                days=settings.SUBSCRIPTION_GRACE_DAYS
+            )
+            user.is_pro = True
+            user.pro_expires_at = grace_end
+        else:
+            user.is_pro = False
+            user.pro_expires_at = now
 
     return True

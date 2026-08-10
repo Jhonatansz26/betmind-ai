@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import secrets
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.config import settings
 from apps.api.db.database import get_async_session
 from apps.api.dependencies import get_current_user_id
 from apps.api.models.subscription import Subscription, SubscriptionTransaction
@@ -29,12 +31,31 @@ from apps.api.services.wompi_service import (
     WompiConfigurationError,
     WompiClient,
     amount_for_plan,
+    compute_wompi_event_checksum,
     recurrence_enabled_from_transaction,
 )
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
 REFUND_WINDOW_DAYS = 7
+
+
+def _valid_event_signature(payload: dict, checksum: str) -> bool:
+    """
+    Valida la firma de un evento de Wompi contra un checksum provisto.
+
+    Recalcula el checksum con WOMPI_EVENTS_SECRET (misma lógica que
+    wompi_service.compute_wompi_event_checksum) y compara en tiempo
+    constante. A diferencia de is_valid_wompi_event_signature, solo se
+    compara el checksum EXPLÍCITAMENTE provisto (no el del body), para que
+    un checksum inválido no pueda pasar por el del payload.
+    """
+    if not checksum:
+        return False
+    computed = compute_wompi_event_checksum(payload, settings.WOMPI_EVENTS_SECRET)
+    if computed is None:
+        return False
+    return secrets.compare_digest(computed, checksum.lower())
 
 
 async def _get_user(user_id: int, session: AsyncSession) -> User:
