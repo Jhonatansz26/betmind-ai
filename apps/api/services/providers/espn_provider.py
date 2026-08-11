@@ -42,28 +42,39 @@ from apps.api.services.providers.base_provider import (
 logger = logging.getLogger(__name__)
 
 ESPN_LEAGUE_SLUGS: dict[int, str] = {
-    # UEFA
+    # UEFA (claves = api_football_id reales; se conservan alias 9001-9003)
+    2: "uefa.champions",
+    3: "uefa.europa",
+    848: "uefa.europa.conf",
     9001: "uefa.champions",
     9002: "uefa.europa",
     9003: "uefa.europa.conf",
     # CONMEBOL
+    11: "conmebol.sudamericana",
+    13: "conmebol.libertadores",
     9010: "conmebol.libertadores",
     9011: "conmebol.sudamericana",
     # Europa — Big 5
     39: "eng.1",
+    40: "eng.2",
     140: "esp.1",
+    141: "esp.2",
     78: "ger.1",
     135: "ita.1",
     61: "fra.1",
+    88: "ned.1",
     # Sudamerica
     71: "bra.1",
+    72: "bra.2",
     9004: "bra.2",
     128: "arg.1",
     239: "col.1",
+    241: "col.copa",
     9005: "col.copa",
     262: "mex.1",
     274: "chi.1",
     275: "ecu.1",
+    281: "per.1",
     294: "per.1",
     # Norteamerica
     253: "usa.1",
@@ -122,9 +133,20 @@ class EspnDataProvider(DataProviderPort):
     BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer"
 
     def __init__(self):
+        # Headers de navegador real: Akamai (edgecast) bloquea peticiones sin
+        # Referer/Origin/Sec-Fetch-* (mismos que usa el CLV tracker).
         self._headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.espn.com/soccer/",
+            "Origin": "https://www.espn.com",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site",
         }
 
     def _resolve_slug(self, league_code: str) -> str | None:
@@ -265,6 +287,40 @@ class EspnDataProvider(DataProviderPort):
 
         logger.info(
             f"ESPN: {len(fixtures)} upcoming matches for {league_code}"
+        )
+        return fixtures
+
+    async def get_fixtures_for_dates(
+        self,
+        league_code: str,
+        dates: list[str],
+    ) -> list[RawFixture]:
+        """
+        Obtiene fixtures (programados o en vivo) para fechas concretas
+        (formato YYYYMMDD). Una llamada de scoreboard por fecha — ideal para
+        la ventana móvil -2h/+36h del cron sin barrer 7 días.
+        """
+        slug = self._resolve_slug(league_code)
+        if not slug:
+            logger.warning(f"No ESPN slug for league_code={league_code}")
+            return []
+
+        fixtures: list[RawFixture] = []
+        seen_ids: set[int] = set()
+        for date_str in dates:
+            events = await self._fetch_scoreboard(slug, date_str)
+            for event in events:
+                parsed = self._parse_event(event, slug)
+                if not parsed:
+                    continue
+                if parsed.external_id in seen_ids:
+                    continue
+                seen_ids.add(parsed.external_id)
+                if parsed.status in ("SCHEDULED", "LIVE"):
+                    fixtures.append(parsed)
+
+        logger.info(
+            f"ESPN: {len(fixtures)} fixtures for {league_code} on {dates}"
         )
         return fixtures
 

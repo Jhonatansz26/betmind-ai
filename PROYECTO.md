@@ -54,7 +54,20 @@ python -m apps.api.jobs.reconcile_pending_subscriptions  # reconcilia pagos pend
 | B | `scrapers/espn_summary_scraper.py` | Determinista, JSON estricto, retries/backoff, cero IA |
 | C | Agente IA (LangGraph + DuckDuckGo + crawl4ai) | Solo si A y B fallan/vacíos |
 
-Orquestado por `DataIngestionService._run_cascade` (primer resultado no vacío gana). Stats post-partido: SofaScore → ESPN Summary fallback.
+**Cuotas (desde 2026-08):** cascada ESPN → SofaScore → API-Football.
+- ESPN (`EspnOddsService`): 1X2 + Over/Under (summary por evento, sin key).
+- SofaScore (`SofaScoreOddsService`): mercados especiales — córneres, tarjetas,
+  remates a puerta y BTTS (odds fraccionarias → decimal, línea en `choiceGroup`,
+  solo Full-time y no suspendidos; resolución de evento por búsqueda de equipo).
+- API-Football: solo copas sin slug ESPN o partidos sin cuotas.
+Se persisten con `bookmaker_name='espn'` / `'sofascore'` / `'api_football'`;
+las lecturas toman el MEJOR precio por mercado entre las tres fuentes. Todo el
+fetching pasa por Redis (scoreboard 15m, summary 30m, búsqueda equipo 24h,
+eventos/odds SofaScore 30m).
+
+Stats post-partido: SofaScore (Plan A, payloads cacheados en Redis 6h) → ESPN
+Summary fallback; API-Football solo como primera pasada en
+`ingest_match_statistics`.
 
 ### Monetización — Freemium estricto
 
@@ -86,5 +99,5 @@ Orquestado por `DataIngestionService._run_cascade` (primer resultado no vacío g
 
 - **Trial eliminado:** el tier VIP solo se otorga por webhook `APPROVED`; renovación fallida = revocación inmediata (sin gracia).
 - **xG:** no disponible en ESPN → `None` en stats (SofaScore lo provee cuando puede).
-- **Rate limits:** API-Football ~10 req/min → throttle de 6s entre fixtures en jobs.
+- **Rate limits:** API-Football ~10 req/min → throttle de 6s entre fixtures SOLO en el fallback (ESPN no tiene límite de key; el cache Redis evita abusar).
 - **RLS en `users`:** sin política SELECT para `authenticated` (la app lee `/users/me` vía FastAPI) — revisar si se conecta un cliente Supabase directo.

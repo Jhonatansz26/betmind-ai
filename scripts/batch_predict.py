@@ -248,9 +248,7 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
                         league_name = match.league.name if match.league else "?"
 
                         match_odds_rows = odds_grouped.get(match.id, [])
-                        odds_available = bool(match_odds_rows)
-
-                        # Capa 4: idempotencia sobre EV. Se saltea solo si el partido
+                        odds_available = bool(match_odds_rows)                        # Capa 4: idempotencia sobre EV. Se saltea solo si el partido
                         # está completo (análisis táctico válido Y predicción con EV),
                         # o si no hay cuotas para poder recalcular el EV perdido.
                         tactical_valid = (
@@ -282,7 +280,12 @@ async def main(limit: int = 0, skip: int = 0, mode: str = "quant", force: bool =
                             # odds_map trae TODOS los mercados del partido
                             # (1X2, goles, BTTS, córneres, tarjetas, remates);
                             # OddsInput.from_market_dict los mapea todos.
-                            odds_map = {o.market_name: o.odds_value for o in match_odds_rows}
+                            # Mejor precio por mercado entre fuentes activas.
+                            odds_map: dict[str, float] = {}
+                            for o in match_odds_rows:
+                                current = odds_map.get(o.market_name)
+                                if current is None or o.odds_value > current:
+                                    odds_map[o.market_name] = o.odds_value
                             odds_input = OddsInput.from_market_dict(odds_map)
 
                         match_time = match.match_date.strftime("%Y-%m-%d %H:%M") if match.match_date else "?"

@@ -1,6 +1,17 @@
 """
 Script CLI para sincronizar partidos de una ventana móvil de -2h/+36h
-junto con sus cuotas de casas de apuestas (API-Football).
+junto con sus cuotas de casas de apuestas.
+
+Cascada de fuentes (todas gratuitas, sin API key salvo API-Football):
+  1. ESPN Scoreboard: fixtures por (liga, fecha) — EspnDataProvider.
+  2. ESPN Summary:    cuotas pre-match (1X2 + Over/Under) — EspnOddsService.
+  3. SofaScore:       cuotas especiales (córneres, tarjetas, remates, BTTS)
+     — SofaScoreOddsService (resolución de evento por búsqueda de equipo).
+  4. API-Football:    fallback SOLO para ligas sin slug ESPN (copas) o
+     partidos que ni ESPN ni SofaScore cubrieron con cuotas.
+
+Todo el fetching pasa por Redis (cache_service): scoreboard 15m, summary 30m,
+búsqueda de equipos SofaScore 24h, eventos/odds SofaScore 30m.
 
 Zona horaria: America/Bogota (UTC-5) para Colombia
 
@@ -21,22 +32,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy import select, and_
 
 from apps.api.config import settings, FEATURED_LEAGUES, KNOCKOUT_CUP_LEAGUE_IDS
-# TODO(espn-sync): MatchFixtureScraper fue ELIMINADO del repo (commit d160ffc).
-# Investigación del reemplazo:
-#   - EspnSummaryScraper (apps/api/services/scrapers/espn_summary_scraper.py,
-#     Plan B) solo expone fetch_fixtures_for_date(slug, date) -> list[RawFixture]
-#     para UNA liga; NO tiene fetch_all_leagues_fixtures(days_ahead) ni devuelve
-#     dicts con home_team/away_team/external_id como espera este script.
-#   - DeterministicLeagueScraperProvider (providers/deterministic_scraper_provider.py)
-#     es un wrapper fino y SOLO cubre ligas colombianas (col.1, col.copa), no las
-#     ~25 ligas de FEATURED_LEAGUES.
-#   - El mapeo league_key -> slug de ESPN vivía dentro del archivo eliminado.
-# Ninguno cubre exactamente la misma función => no se reimplementa acá. Mientras
-# tanto el sync ESPN queda desactivado y el script continúa con el fallback
-# API-Football (sección "SINCRONIZACION DE MARCADORES") para no matar el cron.
-# from apps.api.services.scrapers.match_fixture_scraper import MatchFixtureScraper
 from apps.api.services.odds_service import OddsService
+from apps.api.services.espn_odds_service import EspnOddsService
+from apps.api.services.sofascore_odds_service import SofaScoreOddsService
 from apps.api.services.api_football import APIFootballService
+from apps.api.services.cache_service import CacheService
+from apps.api.services.providers.espn_provider import (
+    EspnDataProvider,
+    ESPN_LEAGUE_SLUGS,
+)
 from apps.api.repositories.league_repository import LeagueRepository
 from apps.api.repositories.team_repository import TeamRepository
 from apps.api.repositories.match_repository import MatchRepository
@@ -83,7 +87,7 @@ def print_header():
     print("BETMIND AI - SINCRONIZACION DE PARTIDOS + CUOTAS")
     print("=" * 80)
     print(f"Fecha actual (COT): {now_local.strftime('%Y-%m-%d %H:%M:%S')} UTC-5")
-    print(f"Fuentes: ESPN Scoreboard (partidos) + API-Football (cuotas)")
+    print(f"Fuentes: ESPN (partidos+cuotas) -> SofaScore (cuotas especiales) -> API-Football (fallback)")
     print(f"Zona horaria: America/Bogota (UTC-5)")
     print(f"Ligas configuradas: {len(FEATURED_LEAGUES)}")
     print(f"Rango: ahora - 2h hasta ahora + 36h")
@@ -150,7 +154,11 @@ def print_final_summary(
 
 
 async def sync_upcoming_matches():
-    """Sincroniza partidos de la ventana móvil -2h/+36h + cuotas."""
+    """Sincroniza partidos de la ventana móvil -2h/+36h + cuotas.
+
+    Cascada: ESPN (fixtures + cuotas, sin API key) -> API-Football (fallback
+    solo para ligas sin slug ESPN o partidos sin cuotas).
+    """
 
     print_header()
 
@@ -167,38 +175,45 @@ async def sync_upcoming_matches():
     today_cot = now_cot.date()
     tomorrow_cot = today_cot + timedelta(days=1)
 
+    # Fechas en formato ESPN (YYYYMMDD) y legible (YYYY-MM-DD).
+    dates_cot = [today_cot.strftime("%Y%m%d"), tomorrow_cot.strftime("%Y%m%d")]
+    dates_str = [
+        f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in dates_cot
+    ]
     print(f"Consultando ESPN Scoreboard API para {today_cot} y {tomorrow_cot}...")
 
-    # TODO(espn-sync): MatchFixtureScraper fue eliminado y no hay reemplazo
-    # directo (ver comentario del import arriba). Se loguea el error y se
-    # continúa con el fallback API-Football para que el cron nunca muera sin
-    # procesar los datos que ya existan en la DB.
-    all_fixtures: dict[str, list] = {}
-    logger.error(
-        "MatchFixtureScraper no disponible (fue eliminado del repo): se omite "
-        "la sincronización ESPN de fixtures y de cuotas. Continuando solo con "
-        "el fallback API-Football para no interrumpir el pipeline."
-    )
-
+    provider = EspnDataProvider()
+    cache = CacheService(settings.REDIS_URL)
     odds_to_sync: list[dict] = []
 
+    # ── Paso 1: fixtures ESPN por liga ─────────────────────────────────────
     for league_key, league_info in FEATURED_LEAGUES.items():
-        # Sin scraper ESPN (all_fixtures vacío) no hay fixtures que procesar:
-        # se omite el loop de ligas y se sigue con el fallback API-Football.
-        if not all_fixtures:
-            break
-
         league_name = league_info["name"]
         country = league_info["country"]
         external_league_id = league_info["api_football_id"]
+        slug = ESPN_LEAGUE_SLUGS.get(external_league_id)
 
-        fixtures = all_fixtures.get(league_key, [])
+        if not slug:
+            logger.info(
+                "Liga %s (%s) sin slug ESPN — se omite (fallback API-Football)",
+                league_key, league_name,
+            )
+            continue
 
-        print(f"\nProcesando {league_name}...")
+        try:
+            fixtures = await provider.get_fixtures_for_dates(external_league_id, dates_cot)
+        except Exception as e:
+            error_msg = f"ESPN fixtures {league_key}: {str(e)}"
+            errors.append(error_msg)
+            logger.error(error_msg)
+            continue
 
         if not fixtures:
-            print(f"   Sin partidos")
+            print(f"\n  {league_name} ({country})")
+            print(f"     Sin partidos programados\n")
             continue
+
+        print(f"\nProcesando {league_name}...")
 
         try:
             async with async_session_factory() as session:
@@ -219,7 +234,7 @@ async def sync_upcoming_matches():
 
                 teams_synced = 0
                 for fixture in fixtures:
-                    for team_name in [fixture["home_team"], fixture["away_team"]]:
+                    for team_name in [fixture.home_team, fixture.away_team]:
                         if not team_name or not team_name.strip():
                             logger.warning("Nombre de equipo vacío o solo espacios, omitiendo")
                             continue
@@ -229,7 +244,7 @@ async def sync_upcoming_matches():
                             import hashlib
                             raw_hash = int(hashlib.sha256(team_name.encode()).hexdigest()[:8], 16)
                             stable_id = raw_hash % 2_000_000_000
-                            new_team = await team_repo.upsert(Team(
+                            await team_repo.upsert(Team(
                                 external_id=stable_id,
                                 name=team_name,
                             ))
@@ -240,25 +255,16 @@ async def sync_upcoming_matches():
                 matches_data = []
                 for fixture in fixtures:
                     try:
-                        home_team = await team_repo._find_by_normalized_name(fixture["home_team"])
-                        away_team = await team_repo._find_by_normalized_name(fixture["away_team"])
+                        home_team = await team_repo._find_by_normalized_name(fixture.home_team)
+                        away_team = await team_repo._find_by_normalized_name(fixture.away_team)
 
                         if not home_team or not away_team:
                             logger.warning(
-                                f"Equipos no encontrados: {fixture['home_team']} vs {fixture['away_team']}"
+                                f"Equipos no encontrados: {fixture.home_team} vs {fixture.away_team}"
                             )
                             continue
 
-                        external_id = fixture["external_id"]
-                        if isinstance(external_id, str):
-                            try:
-                                external_id = int(external_id)
-                            except (ValueError, TypeError):
-                                import hashlib
-                                raw_hash = int(hashlib.sha256(
-                                    f"{fixture['home_team']}{fixture['away_team']}{fixture['match_date']}".encode()
-                                ).hexdigest()[:8], 16)
-                                external_id = raw_hash % 2_000_000_000
+                        external_id = fixture.external_id
 
                         league_match_type = league_info.get("match_type", "LEAGUE")
 
@@ -267,45 +273,40 @@ async def sync_upcoming_matches():
                             league_id=league.id,
                             home_team_id=home_team.id,
                             away_team_id=away_team.id,
-                            match_date=fixture["match_date"],
-                            status=normalize_match_status(fixture.get("status")),
-                            home_score=fixture.get("home_score"),
-                            away_score=fixture.get("away_score"),
+                            match_date=fixture.match_date,
+                            status=normalize_match_status(fixture.status),
+                            home_score=fixture.home_score,
+                            away_score=fixture.away_score,
                             regulation_time_only=True,
                             match_type=league_match_type,
                         )
 
-                        match_date_val = fixture["match_date"]
-                        if hasattr(match_date_val, 'date'):
-                            match_date_str = match_date_val.strftime("%Y-%m-%d")
-                        else:
-                            match_date_str = str(match_date_val)
-
                         matches_data.append({
                             "match_id": match.id,
-                            "match_date": fixture["match_date"],
-                            "home_team_name": fixture["home_team"],
-                            "away_team_name": fixture["away_team"],
-                            "status": normalize_match_status(fixture.get("status")),
+                            "match_date": fixture.match_date,
+                            "home_team_name": fixture.home_team,
+                            "away_team_name": fixture.away_team,
+                            "status": normalize_match_status(fixture.status),
                             "odds_count": 0,
                         })
 
                         odds_to_sync.append({
                             "match_id": match.id,
                             "league_external_id": external_league_id,
-                            "match_date_str": match_date_str,
-                            "home_team_name": fixture["home_team"],
-                            "away_team_name": fixture["away_team"],
-                    })
+                            "match_date_str": fixture.match_date.strftime("%Y-%m-%d"),
+                            "home_team_name": fixture.home_team,
+                            "away_team_name": fixture.away_team,
+                            "espn_event_id": external_id,
+                        })
 
                         total_matches += 1
 
                     except Exception as e:
                         logger.error(
-                            f"Error procesando partido {fixture.get('home_team', '?')} vs "
-                            f"{fixture.get('away_team', '?')} en {league_name}: {e}"
+                            f"Error procesando partido {fixture.home_team} vs "
+                            f"{fixture.away_team} en {league_name}: {e}"
                         )
-                        errors.append(f"{league_name}/{fixture.get('home_team', '?')} vs {fixture.get('away_team', '?')}: {str(e)}")
+                        errors.append(f"{league_name}/{fixture.home_team} vs {fixture.away_team}: {str(e)}")
                         continue
 
                 print_league_summary(league_key, league_name, country, matches_data)
@@ -318,28 +319,24 @@ async def sync_upcoming_matches():
             logger.error(f"Error procesando {league_name}: {e}")
             continue
 
+    # ── Paso 2: cuotas ESPN (con cache Redis, sin gastar API-Football) ────
     if odds_to_sync:
         print("\n" + "=" * 80)
-        print("SINCRONIZACION DE CUOTAS (API-Football)")
+        print("SINCRONIZACION DE CUOTAS (ESPN)")
         print("=" * 80)
 
         try:
             async with async_session_factory() as odds_session:
-                odds_service = OddsService(odds_session)
-                total_odds = await odds_service.sync_odds_for_matches(odds_to_sync)
+                espn_odds_service = EspnOddsService(odds_session, cache=cache)
+                total_odds = await espn_odds_service.sync_odds_for_matches(odds_to_sync)
                 await odds_session.commit()
-                print(f"\n  Total cuotas sincronizadas: {total_odds}")
+                print(f"\n  Total cuotas ESPN sincronizadas: {total_odds}")
         except Exception as e:
-            error_msg = f"Odds sync: {str(e)}"
+            error_msg = f"ESPN odds sync: {str(e)}"
             errors.append(error_msg)
-            logger.error(f"Error sincronizando cuotas: {e}")
-    elif not all_fixtures:
-        logger.error(
-            "Sin cuotas a sincronizar: la cola de odds depende de los fixtures "
-            "de MatchFixtureScraper (eliminado). Se omite el sync de cuotas."
-        )
+            logger.error(f"Error sincronizando cuotas ESPN: {e}")
 
-    # ── API-Football score fallback + missing leagues ──────────────────
+    # ── Paso 3: API-Football fixtures para ligas sin slug ESPN (copas) ────
     print("\n" + "=" * 80)
     print("SINCRONIZACION DE MARCADORES (API-Football fallback)")
     print("=" * 80)
@@ -384,6 +381,11 @@ async def sync_upcoming_matches():
 
                         # Only process our featured leagues
                         if api_league_id not in featured_ids:
+                            continue
+
+                        # Solo ligas SIN slug ESPN: las que ya cubre ESPN se
+                        # sincronizaron en el paso 1 (evita duplicados por id).
+                        if api_league_id in ESPN_LEAGUE_SLUGS:
                             continue
 
                         # Get or create league
@@ -471,6 +473,20 @@ async def sync_upcoming_matches():
                                 f"({api_league_name}, status={mapped_status})"
                             )
 
+                        # Encolar cuotas del partido (sin espn_event_id:
+                        # API-Football las resuelve por nombres de equipos).
+                        odds_to_sync.append({
+                            "match_id": match.id,
+                            "league_external_id": api_league_id,
+                            "match_date_str": (
+                                match_date_raw.strftime("%Y-%m-%d")
+                                if hasattr(match_date_raw, "strftime")
+                                else fetch_date
+                            ),
+                            "home_team_name": home_name,
+                            "away_team_name": away_name,
+                        })
+
                     except Exception as e:
                         logger.error(f"AF fixture error: {e}")
                         continue
@@ -486,6 +502,76 @@ async def sync_upcoming_matches():
         error_msg = f"API-Football fallback: {str(e)}"
         errors.append(error_msg)
         logger.error(f"Error en fallback de marcadores: {e}")
+
+    # ── Paso 3b: cuotas especiales SofaScore (córneres/tarjetas/remates) ───
+    if odds_to_sync:
+        print("\n" + "=" * 80)
+        print("SINCRONIZACION DE CUOTAS ESPECIALES (SofaScore)")
+        print("=" * 80)
+        sofascore_matches = []
+        for m in odds_to_sync:
+            entry = dict(m)
+            if entry.get("match_date_str"):
+                try:
+                    entry["match_ts"] = int(
+                        datetime.strptime(entry["match_date_str"], "%Y-%m-%d")
+                        .replace(tzinfo=ZoneInfo("UTC"))
+                        .timestamp()
+                    )
+                except (ValueError, TypeError):
+                    pass
+            sofascore_matches.append(entry)
+
+        try:
+            async with async_session_factory() as odds_session:
+                sofascore_odds_service = SofaScoreOddsService(odds_session, cache=cache)
+                total_sofascore = await sofascore_odds_service.sync_odds_for_matches(sofascore_matches)
+                await odds_session.commit()
+                print(f"\n  Total cuotas SofaScore sincronizadas: {total_sofascore}")
+                total_odds += total_sofascore
+        except Exception as e:
+            error_msg = f"SofaScore odds sync: {str(e)}"
+            errors.append(error_msg)
+            logger.error(f"Error sincronizando cuotas SofaScore: {e}")
+
+    # ── Paso 4: fallback API-Football solo para partidos SIN cuotas ───────
+    # Candidatos: partidos de copas (sin espn_event_id) + partidos ESPN que
+    # quedaron sin cuotas (odds no publicadas, postergados, etc).
+    cup_pending = [m for m in odds_to_sync if not m.get("espn_event_id")]
+    missing_odds: list[dict] = []
+    if odds_to_sync:
+        try:
+            async with async_session_factory() as session:
+                from apps.api.models.bookmaker_odd import BookmakerOdd
+                all_ids = [m["match_id"] for m in odds_to_sync]
+                rows = await session.execute(
+                    select(BookmakerOdd.match_id)
+                    .where(BookmakerOdd.match_id.in_(all_ids))
+                    .distinct()
+                )
+                with_odds_ids = {row[0] for row in rows}
+            missing_odds = [m for m in odds_to_sync if m["match_id"] not in with_odds_ids]
+        except Exception as e:
+            logger.warning(f"No se pudo verificar partidos sin cuotas: {e}")
+            missing_odds = []
+
+    pending_odds = list({m["match_id"]: m for m in [*cup_pending, *missing_odds]}.values())
+
+    if pending_odds:
+        print("\n" + "=" * 80)
+        print(f"SINCRONIZACION DE CUOTAS FALTANTES (API-Football, {len(pending_odds)} partidos)")
+        print("=" * 80)
+        try:
+            async with async_session_factory() as odds_session:
+                odds_service = OddsService(odds_session)
+                af_odds_count = await odds_service.sync_odds_for_matches(pending_odds)
+                await odds_session.commit()
+                print(f"\n  Total cuotas API-Football sincronizadas: {af_odds_count}")
+                total_odds += af_odds_count
+        except Exception as e:
+            error_msg = f"AF odds fallback: {str(e)}"
+            errors.append(error_msg)
+            logger.error(f"Error sincronizando cuotas API-Football: {e}")
 
     print_final_summary(total_leagues, total_teams, total_matches, total_odds, errors)
 

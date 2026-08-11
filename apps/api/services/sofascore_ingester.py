@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any
 
 import httpx
+import redis
+from redis.exceptions import RedisError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.config import settings
 from apps.api.db.database import async_session_factory
 from apps.api.models.match import Match
 from apps.api.models.match_advanced_stats import MatchAdvancedStats
@@ -27,6 +31,55 @@ REQUEST_HEADERS = {
     "Origin": "https://www.sofascore.com",
 }
 
+# Cache en Redis de los payloads crudos: las stats post-partido no cambian,
+# así que una vez descargadas no se vuelve a golpear la API de SofaScore.
+# TTL de 6h por seguridad (si un partido se corrige, eventualmente refresca).
+SOFASCORE_CACHE_TTL = 6 * 3600
+
+_redis_client: redis.Redis | None = None
+
+
+def _cache() -> redis.Redis | None:
+    """Cliente Redis global con degradación silenciosa (nunca tumba la ingesta)."""
+    global _redis_client
+    if _redis_client is None:
+        try:
+            _redis_client = redis.Redis.from_url(
+                settings.REDIS_URL,
+                decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+            )
+        except Exception:  # noqa: BLE001 — sin Redis la ingesta sigue, sin cache
+            logger.warning("SofaScore cache desactivado: no se pudo conectar a Redis")
+            _redis_client = None
+    return _redis_client
+
+
+def _cache_get(key: str) -> dict[str, Any] | None:
+    client = _cache()
+    if client is None:
+        return None
+    try:
+        raw = client.get(key)
+        if raw is None:
+            return None
+        value = json.loads(raw)
+        return value if isinstance(value, dict) else None
+    except (RedisError, ValueError, ConnectionError, OSError) as e:
+        logger.debug(f"SofaScore cache read error para '{key}': {e}")
+        return None
+
+
+def _cache_set(key: str, payload: dict[str, Any]) -> None:
+    client = _cache()
+    if client is None:
+        return
+    try:
+        client.set(key, json.dumps(payload, default=str), ex=SOFASCORE_CACHE_TTL)
+    except (RedisError, ConnectionError, OSError) as e:
+        logger.debug(f"SofaScore cache write error para '{key}': {e}")
+
 
 def _get_json(client: httpx.Client, path: str) -> dict[str, Any]:
     response = client.get(path, headers=REQUEST_HEADERS, timeout=20)
@@ -37,19 +90,30 @@ def _get_json(client: httpx.Client, path: str) -> dict[str, Any]:
 
 
 def _fetch_payloads(event_id: int) -> dict[str, dict[str, Any]]:
-    """Fetch one event with a one-second pause between requests."""
+    """Fetch one event with a one-second pause between requests.
+
+    Los payloads se cachean en Redis (clave por nombre de endpoint): si el
+    evento ya fue ingerido, se sirve desde cache sin golpear la API.
+    """
     paths = {
         "event": f"/event/{event_id}",
         "incidents": f"/event/{event_id}/incidents",
         "statistics": f"/event/{event_id}/statistics",
         "shotmap": f"/event/{event_id}/shotmap",
     }
+    payloads: dict[str, dict[str, Any]] = {}
     with httpx.Client(base_url=SOFASCORE_BASE_URL, follow_redirects=True) as client:
-        payloads: dict[str, dict[str, Any]] = {}
         for index, (name, path) in enumerate(paths.items()):
+            cache_key = f"sofascore:payload:{event_id}:{name}"
+            cached = _cache_get(cache_key)
+            if cached is not None:
+                payloads[name] = cached
+                continue
             if index:
                 time.sleep(1)
-            payloads[name] = _get_json(client, path)
+            payload = _get_json(client, path)
+            _cache_set(cache_key, payload)
+            payloads[name] = payload
     return payloads
 
 

@@ -489,14 +489,18 @@ class OddsService:
     async def get_odds_for_match(self, match_id: int) -> dict[str, float]:
         """
         Obtiene las cuotas almacenadas para un partido como dict {market_name: odds}.
+        Si el mismo mercado existe en varias fuentes (api_football/espn/
+        sofascore) se conserva el MEJOR precio (máxima cuota ejecutable).
         """
         odds = await self._odds_repo.get_odds_for_match(match_id)
-        result = {}
+        result: dict[str, float] = {}
         for odd in odds:
             if odd.market_name == "1X2_DRAW" and odd.odds_value < 2.10:
                 logger.debug(f"Filtered draw odds @ {odd.odds_value} for match {match_id}")
                 continue
-            result[odd.market_name] = odd.odds_value
+            current = result.get(odd.market_name)
+            if current is None or odd.odds_value > current:
+                result[odd.market_name] = odd.odds_value
         return result
 
     async def get_opening_odds_for_match(self, match_id: int) -> dict[str, float]:
@@ -563,17 +567,20 @@ class OddsService:
     async def get_odds_for_matches(self, match_ids: list[int]) -> dict[int, dict[str, float]]:
         """
         Obtiene cuotas almacenadas para múltiples partidos.
-        Retorna {match_id: {market_name: odds}}.
+        Retorna {match_id: {market_name: odds}} con el MEJOR precio por
+        mercado entre las fuentes activas (api_football/espn/sofascore).
         """
         grouped = await self._odds_repo.get_odds_for_matches(match_ids)
         result: dict[int, dict[str, float]] = {}
         for mid, odds_list in grouped.items():
-            match_odds = {}
+            match_odds: dict[str, float] = {}
             for o in odds_list:
                 if o.market_name == "1X2_DRAW" and o.odds_value < 2.10:
                     logger.debug(f"Filtered draw odds @ {o.odds_value} for match {mid}")
                     continue
-                match_odds[o.market_name] = o.odds_value
+                current = match_odds.get(o.market_name)
+                if current is None or o.odds_value > current:
+                    match_odds[o.market_name] = o.odds_value
             result[mid] = match_odds
         return result
 

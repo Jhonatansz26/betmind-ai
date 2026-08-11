@@ -1,5 +1,10 @@
 """
-Job: ingesta de estadísticas post-partido desde API-Football.
+Job: ingesta de estadísticas post-partido.
+
+Fuentes (cascada):
+  1. API-Football (stats crudas por fixture).
+  2. SofaScore (fallback automático si el partido tiene sofascore_event_id;
+     los payloads se cachean en Redis para no abusar de las peticiones).
 
 Corre sobre partidos FINISHED sin stats persistidas (home_corners IS NULL),
 ordenados por prioridad:
@@ -10,11 +15,6 @@ ordenados por prioridad:
 Guarda de cuota del plan Free (100 requests/día): el job se detiene cuando
 x-ratelimit-requests-remaining <= 30. Throttling de 6 segundos entre llamadas
 (límite ~10 req/min del plan).
-
-Si API-Football no devuelve stats para un fixture (liga sin cobertura,
-partido postergado, id no-API), se loguea WARNING con el fixture_id y se
-continúa — NO se cae al scraper de SofaScore automáticamente todavía
-(se evaluará después como fallback explícito).
 
 Idempotente: solo procesa partidos con home_corners IS NULL.
 
@@ -116,26 +116,50 @@ async def _ingest_one(
     """Procesa un partido: 'persisted' | 'empty' | 'error'."""
     fixture_id = match.external_id
     raw = await api.get_fixture_statistics(fixture_id)
-    if not raw:
-        logger.warning(
-            "API-Football sin stats para fixture %s (match %s) — se omite (sin fallback automático)",
-            fixture_id, match.id,
-        )
-        return "empty"
+    if raw:
+        parsed = api.parse_statistics_to_match_schema(raw)
+        async with async_session_factory() as session:
+            result = await store_espn_advanced_stats(session, match.id, parsed)
+            await session.commit()
+            logger.info(
+                "Stats persistidas para match %s (fixture %s): corners=%s/%s yellows=%s/%s sot=%s/%s fouls=%s/%s",
+                match.id, fixture_id,
+                parsed.get("home_corners"), parsed.get("away_corners"),
+                parsed.get("home_yellow_cards"), parsed.get("away_yellow_cards"),
+                parsed.get("home_shots_on_target"), parsed.get("away_shots_on_target"),
+                parsed.get("home_fouls"), parsed.get("away_fouls"),
+            )
+            return f"persisted:{result.get('match_id')}"
 
-    parsed = api.parse_statistics_to_match_schema(raw)
-    async with async_session_factory() as session:
-        result = await store_espn_advanced_stats(session, match.id, parsed)
-        await session.commit()
-        logger.info(
-            "Stats persistidas para match %s (fixture %s): corners=%s/%s yellows=%s/%s sot=%s/%s fouls=%s/%s",
-            match.id, fixture_id,
-            parsed.get("home_corners"), parsed.get("away_corners"),
-            parsed.get("home_yellow_cards"), parsed.get("away_yellow_cards"),
-            parsed.get("home_shots_on_target"), parsed.get("away_shots_on_target"),
-            parsed.get("home_fouls"), parsed.get("away_fouls"),
+    # Fallback SofaScore (Plan A real de stats, con cache en Redis): cubre
+    # ligas que API-Football no tiene o partidos sin stats en su plan free.
+    if match.sofascore_event_id is not None:
+        from apps.api.services.scrapers.espn_summary_scraper import (
+            fetch_and_store_match_stats_with_fallback,
         )
-        return f"persisted:{result.get('match_id')}"
+
+        try:
+            await fetch_and_store_match_stats_with_fallback(
+                match.sofascore_event_id,
+                match_id=match.id,
+            )
+            logger.info(
+                "Stats via SofaScore para match %s (sofascore_event_id=%s)",
+                match.id, match.sofascore_event_id,
+            )
+            return "persisted:sofascore"
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "SofaScore fallback sin stats para match %s (evento %s): %s",
+                match.id, match.sofascore_event_id, exc,
+            )
+
+    logger.warning(
+        "API-Football sin stats para fixture %s (match %s) y sin sofascore_event_id "
+        "para fallback — se omite",
+        fixture_id, match.id,
+    )
+    return "empty"
 
 
 async def ingest_match_statistics(

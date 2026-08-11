@@ -13,6 +13,7 @@ from apps.api.models.match import Match
 from apps.api.models.league import League
 from apps.api.models.team import Team
 from apps.api.models.bookmaker_odd import BookmakerOdd
+from apps.api.repositories.bookmaker_odd_repository import DEFAULT_BOOKMAKER_NAMES
 from apps.api.models.prediction import Prediction
 from apps.api.core.enums import FINISHED_MATCH_STATUSES, UPCOMING_MATCH_STATUSES
 from apps.api.services.api_football import APIFootballService
@@ -424,12 +425,15 @@ async def _fetch_odds_for_matches(db: AsyncSession, match_ids: list[int]) -> dic
         return {}
     stmt = select(BookmakerOdd).where(
         BookmakerOdd.match_id.in_(match_ids),
-        BookmakerOdd.bookmaker_name == "api_football",
-    )
+        BookmakerOdd.bookmaker_name.in_(DEFAULT_BOOKMAKER_NAMES),
+    ).order_by(BookmakerOdd.bookmaker_name)
     result = await db.execute(stmt)
     odds_grouped: dict[int, dict[str, float]] = {}
     for row in result.scalars().all():
-        odds_grouped.setdefault(row.match_id, {})[row.market_name] = row.odds_value
+        # Mejor precio por mercado entre las fuentes activas.
+        current = odds_grouped.setdefault(row.match_id, {}).get(row.market_name)
+        if current is None or row.odds_value > current:
+            odds_grouped[row.match_id][row.market_name] = row.odds_value
     return odds_grouped
 
 

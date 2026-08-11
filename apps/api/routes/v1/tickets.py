@@ -257,11 +257,17 @@ async def _read_stored_predictions(
         return matches, {}
 
     odds_result = await session.execute(
-        select(BookmakerOdd).where(BookmakerOdd.match_id.in_(match_ids))
+        select(BookmakerOdd)
+        .where(BookmakerOdd.match_id.in_(match_ids))
+        .order_by(BookmakerOdd.bookmaker_name)
     )
     odds_by_match: dict[int, dict[str, float]] = {}
     for odd in odds_result.scalars().all():
-        odds_by_match.setdefault(odd.match_id, {})[odd.market_name] = odd.odds_value
+        # Mejor precio por mercado entre las fuentes activas (api_football,
+        # espn, sofascore) — misma filosofía que odds_service.
+        current = odds_by_match.setdefault(odd.match_id, {}).get(odd.market_name)
+        if current is None or odd.odds_value > current:
+            odds_by_match[odd.match_id][odd.market_name] = odd.odds_value
     return matches, odds_by_match
 
 
