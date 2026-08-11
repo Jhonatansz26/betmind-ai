@@ -116,9 +116,12 @@ async def _ingest_one(
     use_api: bool = True,
 ) -> str:
     """Procesa un partido: 'persisted' | 'empty' | 'error'."""
+    # Definir SIEMPRE (también con use_api=False) para el log final: evita
+    # UnboundLocalError en el warning de abajo.
+    fixture_id = match.external_id
+
     if use_api:
         try:
-            fixture_id = match.external_id
             raw = await api.get_fixture_statistics(fixture_id)
         except AccountSuspendedError as exc:
             # Cuenta suspendida: no reintentar por partido, ir al fallback.

@@ -180,3 +180,26 @@ def test_sync_odds_for_matches_returns_zero_immediately_when_suspended():
 
     import asyncio
     asyncio.run(scenario())
+
+
+def test_ingest_one_without_api_does_not_raise_unbound_fixture_id():
+    """
+    Regresión: con use_api=False y sin sofascore_event_id, el warning final
+    usaba fixture_id no definido -> UnboundLocalError. Ahora fixture_id se
+    define siempre al inicio de _ingest_one.
+    """
+    from apps.api.jobs.ingest_match_statistics import _ingest_one
+
+    async def scenario():
+        api = MagicMock()
+        match = MagicMock()
+        match.external_id = 12345
+        match.id = 7
+        match.sofascore_event_id = None
+
+        outcome = await _ingest_one(api, match, use_api=False)
+        assert outcome == "empty"
+        api.get_fixture_statistics.assert_not_called()
+
+    import asyncio
+    asyncio.run(scenario())
