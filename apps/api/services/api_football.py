@@ -25,9 +25,26 @@ class APIFootballService:
         "liga_betplay": 239,
     }
     
+    # Labels del endpoint /fixtures/statistics verificados en la doc de
+    # API-Football. Mismos nombres de stat que el scraper de ESPN para que
+    # normalize_stats_to_match_schema pueda persistirlos sin cambios.
+    STAT_KEYS: dict[str, tuple[str, ...]] = {
+        "expected_goals": ("Expected Goals (xG)",),
+        "shots": ("Total Shots",),
+        "shots_on_target": ("Shots on Goal",),
+        "corners": ("Corner Kicks",),
+        "fouls": ("Fouls",),
+        "yellow_cards": ("Yellow Cards",),
+        "red_cards": ("Red Cards",),
+        "possession_pct": ("Ball Possession",),
+        "saves": ("Goalkeeper Saves",),
+        "offsides": ("Offsides",),
+    }
+    
     def __init__(self, api_key: str | None = None):
         self._api_key = api_key or settings.API_FOOTBALL_KEY
         self._headers = {"x-apisports-key": self._api_key}
+        self._remaining_requests: int | None = None
 
     async def _request(
         self, endpoint: str, params: Optional[dict[str, Any]] = None
@@ -83,8 +100,10 @@ class APIFootballService:
                     )
                 
                 remaining = response.headers.get("x-ratelimit-requests-remaining")
-                if remaining and int(remaining) < 10:
-                    logger.warning(f"API-Football rate limit low: {remaining} requests remaining")
+                if remaining and remaining.isdigit():
+                    self._remaining_requests = int(remaining)
+                    if int(remaining) < 10:
+                        logger.warning(f"API-Football rate limit low: {remaining} requests remaining")
                 
                 return data
                 
@@ -98,6 +117,14 @@ class APIFootballService:
                     service="api-football",
                     detail=f"Network error: {str(e)}",
                 )
+
+    def get_remaining_requests(self) -> int | None:
+        """Requests restantes del plan (x-ratelimit-requests-remaining).
+
+        ``None`` si todavía no se hizo ninguna petición (guard optimista:
+        el caller procede hasta conocer el estado real de la cuota).
+        """
+        return self._remaining_requests
 
     async def get_leagues(
         self,
@@ -354,6 +381,72 @@ class APIFootballService:
         params = {"fixture": fixture_id}
         data = await self._request("odds", params)
         return data.get("response", [])
+
+    async def get_fixture_statistics(
+        self,
+        fixture_id: int,
+    ) -> list[dict[str, Any]]:
+        """
+        Obtiene estadísticas post-partido de un fixture.
+        Endpoint: GET /fixtures/statistics?fixture={fixture_id}
+
+        Devuelve remates, remates a puerta, córneres, tarjetas, fouls,
+        posesión, saves y xG por equipo, disponible una vez que el partido
+        terminó. No requiere scraping ni costo adicional al plan actual.
+        """
+        params = {"fixture": fixture_id}
+        data = await self._request("fixtures/statistics", params)
+        return data.get("response", [])
+
+    @staticmethod
+    def _parse_stat_value(raw: Any) -> float | None:
+        """Convierte el valor de API-Football (int/float/str "62%") a float."""
+        if raw is None:
+            return None
+        text = str(raw).strip().replace("%", "")
+        if text in ("", "-"):
+            return None
+        try:
+            return float(text.replace(",", "."))
+        except ValueError:
+            return None
+
+    def parse_statistics_to_match_schema(
+        self,
+        statistics: list[dict[str, Any]],
+    ) -> dict[str, float | None]:
+        """
+        Normaliza la respuesta de /fixtures/statistics al esquema interno.
+
+        API-Football devuelve el equipo local primero; las claves del dict
+        resultante (home_/away_ + expected_goals, shots, shots_on_target,
+        corners, fouls, yellow_cards, red_cards, possession_pct, saves,
+        offsides) son las mismas que consume normalize_stats_to_match_schema
+        de espn_summary_scraper, así que se persiste con el mismo flujo.
+        """
+        sides: list[dict[str, Any]] = []
+        for team_entry in statistics:
+            by_type = {
+                (stat.get("type") or ""): stat.get("value")
+                for stat in team_entry.get("statistics") or []
+            }
+            sides.append(by_type)
+
+        if not sides:
+            return {}
+
+        home, away = sides[0], sides[1] if len(sides) > 1 else {}
+        result: dict[str, float | None] = {}
+        for stat_name, candidate_keys in self.STAT_KEYS.items():
+            for prefix, side in (("home", home), ("away", away)):
+                value: float | None = None
+                for key in candidate_keys:
+                    parsed = self._parse_stat_value(side.get(key))
+                    if parsed is not None:
+                        value = parsed
+                        break
+                result[f"{prefix}_{stat_name}"] = value
+        return result
 
     async def get_fixtures_by_date(
         self,

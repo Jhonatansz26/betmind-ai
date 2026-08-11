@@ -62,6 +62,12 @@ jobs:
         # con predicción aún no evaluada. Sin alertas todavía — solo datos.
         run: python -m apps.api.jobs.evaluate_predictions --days 30
 
+      - name: Ingestar estadísticas post-partido (API-Football)
+        # Prioriza partidos con predicción+EV; guard de cuota >30 requests.
+        # Un fallo acá no debe tumbar el resto del cron (criterio P0-2).
+        continue-on-error: true
+        run: python -m apps.api.jobs.ingest_match_statistics --days 30
+
       - name: Verificar sync de partidos
         if: steps.sync-matches.outcome == 'failure'
         run: |
