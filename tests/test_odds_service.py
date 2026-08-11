@@ -36,11 +36,15 @@ def _fixture(fid: int, home: str, away: str) -> dict:
 
 
 class _FakeAPIFootball:
-    def __init__(self, fixtures_by_range=None, fixtures_by_date=None):
+    def __init__(self, fixtures_by_range=None, fixtures_by_date=None, account_status="active"):
         self.fixtures_by_range = fixtures_by_range or {}
         self.fixtures_by_date = fixtures_by_date or {}
         self.range_calls: list[dict] = []
         self.date_calls: list[dict] = []
+        self.account_status = account_status
+
+    async def check_account_status(self):
+        return self.account_status
 
     async def get_fixtures_by_date_range(self, league, season, date_from, date_to):
         self.range_calls.append({

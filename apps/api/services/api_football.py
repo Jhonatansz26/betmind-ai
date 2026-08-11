@@ -5,7 +5,7 @@ from typing import Any, Optional
 import httpx
 
 from apps.api.config import settings
-from apps.api.core.exceptions import ExternalAPIException
+from apps.api.core.exceptions import AccountSuspendedError, ExternalAPIException
 from apps.api.core.enums import normalize_match_status
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,28 @@ class APIFootballService:
         self._headers = {"x-apisports-key": self._api_key}
         self._remaining_requests: int | None = None
 
+    @staticmethod
+    def _is_suspension_payload(data: dict[str, Any] | str | list | None) -> bool:
+        """
+        True si el payload indica cuenta suspendida/plan sin acceso.
+
+        API-Football devuelve HTTP 200 con errores en el body:
+          {'errors': {'access': 'Your account is suspended, check on ...'}}
+          {'errors': {'plan': 'Free plans do not have access to this season...'}}
+        También respuestas no-200 con el mismo texto en el cuerpo.
+        """
+        if data is None:
+            return False
+        text = data if isinstance(data, str) else str(data)
+        lowered = text.lower()
+        if "suspended" in lowered:
+            return True
+        if isinstance(data, dict):
+            errors = data.get("errors")
+            if errors:
+                return "suspended" in str(errors).lower() or "access" in str(errors).lower()
+        return False
+
     async def _request(
         self, endpoint: str, params: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
@@ -77,6 +99,13 @@ class APIFootballService:
                     )
                 
                 if response.status_code != 200:
+                    # La suspensión también puede llegar como HTTP 403/401 con
+                    # el texto en el body: se detecta antes del error genérico.
+                    if self._is_suspension_payload(response.text[:500]):
+                        raise AccountSuspendedError(
+                            service="api-football",
+                            detail=f"HTTP {response.status_code}: {response.text[:200]}",
+                        )
                     raise ExternalAPIException(
                         service="api-football",
                         detail=f"HTTP {response.status_code}: {response.text[:200]}",
@@ -88,6 +117,15 @@ class APIFootballService:
                     raise ExternalAPIException(
                         service="api-football",
                         detail=f"Invalid JSON response: {str(e)[:200]}",
+                    )
+                
+                # Cuenta suspendida: fallo DEFINITIVO (no reintentar en esta
+                # ejecución). Se detecta ANTES del chequeo genérico de errors
+                # para que los callers puedan saltearse API-Football entero.
+                if self._is_suspension_payload(data):
+                    raise AccountSuspendedError(
+                        service="api-football",
+                        detail=str(data.get("errors") or response.text[:200])[:500],
                     )
                                 
                 if data.get("errors"):
@@ -117,6 +155,39 @@ class APIFootballService:
                     service="api-football",
                     detail=f"Network error: {str(e)}",
                 )
+
+    async def check_account_status(self) -> str:
+        """
+        Estado de la cuenta vía /status (pre-flight, UNA llamada).
+
+        Returns:
+            "active" | "suspended" | "error"
+
+        No lanza excepciones: pensado para que el caller decida si vale la
+        pena seguir usando API-Football en esta ejecución.
+        """
+        if not self._api_key:
+            return "error"
+        url = f"{self.BASE_URL}/status"
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.get(url, headers=self._headers)
+            if response.status_code != 200:
+                if self._is_suspension_payload(response.text[:500]):
+                    return "suspended"
+                return "error"
+            data = response.json()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"API-Football /status falló: {exc}")
+            return "error"
+
+        if self._is_suspension_payload(data):
+            return "suspended"
+
+        account = (data.get("response") or {}).get("account") or {}
+        if account.get("active") is False:
+            return "suspended"
+        return "active" if account else "error"
 
     def get_remaining_requests(self) -> int | None:
         """Requests restantes del plan (x-ratelimit-requests-remaining).

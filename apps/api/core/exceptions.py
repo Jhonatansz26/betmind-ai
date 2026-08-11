@@ -26,3 +26,17 @@ class ExternalAPIException(BetMindException):
     def __init__(self, service: str, detail: str):
         super().__init__(f"Error en servicio externo '{service}': {detail}")
         self.service = service
+
+
+class AccountSuspendedError(ExternalAPIException):
+    """
+    Cuenta suspendida o plan sin acceso al proveedor externo (ej. API-Football
+    devuelve HTTP 200 con {'errors': {'access': 'Your account is suspended...'}}).
+
+    Los callers deben tratarla como fallo DEFINITIVO de la fuente: no reintentar
+    ni seguir iterando partidos contra el mismo proveedor en esta ejecución.
+    """
+
+    def __init__(self, service: str, detail: str = "Account suspended"):
+        super().__init__(service=service, detail=detail)
+        self.suspended = True

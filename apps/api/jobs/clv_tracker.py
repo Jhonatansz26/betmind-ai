@@ -186,6 +186,19 @@ async def capture_closing_lines() -> dict[str, int]:
 
     odds_session = None
     odds_service: OddsService | None = None
+    # Pre-flight de UNA llamada: si la cuenta está suspendida, el Plan A
+    # (API-Football) se omite por completo y queda solo el Plan B (ESPN).
+    af_available = True
+    try:
+        from apps.api.services.api_football import APIFootballService
+        if await APIFootballService().check_account_status() != "active":
+            af_available = False
+            logger.warning(
+                "CLV: API-Football no disponible — Plan A omitido (solo ESPN moneyline)"
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"CLV: API-Football /status falló: {exc}")
+
     try:
         for match in matches:
             match_slug = ESPN_LEAGUE_SLUG_BY_API_ID.get(match.league.external_id) if match.league else None
@@ -199,18 +212,19 @@ async def capture_closing_lines() -> dict[str, int]:
                 # Plan A: API-Football (mercados completos).
                 closing: dict[str, float] = {}
                 closing_source = "api_football"
-                try:
-                    match_payload = {
-                        "match_id": match.id,
-                        "league_external_id": match.league.external_id if match.league else None,
-                        "match_date_str": match.match_date.strftime("%Y-%m-%d"),
-                        "home_team_name": match.home_team.name if match.home_team else "",
-                        "away_team_name": match.away_team.name if match.away_team else "",
-                    }
-                    closing_entries = await odds_service.fetch_closing_odds_for_match(match_payload)
-                    closing = {entry["market_name"]: entry["odds_value"] for entry in closing_entries}
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("CLV/API-Football failed for match %s: %s", match.id, exc)
+                if af_available:
+                    try:
+                        match_payload = {
+                            "match_id": match.id,
+                            "league_external_id": match.league.external_id if match.league else None,
+                            "match_date_str": match.match_date.strftime("%Y-%m-%d"),
+                            "home_team_name": match.home_team.name if match.home_team else "",
+                            "away_team_name": match.away_team.name if match.away_team else "",
+                        }
+                        closing_entries = await odds_service.fetch_closing_odds_for_match(match_payload)
+                        closing = {entry["market_name"]: entry["odds_value"] for entry in closing_entries}
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("CLV/API-Football failed for match %s: %s", match.id, exc)
 
                 # Plan B: ESPN moneyline 1X2 (solo si el Plan A no entregó 1X2).
                 if (not closing or not any(k.startswith("1X2_") for k in closing)) and match_slug:

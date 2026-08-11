@@ -36,6 +36,7 @@ from apps.api.db.database import async_session_factory
 from apps.api.models.match import Match
 from apps.api.models.prediction import Prediction
 from apps.api.services.api_football import APIFootballService
+from apps.api.core.exceptions import AccountSuspendedError
 from apps.api.services.scrapers.espn_summary_scraper import store_espn_advanced_stats
 
 logger = logging.getLogger(__name__)
@@ -112,24 +113,34 @@ async def _pending_matches(
 async def _ingest_one(
     api: APIFootballService,
     match: Match,
+    use_api: bool = True,
 ) -> str:
     """Procesa un partido: 'persisted' | 'empty' | 'error'."""
-    fixture_id = match.external_id
-    raw = await api.get_fixture_statistics(fixture_id)
-    if raw:
-        parsed = api.parse_statistics_to_match_schema(raw)
-        async with async_session_factory() as session:
-            result = await store_espn_advanced_stats(session, match.id, parsed)
-            await session.commit()
-            logger.info(
-                "Stats persistidas para match %s (fixture %s): corners=%s/%s yellows=%s/%s sot=%s/%s fouls=%s/%s",
-                match.id, fixture_id,
-                parsed.get("home_corners"), parsed.get("away_corners"),
-                parsed.get("home_yellow_cards"), parsed.get("away_yellow_cards"),
-                parsed.get("home_shots_on_target"), parsed.get("away_shots_on_target"),
-                parsed.get("home_fouls"), parsed.get("away_fouls"),
+    if use_api:
+        try:
+            fixture_id = match.external_id
+            raw = await api.get_fixture_statistics(fixture_id)
+        except AccountSuspendedError as exc:
+            # Cuenta suspendida: no reintentar por partido, ir al fallback.
+            logger.warning(
+                "API-Football suspendida — fallback SofaScore para match %s: %s",
+                match.id, exc,
             )
-            return f"persisted:{result.get('match_id')}"
+            raw = None
+        if raw:
+            parsed = api.parse_statistics_to_match_schema(raw)
+            async with async_session_factory() as session:
+                result = await store_espn_advanced_stats(session, match.id, parsed)
+                await session.commit()
+                logger.info(
+                    "Stats persistidas para match %s (fixture %s): corners=%s/%s yellows=%s/%s sot=%s/%s fouls=%s/%s",
+                    match.id, fixture_id,
+                    parsed.get("home_corners"), parsed.get("away_corners"),
+                    parsed.get("home_yellow_cards"), parsed.get("away_yellow_cards"),
+                    parsed.get("home_shots_on_target"), parsed.get("away_shots_on_target"),
+                    parsed.get("home_fouls"), parsed.get("away_fouls"),
+                )
+                return f"persisted:{result.get('match_id')}"
 
     # Fallback SofaScore (Plan A real de stats, con cache en Redis): cubre
     # ligas que API-Football no tiene o partidos sin stats en su plan free.
@@ -176,13 +187,27 @@ async def ingest_match_statistics(
     stats = {"matches_scanned": 0, "persisted": 0, "empty": 0, "errors": 0, "stopped_by_guard": 0}
 
     api = APIFootballService()
+
+    # Pre-flight de UNA llamada: si la cuenta está suspendida, no se golpea
+    # API-Football por cada partido — los que tengan sofascore_event_id van
+    # directo al fallback SofaScore.
+    af_available = True
+    try:
+        if await api.check_account_status() != "active":
+            af_available = False
+            logger.warning(
+                "Ingest stats: API-Football no disponible — solo fallback SofaScore"
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Ingest stats: API-Football /status falló: {exc}")
+
     matches = await _pending_matches(days, match_ids, limit)
     stats["matches_scanned"] = len(matches)
     logger.info("Ingest stats: %s matches sin stats en ventana de %s días", len(matches), days)
 
     for match in matches:
         remaining = api.get_remaining_requests()
-        if remaining is not None and remaining <= QUOTA_GUARD_REMAINING:
+        if af_available and remaining is not None and remaining <= QUOTA_GUARD_REMAINING:
             logger.info(
                 "Ingest stats: guard de cuota activado (%s <= %s restantes) — se detiene el job",
                 remaining, QUOTA_GUARD_REMAINING,
@@ -191,7 +216,7 @@ async def ingest_match_statistics(
             break
 
         try:
-            outcome = await _ingest_one(api, match)
+            outcome = await _ingest_one(api, match, use_api=af_available)
         except Exception as exc:  # noqa: BLE001 — un fixture malo no tumba el lote
             logger.error("Ingest stats: error para match %s (fixture %s): %s", match.id, match.external_id, exc)
             stats["errors"] += 1

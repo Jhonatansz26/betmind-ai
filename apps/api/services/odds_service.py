@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.config import settings
+from apps.api.core.exceptions import AccountSuspendedError
 from apps.api.repositories.bookmaker_odd_repository import BookmakerOddsRepository
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.services.api_football import APIFootballService
@@ -171,6 +172,21 @@ class OddsService:
         """
         total_odds = 0
 
+        # Pre-flight: si la cuenta está suspendida/plan sin acceso, NO iterar
+        # partidos contra API-Football (cada llamada tarda 30s y falla).
+        try:
+            status = await self._api.check_account_status()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"API-Football /status falló en pre-flight: {exc}")
+            status = "error"
+        if status != "active":
+            logger.error(
+                "API-Football no disponible (status=%s) — se omite el sync de "
+                "cuotas API-Football en esta ejecución (ESPN/SofaScore cubren)",
+                status,
+            )
+            return 0
+
         # 1. Agrupar por (liga, temporada). La temporada es el año del partido
         #    (misma convención que el resto del código: match_date.year).
         #    Partidos sin league_external_id caen en el fallback global.
@@ -238,7 +254,7 @@ class OddsService:
                 logger.error(f"Error fetching fixtures for {date_str}: {e}")
                 continue
 
-        for match in matches:
+        for index, match in enumerate(matches):
             try:
                 league_id = match.get("league_external_id")
                 fixture_map = (
@@ -270,6 +286,15 @@ class OddsService:
                     )
 
                 await asyncio.sleep(6)
+            except AccountSuspendedError:
+                # Fallo DEFINITIVO de la fuente: cortar todo el loop, no tiene
+                # sentido seguir consultando partido por partido.
+                logger.error(
+                    "API-Football suspendida a mitad del sync — se abortan los "
+                    "%d partidos restantes (ESPN/SofaScore siguen cubriendo)",
+                    len(matches) - index - 1,
+                )
+                break
             except Exception as e:
                 logger.error(
                     f"Error syncing odds for {match['home_team_name']} vs "
@@ -544,6 +569,17 @@ class OddsService:
         Returns:
             Lista de dicts {market_name, odds_value, external_fixture_id}.
         """
+        # Cuenta suspendida -> el Plan B (ESPN moneyline) ya cubre el CLV.
+        try:
+            if await self._api.check_account_status() != "active":
+                logger.warning(
+                    "CLV: API-Football no disponible — se omite el Plan A "
+                    "(queda el Plan B de ESPN moneyline)"
+                )
+                return []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"CLV: API-Football /status falló: {exc}")
+
         target_dates = dates or {match["match_date_str"]}
         all_fixtures: list[dict[str, Any]] = []
         for date_str in sorted(target_dates):
