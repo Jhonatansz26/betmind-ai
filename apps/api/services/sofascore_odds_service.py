@@ -357,7 +357,7 @@ class SofaScoreOddsService:
                 )
                 continue
             try:
-                league_id = int(raw_league_id)
+                league_id = int(str(raw_league_id))
             except (TypeError, ValueError):
                 league_id = None
             if league_id not in ACTIVE_LEAGUE_IDS:

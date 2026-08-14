@@ -140,7 +140,7 @@ class OddsService:
         self._api = APIFootballService(settings.API_FOOTBALL_KEY)
         self._odds_repo = BookmakerOddsRepository(session)
         self._match_repo = MatchRepository(session)
-        self._closing_fixture_cache = None
+        self._closing_fixture_cache: dict[str, list[dict[str, Any]]] | None = None
 
     async def sync_odds_for_matches(
         self,
@@ -168,119 +168,27 @@ class OddsService:
             Total de cuotas sincronizadas.
         """
         total_odds = 0
-        active_matches: list[dict[str, Any]] = []
-        skipped_matches = 0
-        for match in matches:
-            raw_league_id = match.get("league_external_id")
-            if raw_league_id is None:
-                logger.warning(
-                    "Omitido partido %s de cuotas: falta league_external_id",
-                    match.get("match_id"),
-                )
-                skipped_matches += 1
-                continue
-            try:
-                league_id = int(raw_league_id)
-            except (TypeError, ValueError):
-                league_id = None
-            if league_id not in ACTIVE_LEAGUE_IDS:
-                skipped_matches += 1
-                continue
-            active_matches.append(match)
-
-        if skipped_matches:
-            logger.info(
-                "Omitidos %s partidos de cuotas por no pertenecer a ACTIVE_LEAGUE_IDS",
-                skipped_matches,
-            )
+        active_matches = self._filter_active_matches(matches)
         if not active_matches:
             return 0
         matches = active_matches
 
-        # Pre-flight: si la cuenta está suspendida/plan sin acceso, NO iterar
-        # partidos contra API-Football (cada llamada tarda 30s y falla).
-        try:
-            status = await self._api.check_account_status()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"API-Football /status falló en pre-flight: {exc}")
-            status = "error"
-        if status != "active":
-            logger.error(
-                "API-Football no disponible (status=%s) — se omite el sync de "
-                "cuotas API-Football en esta ejecución (ESPN/SofaScore cubren)",
-                status,
-            )
+        if not await self._is_api_football_available():
             return 0
 
-        # 1. Agrupar por fecha. Todos los partidos ya fueron validados contra
-        #    ACTIVE_LEAGUE_IDS.
-        matches_by_date: dict[str, set[int]] = {}
-        for m in matches:
-            league_id = int(m["league_external_id"])
-            date_str = m.get("match_date_str") or ""
-            if date_str:
-                matches_by_date.setdefault(date_str, set()).add(league_id)
-
-        # 2. Una llamada global por fecha, sin league ni season. Filtrar por
-        #    league.id ocurre antes de construir cada fixture map.
-        league_fixture_maps: dict[int, dict[str, dict[str, Any]]] = {}
-        for date_str, league_ids in sorted(matches_by_date.items()):
-            try:
-                fixtures = await self._api.get_fixtures_by_date(date_str=date_str)
-                active_fixtures = [
-                    fixture for fixture in fixtures
-                    if (fixture.get("league") or {}).get("id") in ACTIVE_LEAGUE_IDS
-                ]
-                for league_id in league_ids:
-                    league_fixtures = [
-                        fixture for fixture in active_fixtures
-                        if (fixture.get("league") or {}).get("id") == league_id
-                    ]
-                    league_fixture_maps.setdefault(league_id, {}).update(
-                        self._build_fixture_map(league_fixtures)
-                    )
-                logger.info(
-                    "Fetched %s fixtures for %s; %s belong to active leagues",
-                    len(fixtures), date_str, len(active_fixtures),
-                )
-            except DailyQuotaExhaustedError:
-                logger.warning(
-                    "API-Football daily quota exhausted during fixtures sync; "
-                    "stopping odds sync"
-                )
-                return total_odds
-            except Exception as e:
-                logger.error(
-                    f"Error fetching fixtures for date {date_str}: {e}"
-                )
-                continue
+        matches_by_date = self._group_matches_by_date(matches)
+        league_fixture_maps, quota_exhausted = await self._fetch_fixture_maps(
+            matches_by_date
+        )
+        if quota_exhausted:
+            return total_odds
 
         for index, match in enumerate(matches):
             try:
-                league_id = int(match["league_external_id"])
-                fixture_map = league_fixture_maps.get(league_id, {})
-                api_fixture = self._find_api_fixture(match, fixture_map)
-                if not api_fixture:
-                    logger.debug(
-                        f"No API-Football fixture found for "
-                        f"{match['home_team_name']} vs {match['away_team_name']}"
-                    )
-                    continue
-
-                fixture_id = api_fixture["fixture"]["id"]
-                odds_data = await self._fetch_and_parse_odds(fixture_id)
-
-                if odds_data:
-                    count = await self._odds_repo.upsert_odds(
-                        match_id=match["match_id"],
-                        odds_list=odds_data,
-                    )
-                    total_odds += count
-                    logger.info(
-                        f"Synced {count} odds for "
-                        f"{match['home_team_name']} vs {match['away_team_name']} "
-                        f"(fixture_id={fixture_id})"
-                    )
+                total_odds += await self._sync_single_match_odds(
+                    match,
+                    league_fixture_maps,
+                )
 
             except DailyQuotaExhaustedError:
                 logger.warning(
@@ -306,6 +214,146 @@ class OddsService:
 
         logger.info(f"Total odds synced: {total_odds}")
         return total_odds
+
+    def _active_league_id(self, match: dict[str, Any]) -> int | None:
+        raw_league_id = match.get("league_external_id")
+        if raw_league_id is None:
+            logger.warning(
+                "Omitido partido %s de cuotas: falta league_external_id",
+                match.get("match_id"),
+            )
+            return None
+        try:
+            league_id = int(str(raw_league_id))
+        except (TypeError, ValueError):
+            logger.warning(
+                "Omitido partido %s de cuotas: league_external_id inválido (%s)",
+                match.get("match_id"),
+                raw_league_id,
+            )
+            return None
+        return league_id if league_id in ACTIVE_LEAGUE_IDS else None
+
+    def _filter_active_matches(
+        self,
+        matches: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        active_matches = []
+        skipped_matches = 0
+        for match in matches:
+            if self._active_league_id(match) is None:
+                skipped_matches += 1
+                continue
+            active_matches.append(match)
+        if skipped_matches:
+            logger.info(
+                "Omitidos %s partidos de cuotas por no pertenecer a ACTIVE_LEAGUE_IDS",
+                skipped_matches,
+            )
+        return active_matches
+
+    async def _is_api_football_available(self) -> bool:
+        """Evita iterar partidos si el pre-flight de la fuente falla."""
+        try:
+            status = await self._api.check_account_status()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("API-Football /status falló en pre-flight: %s", exc)
+            status = "error"
+        if status == "active":
+            return True
+        logger.error(
+            "API-Football no disponible (status=%s) — se omite el sync de "
+            "cuotas API-Football en esta ejecución (ESPN/SofaScore cubren)",
+            status,
+        )
+        return False
+
+    def _group_matches_by_date(
+        self,
+        matches: list[dict[str, Any]],
+    ) -> dict[str, set[int]]:
+        matches_by_date: dict[str, set[int]] = {}
+        for match in matches:
+            league_id = self._active_league_id(match)
+            date_str = match.get("match_date_str") or ""
+            if league_id is not None and date_str:
+                matches_by_date.setdefault(date_str, set()).add(league_id)
+        return matches_by_date
+
+    async def _fetch_fixture_maps(
+        self,
+        matches_by_date: dict[str, set[int]],
+    ) -> tuple[dict[int, dict[str, dict[str, Any]]], bool]:
+        """Trae fixtures por fecha y arma mapas separados por liga."""
+        league_fixture_maps: dict[int, dict[str, dict[str, Any]]] = {}
+        for date_str, league_ids in sorted(matches_by_date.items()):
+            try:
+                fixtures = await self._api.get_fixtures_by_date(date_str=date_str)
+            except DailyQuotaExhaustedError:
+                logger.warning(
+                    "API-Football daily quota exhausted during fixtures sync; "
+                    "stopping odds sync"
+                )
+                return league_fixture_maps, True
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Error fetching fixtures for date %s: %s", date_str, exc)
+                continue
+
+            active_fixtures = [
+                fixture for fixture in fixtures
+                if (fixture.get("league") or {}).get("id") in ACTIVE_LEAGUE_IDS
+            ]
+            for league_id in league_ids:
+                league_fixtures = [
+                    fixture for fixture in active_fixtures
+                    if (fixture.get("league") or {}).get("id") == league_id
+                ]
+                league_fixture_maps.setdefault(league_id, {}).update(
+                    self._build_fixture_map(league_fixtures)
+                )
+            logger.info(
+                "Fetched %s fixtures for %s; %s belong to active leagues",
+                len(fixtures), date_str, len(active_fixtures),
+            )
+        return league_fixture_maps, False
+
+    async def _sync_single_match_odds(
+        self,
+        match: dict[str, Any],
+        league_fixture_maps: dict[int, dict[str, dict[str, Any]]],
+    ) -> int:
+        league_id = self._active_league_id(match)
+        if league_id is None:
+            return 0
+        api_fixture = self._find_api_fixture(
+            match,
+            league_fixture_maps.get(league_id, {}),
+        )
+        if not api_fixture:
+            logger.debug(
+                "No API-Football fixture found for %s vs %s",
+                match["home_team_name"],
+                match["away_team_name"],
+            )
+            return 0
+
+        fixture_id = api_fixture["fixture"]["id"]
+        odds_data = await self._fetch_and_parse_odds(fixture_id)
+        if not odds_data:
+            return 0
+
+        count = await self._odds_repo.upsert_odds(
+            match_id=match["match_id"],
+            odds_list=odds_data,
+        )
+        logger.info(
+            "Synced %s odds for %s vs %s (fixture_id=%s)",
+            count,
+            match["home_team_name"],
+            match["away_team_name"],
+            fixture_id,
+        )
+        return count
 
     def _build_fixture_map(
         self, fixtures: list[dict[str, Any]]
@@ -578,7 +626,7 @@ class OddsService:
             )
             return []
         try:
-            league_id = int(raw_league_id)
+            league_id = int(str(raw_league_id))
         except (TypeError, ValueError):
             league_id = None
         if league_id not in ACTIVE_LEAGUE_IDS:

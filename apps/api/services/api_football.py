@@ -14,7 +14,7 @@ from apps.api.core.enums import normalize_match_status
 from apps.api.services.api_football_rate_limiter import (
     APIFootballRateLimiter,
     DailyQuotaExhaustedError,
-    rate_limiter,
+    rate_limiter as default_rate_limiter,
 )
 from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
@@ -62,7 +62,7 @@ class APIFootballService:
         self._headers = {"x-apisports-key": self._api_key}
         self._remaining_requests: int | None = None
         self._remaining_per_minute: int | None = None
-        self._rate_limiter = rate_limiter_override or globals()["rate_limiter"]
+        self._rate_limiter = rate_limiter_override or default_rate_limiter
 
     @staticmethod
     def _numeric_header_value(value: str | None) -> int | None:
@@ -116,7 +116,7 @@ class APIFootballService:
     def _observe_rate_limit_headers(self, headers: httpx.Headers) -> None:
         """Registra las cuotas diaria y por minuto devueltas por el proveedor."""
         values = self._rate_limit_header_values(headers)
-        daily_remaining, daily_limit, minute_remaining, minute_limit = values
+        daily_remaining, _daily_limit, minute_remaining, _minute_limit = values
         daily_value = self._numeric_header_value(daily_remaining)
         minute_value = self._numeric_header_value(minute_remaining)
 
@@ -125,7 +125,12 @@ class APIFootballService:
         if minute_value is not None:
             self._remaining_per_minute = minute_value
 
-        self._log_rate_limit_headers(*values)
+        self._log_rate_limit_headers(
+            daily_remaining,
+            _daily_limit,
+            minute_remaining,
+            _minute_limit,
+        )
         self._warn_on_low_rate_limits(daily_value, minute_value)
 
     @staticmethod
