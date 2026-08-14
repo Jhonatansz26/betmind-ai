@@ -301,6 +301,37 @@ async def test_sync_odds_for_matches_skips_when_no_event_or_no_markets():
 
 
 @pytest.mark.asyncio
+async def test_sync_odds_for_matches_skips_null_league_without_aborting(caplog):
+    """Un partido sin liga no debe impedir procesar el resto del loop."""
+    service = _service()
+    service._search_team_id = AsyncMock(return_value=None)
+    service._team_next_events = AsyncMock(return_value=[])
+    service._odds_repo = MagicMock()
+
+    matches = [
+        {
+            "match_id": 1,
+            "league_external_id": None,
+            "home_team_name": "Sin Liga",
+            "away_team_name": "Otro",
+        },
+        {
+            "match_id": 2,
+            "league_external_id": 13,
+            "home_team_name": "Equipo Desconocido",
+            "away_team_name": "Otro",
+        },
+    ]
+
+    with caplog.at_level("WARNING", logger="apps.api.services.sofascore_odds_service"):
+        total = await service.sync_odds_for_matches(matches)
+
+    assert total == 0
+    assert service._search_team_id.await_count == 1
+    assert any("falta league_external_id" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_sync_odds_for_matches_uses_redis_cache():
     from apps.api.services.cache_service import CacheService
 

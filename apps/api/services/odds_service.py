@@ -140,6 +140,7 @@ class OddsService:
         self._api = APIFootballService(settings.API_FOOTBALL_KEY)
         self._odds_repo = BookmakerOddsRepository(session)
         self._match_repo = MatchRepository(session)
+        self._closing_fixture_cache = None
 
     async def sync_odds_for_matches(
         self,
@@ -170,8 +171,16 @@ class OddsService:
         active_matches: list[dict[str, Any]] = []
         skipped_matches = 0
         for match in matches:
+            raw_league_id = match.get("league_external_id")
+            if raw_league_id is None:
+                logger.warning(
+                    "Omitido partido %s de cuotas: falta league_external_id",
+                    match.get("match_id"),
+                )
+                skipped_matches += 1
+                continue
             try:
-                league_id = int(match.get("league_external_id"))
+                league_id = int(raw_league_id)
             except (TypeError, ValueError):
                 league_id = None
             if league_id not in ACTIVE_LEAGUE_IDS:
@@ -561,8 +570,15 @@ class OddsService:
         Returns:
             Lista de dicts {market_name, odds_value, external_fixture_id}.
         """
+        raw_league_id = match.get("league_external_id")
+        if raw_league_id is None:
+            logger.warning(
+                "CLV: se omite partido %s: falta league_external_id",
+                match.get("match_id"),
+            )
+            return []
         try:
-            league_id = int(match.get("league_external_id"))
+            league_id = int(raw_league_id)
         except (TypeError, ValueError):
             league_id = None
         if league_id not in ACTIVE_LEAGUE_IDS:
@@ -595,7 +611,7 @@ class OddsService:
         # resultado dentro de esta instancia evita un /fixtures?date= por
         # partido cuando todavÃ­a no existe un api_football_fixture_id
         # explÃ­cito en el modelo Match.
-        fixture_cache = getattr(self, "_closing_fixture_cache", None)
+        fixture_cache = self._closing_fixture_cache
         if fixture_cache is None:
             fixture_cache = {}
             self._closing_fixture_cache = fixture_cache

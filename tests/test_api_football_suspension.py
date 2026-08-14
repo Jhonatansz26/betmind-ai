@@ -37,7 +37,7 @@ ACTIVE_STATUS_PAYLOAD = {"response": {"account": {"active": True, "plan": "Free"
 @pytest.fixture
 def service() -> APIFootballService:
     # Estas pruebas mockean el HTTP; no deben depender de un Redis real.
-    return APIFootballService(api_key="test-key", rate_limiter=AsyncMock())
+    return APIFootballService(api_key="test-key", rate_limiter_override=AsyncMock())
 
 
 def _fake_response(status_code: int, payload=None, text=None):

@@ -75,6 +75,7 @@ def _service_with(api: _FakeAPIFootball, repo: _FakeOddsRepo) -> OddsService:
     service = OddsService.__new__(OddsService)
     service._api = api
     service._odds_repo = repo
+    service._closing_fixture_cache = None
     return service
 
 
@@ -307,6 +308,26 @@ def test_sync_odds_skips_match_without_active_league(monkeypatch):
     assert api.range_calls == []
     assert api.date_calls == []
     assert total == 0
+
+
+def test_sync_odds_skips_match_with_null_league_id(caplog):
+    """Un league_external_id nulo no aborta el loop completo."""
+    api = _FakeAPIFootball()
+    repo = _FakeOddsRepo()
+    service = _service_with(api, repo)
+
+    matches = [
+        {"match_id": 9, "league_external_id": None,
+         "home_team_name": "Unknown FC", "away_team_name": "Other FC"},
+        {"match_id": 10, "league_external_id": 39, "match_date_str": "2026-08-15",
+         "home_team_name": "Arsenal", "away_team_name": "Chelsea"},
+    ]
+
+    with caplog.at_level("WARNING", logger="apps.api.services.odds_service"):
+        total = asyncio.run(service.sync_odds_for_matches(matches))
+
+    assert total == 0
+    assert any("falta league_external_id" in record.message for record in caplog.records)
 
 
 def test_fuzzy_match_does_not_cross_leagues(monkeypatch):

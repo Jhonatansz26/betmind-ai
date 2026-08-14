@@ -56,26 +56,36 @@ class APIFootballService:
     def __init__(
         self,
         api_key: str | None = None,
-        rate_limiter: APIFootballRateLimiter | None = None,
+        rate_limiter_override: APIFootballRateLimiter | None = None,
     ):
         self._api_key = api_key or settings.API_FOOTBALL_KEY
         self._headers = {"x-apisports-key": self._api_key}
         self._remaining_requests: int | None = None
         self._remaining_per_minute: int | None = None
-        self._rate_limiter = rate_limiter or globals()["rate_limiter"]
+        self._rate_limiter = rate_limiter_override or globals()["rate_limiter"]
 
-    def _observe_rate_limit_headers(self, headers: httpx.Headers) -> None:
-        """Registra las cuotas diaria y por minuto devueltas por el proveedor."""
-        daily_remaining = headers.get("x-ratelimit-requests-remaining")
-        daily_limit = headers.get("x-ratelimit-requests-limit")
-        minute_remaining = headers.get("x-ratelimit-remaining")
-        minute_limit = headers.get("x-ratelimit-limit")
+    @staticmethod
+    def _numeric_header_value(value: str | None) -> int | None:
+        return int(value) if value and value.isdigit() else None
 
-        if daily_remaining and daily_remaining.isdigit():
-            self._remaining_requests = int(daily_remaining)
-        if minute_remaining and minute_remaining.isdigit():
-            self._remaining_per_minute = int(minute_remaining)
+    @staticmethod
+    def _rate_limit_header_values(
+        headers: httpx.Headers,
+    ) -> tuple[str | None, str | None, str | None, str | None]:
+        return (
+            headers.get("x-ratelimit-requests-remaining"),
+            headers.get("x-ratelimit-requests-limit"),
+            headers.get("x-ratelimit-remaining"),
+            headers.get("x-ratelimit-limit"),
+        )
 
+    @staticmethod
+    def _log_rate_limit_headers(
+        daily_remaining: str | None,
+        daily_limit: str | None,
+        minute_remaining: str | None,
+        minute_limit: str | None,
+    ) -> None:
         if any(value is not None for value in (
             daily_remaining, daily_limit, minute_remaining, minute_limit,
         )):
@@ -87,10 +97,36 @@ class APIFootballService:
                 minute_limit or "?",
             )
 
-        if daily_remaining and daily_remaining.isdigit() and int(daily_remaining) < 10:
-            logger.warning("API-Football daily rate limit low: %s requests remaining", daily_remaining)
-        if minute_remaining and minute_remaining.isdigit() and int(minute_remaining) <= 2:
-            logger.warning("API-Football minute rate limit low: %s requests remaining", minute_remaining)
+    @staticmethod
+    def _warn_on_low_rate_limits(
+        daily_remaining: int | None,
+        minute_remaining: int | None,
+    ) -> None:
+        if daily_remaining is not None and daily_remaining < 10:
+            logger.warning(
+                "API-Football daily rate limit low: %s requests remaining",
+                daily_remaining,
+            )
+        if minute_remaining is not None and minute_remaining <= 2:
+            logger.warning(
+                "API-Football minute rate limit low: %s requests remaining",
+                minute_remaining,
+            )
+
+    def _observe_rate_limit_headers(self, headers: httpx.Headers) -> None:
+        """Registra las cuotas diaria y por minuto devueltas por el proveedor."""
+        values = self._rate_limit_header_values(headers)
+        daily_remaining, daily_limit, minute_remaining, minute_limit = values
+        daily_value = self._numeric_header_value(daily_remaining)
+        minute_value = self._numeric_header_value(minute_remaining)
+
+        if daily_value is not None:
+            self._remaining_requests = daily_value
+        if minute_value is not None:
+            self._remaining_per_minute = minute_value
+
+        self._log_rate_limit_headers(*values)
+        self._warn_on_low_rate_limits(daily_value, minute_value)
 
     @staticmethod
     def _is_suspension_payload(data: dict[str, Any] | str | list | None) -> bool:
@@ -140,6 +176,111 @@ class APIFootballService:
             or "plan does not have access" in lowered
         )
 
+    @classmethod
+    def _classify_error_response(
+        cls,
+        status_code: int,
+        body: dict[str, Any] | str | list | None,
+        raw_text: str = "",
+    ) -> ExternalAPIException | None:
+        """Devuelve la excepción adecuada para una respuesta del proveedor."""
+        if status_code == 429:
+            return ExternalAPIException(
+                service="api-football",
+                detail="Rate limit exceeded. Try again later.",
+            )
+
+        if status_code != 200:
+            body_text = raw_text[:500]
+            if cls._is_plan_restriction_payload(body_text):
+                return PlanRestrictionError(
+                    service="api-football",
+                    detail=f"HTTP {status_code}: {body_text}",
+                    payload=body_text,
+                    status_code=status_code,
+                )
+            if cls._is_suspension_payload(body_text):
+                return AccountSuspendedError(
+                    service="api-football",
+                    detail=f"HTTP {status_code}: {body_text[:200]}",
+                )
+            return ExternalAPIException(
+                service="api-football",
+                detail=f"HTTP {status_code}: {body_text[:200]}",
+            )
+
+        if cls._is_plan_restriction_payload(body):
+            if isinstance(body, dict):
+                detail = body.get("errors") or body.get("plan") or body
+            else:
+                detail = body
+            return PlanRestrictionError(
+                service="api-football",
+                detail=str(detail)[:500],
+                payload=body,
+                status_code=status_code,
+            )
+        if cls._is_suspension_payload(body):
+            detail = body.get("errors") if isinstance(body, dict) else body
+            return AccountSuspendedError(
+                service="api-football",
+                detail=str(detail or raw_text[:200])[:500],
+            )
+        if isinstance(body, dict) and body.get("errors"):
+            error_msg = body["errors"]
+            if isinstance(error_msg, dict):
+                error_msg = str(error_msg)
+            return ExternalAPIException(
+                service="api-football",
+                detail=str(error_msg)[:500],
+            )
+        return None
+
+    async def _send_http_request(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        params: dict[str, Any] | None,
+    ) -> httpx.Response:
+        """Construye y ejecuta la llamada HTTP después de reservar cuota."""
+        logger.debug("API-Football request: GET %s", url)
+        logger.debug("API-Football params: %s", params)
+        await self._rate_limiter.acquire()
+        return await client.get(url, headers=self._headers, params=params or {})
+
+    def _parse_response(self, response: httpx.Response) -> dict[str, Any]:
+        """Interpreta status, JSON, errores de negocio y headers de cuota."""
+        logger.debug("API-Football response status: %s", response.status_code)
+
+        if response.status_code != 200:
+            error = self._classify_error_response(
+                response.status_code,
+                response.text[:500],
+                response.text,
+            )
+            if error:
+                raise error
+
+        try:
+            data = response.json()
+        except (ValueError, TypeError) as exc:
+            raise ExternalAPIException(
+                service="api-football",
+                detail=f"Invalid JSON response: {str(exc)[:200]}",
+            ) from exc
+
+        error = self._classify_error_response(response.status_code, data, response.text)
+        if error:
+            raise error
+        if not isinstance(data, dict):
+            raise ExternalAPIException(
+                service="api-football",
+                detail="Invalid JSON response: expected an object",
+            )
+
+        self._observe_rate_limit_headers(response.headers)
+        return data
+
     async def _request(
         self, endpoint: str, params: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
@@ -149,87 +290,14 @@ class APIFootballService:
                 service="api-football",
                 detail="API key not configured. Set API_FOOTBALL_KEY in .env",
             )
-        
+
         url = f"{self.BASE_URL}/{endpoint}"
-        logger.debug(f"API-Football request: GET {url}")
-        logger.debug(f"API-Football params: {params}")
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                # Se reserva justo antes del request. El singleton coordina
-                # también procesos separados a través de Redis.
-                await self._rate_limiter.acquire()
-                response = await client.get(
-                    url,
-                    headers=self._headers,
-                    params=params or {},
-                )
-                
-                logger.debug(f"API-Football response status: {response.status_code}")
-                
-                if response.status_code == 429:
-                    raise ExternalAPIException(
-                        service="api-football",
-                        detail="Rate limit exceeded. Try again later.",
-                    )
-                
-                if response.status_code != 200:
-                    if self._is_plan_restriction_payload(response.text[:500]):
-                        raise PlanRestrictionError(
-                            service="api-football",
-                            detail=f"HTTP {response.status_code}: {response.text[:500]}",
-                            payload=response.text[:500],
-                            status_code=response.status_code,
-                        )
-                    # La suspensión también puede llegar como HTTP 403/401 con
-                    # el texto en el body: se detecta antes del error genérico.
-                    if self._is_suspension_payload(response.text[:500]):
-                        raise AccountSuspendedError(
-                            service="api-football",
-                            detail=f"HTTP {response.status_code}: {response.text[:200]}",
-                        )
-                    raise ExternalAPIException(
-                        service="api-football",
-                        detail=f"HTTP {response.status_code}: {response.text[:200]}",
-                    )
-                
-                try:
-                    data = response.json()
-                except (ValueError, Exception) as e:
-                    raise ExternalAPIException(
-                        service="api-football",
-                        detail=f"Invalid JSON response: {str(e)[:200]}",
-                    )
-                
-                if self._is_plan_restriction_payload(data):
-                    raise PlanRestrictionError(
-                        service="api-football",
-                        detail=str(data.get("errors") or data.get("plan") or data)[:500],
-                        payload=data,
-                        status_code=response.status_code,
-                    )
+                response = await self._send_http_request(client, url, params)
+                return self._parse_response(response)
 
-                # Cuenta suspendida: fallo DEFINITIVO (no reintentar en esta
-                # ejecución). Solo se detectan marcadores explícitos de bloqueo.
-                if self._is_suspension_payload(data):
-                    raise AccountSuspendedError(
-                        service="api-football",
-                        detail=str(data.get("errors") or response.text[:200])[:500],
-                    )
-                                
-                if data.get("errors"):
-                    error_msg = data["errors"]
-                    if isinstance(error_msg, dict):
-                        error_msg = str(error_msg)
-                    raise ExternalAPIException(
-                        service="api-football",
-                        detail=error_msg[:500],
-                    )
-                
-                self._observe_rate_limit_headers(response.headers)
-                
-                return data
-                
             except httpx.TimeoutException:
                 raise ExternalAPIException(
                     service="api-football",

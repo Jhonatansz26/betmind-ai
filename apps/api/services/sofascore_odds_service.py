@@ -349,8 +349,15 @@ class SofaScoreOddsService:
         """
         total_odds = 0
         for match in matches:
+            raw_league_id = match.get("league_external_id")
+            if raw_league_id is None:
+                logger.warning(
+                    "SofaScore: omitido partido %s: falta league_external_id",
+                    match.get("match_id"),
+                )
+                continue
             try:
-                league_id = int(match.get("league_external_id"))
+                league_id = int(raw_league_id)
             except (TypeError, ValueError):
                 league_id = None
             if league_id not in ACTIVE_LEAGUE_IDS:
