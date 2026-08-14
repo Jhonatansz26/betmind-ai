@@ -9,7 +9,8 @@ from apps.api.dependencies import get_async_session
 from apps.api.models.league import League
 from apps.api.models.match import Match
 from apps.api.core.enums import UPCOMING_MATCH_STATUSES
-from apps.api.config import FEATURED_LEAGUES, FEATURED_LEAGUE_IDS
+from apps.api.config import FEATURED_LEAGUES
+from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 router = APIRouter(prefix="/leagues", tags=["Leagues"])
 COT = ZoneInfo("America/Bogota")
@@ -64,7 +65,7 @@ async def list_leagues(
             match_count_subquery.c.match_count.label("active_matches"),
         )
         .join(match_count_subquery, League.id == match_count_subquery.c.league_id)
-        .where(League.external_id.in_(FEATURED_LEAGUE_IDS))
+        .where(League.external_id.in_(ACTIVE_LEAGUE_IDS))
         .order_by(League.name)
     )
 

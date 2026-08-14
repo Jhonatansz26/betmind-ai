@@ -1,11 +1,9 @@
 """
 Tests del flujo de sync de cuotas (OddsService.sync_odds_for_matches).
 
-Verifican el cambio de acotamiento por liga: una llamada a
-get_fixtures_by_date_range() por (liga, temporada) en vez de una llamada
-global por fecha, y que el fuzzy-match de equipos NO cruce entre ligas
-(antes traía fixtures de todo el planeta y podía contaminar el EV con la
-cuota de otro partido con nombres parecidos).
+Verifican el fetch global por fecha permitido por el plan Free, el filtrado
+post-fetch por league.id activa y que el fuzzy-match de equipos NO cruce entre
+ligas.
 """
 import asyncio
 
@@ -25,9 +23,10 @@ _ODDS_PAYLOAD = {
 }
 
 
-def _fixture(fid: int, home: str, away: str) -> dict:
+def _fixture(fid: int, home: str, away: str, league_id: int = 39) -> dict:
     return {
         "fixture": {"id": fid},
+        "league": {"id": league_id},
         "teams": {
             "home": {"name": home},
             "away": {"name": away},
@@ -41,9 +40,11 @@ class _FakeAPIFootball:
         self.fixtures_by_date = fixtures_by_date or {}
         self.range_calls: list[dict] = []
         self.date_calls: list[dict] = []
+        self.status_calls = 0
         self.account_status = account_status
 
     async def check_account_status(self):
+        self.status_calls += 1
         return self.account_status
 
     async def get_fixtures_by_date_range(self, league, season, date_from, date_to):
@@ -74,6 +75,7 @@ def _service_with(api: _FakeAPIFootball, repo: _FakeOddsRepo) -> OddsService:
     service = OddsService.__new__(OddsService)
     service._api = api
     service._odds_repo = repo
+    service._closing_fixture_cache = None
     return service
 
 
@@ -153,16 +155,16 @@ def test_find_api_fixture_no_warning_on_exact_or_substring(caplog):
     )
 
 
-def test_sync_odds_groups_by_league_and_uses_date_range(monkeypatch):
-    """Una llamada get_fixtures_by_date_range por (liga, temporada); nunca global."""
+def test_sync_odds_fetches_by_date_and_filters_before_matching(monkeypatch):
+    """Una llamada global por fecha; mapas separados por liga activa."""
     async def _no_sleep(_seconds):
         return None
     monkeypatch.setattr(asyncio, "sleep", _no_sleep)
 
     api = _FakeAPIFootball(
-        fixtures_by_range={
-            (39, 2026): [_fixture(101, "Arsenal", "Chelsea"), _fixture(102, "Liverpool", "Everton")],
-            (140, 2026): [_fixture(201, "Real Madrid", "Barcelona")],
+        fixtures_by_date={
+            "2026-08-15": [_fixture(101, "Arsenal", "Chelsea"), _fixture(102, "Liverpool", "Everton")],
+            "2026-08-16": [_fixture(201, "Real Madrid", "Barcelona", league_id=140)],
         },
     )
     repo = _FakeOddsRepo()
@@ -179,27 +181,68 @@ def test_sync_odds_groups_by_league_and_uses_date_range(monkeypatch):
 
     total = asyncio.run(service.sync_odds_for_matches(matches))
 
-    assert api.range_calls == [
-        {"league": 39, "season": 2026, "date_from": "2026-08-15", "date_to": "2026-08-15"},
-        {"league": 140, "season": 2026, "date_from": "2026-08-16", "date_to": "2026-08-16"},
+    assert api.range_calls == []
+    assert api.date_calls == [
+        {"date_str": "2026-08-15", "league": None, "season": None},
+        {"date_str": "2026-08-16", "league": None, "season": None},
     ]
-    assert api.date_calls == []  # sin llamadas globales por fecha
     assert total == 9  # 3 mercados (1X2) x 3 partidos
     assert [match_id for match_id, _ in repo.calls] == [1, 2, 3]
 
 
-def test_sync_odds_uses_range_dates_of_group(monkeypatch):
-    """Varias fechas en la misma liga -> un solo rango mínimo-máximo."""
+def test_closing_odds_uses_persisted_fixture_id_without_status_or_date_fetch():
+    """CLV debe gastar solo el request fresco de /odds por fixture."""
+    api = _FakeAPIFootball()
+    service = _service_with(api, _FakeOddsRepo())
+
+    result = asyncio.run(service.fetch_closing_odds_for_match({
+        "match_id": 42,
+        "api_fixture_id": 987654,
+        "league_external_id": 39,
+        "match_date_str": "2026-08-15",
+        "home_team_name": "Arsenal",
+        "away_team_name": "Chelsea",
+    }))
+
+    assert result
+    assert api.status_calls == 0
+    assert api.date_calls == []
+    assert {entry["external_fixture_id"] for entry in result} == {987654}
+
+
+def test_closing_odds_reuses_fixture_date_fetch_for_same_service_instance():
+    """Sin ID API explícito, CLV consulta una fecha una sola vez por ejecución."""
+    api = _FakeAPIFootball(fixtures_by_date={
+        "2026-08-15": [_fixture(987654, "Arsenal", "Chelsea")],
+    })
+    service = _service_with(api, _FakeOddsRepo())
+    first = {
+        "match_id": 42,
+        "league_external_id": 39,
+        "match_date_str": "2026-08-15",
+        "home_team_name": "Arsenal",
+        "away_team_name": "Chelsea",
+    }
+    second = {**first, "match_id": 43}
+
+    asyncio.run(service.fetch_closing_odds_for_match(first))
+    asyncio.run(service.fetch_closing_odds_for_match(second))
+
+    assert api.date_calls == [
+        {"date_str": "2026-08-15", "league": None, "season": None},
+    ]
+
+
+def test_sync_odds_fetches_each_distinct_date_once(monkeypatch):
+    """Varias fechas en la misma liga -> una llamada global por fecha."""
     async def _no_sleep(_seconds):
         return None
     monkeypatch.setattr(asyncio, "sleep", _no_sleep)
 
     api = _FakeAPIFootball(
-        fixtures_by_range={
-            (39, 2026): [
-                _fixture(101, "Arsenal", "Chelsea"),
-                _fixture(102, "Liverpool", "Everton"),
-            ],
+        fixtures_by_date={
+            "2026-08-15": [_fixture(101, "Arsenal", "Chelsea")],
+            "2026-08-17": [_fixture(102, "Liverpool", "Everton")],
         },
     )
     repo = _FakeOddsRepo()
@@ -214,21 +257,44 @@ def test_sync_odds_uses_range_dates_of_group(monkeypatch):
 
     total = asyncio.run(service.sync_odds_for_matches(matches))
 
-    assert api.range_calls == [
-        {"league": 39, "season": 2026, "date_from": "2026-08-15", "date_to": "2026-08-17"},
+    assert api.range_calls == []
+    assert api.date_calls == [
+        {"date_str": "2026-08-15", "league": None, "season": None},
+        {"date_str": "2026-08-17", "league": None, "season": None},
     ]
     assert total == 6
 
 
-def test_sync_odds_fallback_global_for_missing_league(monkeypatch):
-    """Partido sin league_external_id -> fallback global por fecha, sin romper."""
+def test_sync_odds_drops_inactive_league_fixtures_before_map(monkeypatch):
+    """Fixtures fuera del alcance no pueden alimentar el fuzzy matching."""
     async def _no_sleep(_seconds):
         return None
     monkeypatch.setattr(asyncio, "sleep", _no_sleep)
 
     api = _FakeAPIFootball(
-        fixtures_by_date={"2026-08-15": [_fixture(301, "Some FC", "Other FC")]},
+        fixtures_by_date={
+            "2026-08-18": [_fixture(999, "Arsenal", "Chelsea", league_id=848)],
+        },
     )
+    repo = _FakeOddsRepo()
+    service = _service_with(api, repo)
+
+    total = asyncio.run(service.sync_odds_for_matches([
+        {"match_id": 7, "league_external_id": 39, "match_date_str": "2026-08-18",
+         "home_team_name": "Arsenal", "away_team_name": "Chelsea"},
+    ]))
+
+    assert total == 0
+    assert repo.calls == []
+
+
+def test_sync_odds_skips_match_without_active_league(monkeypatch):
+    """Partido sin league_external_id -> se omite sin llamadas HTTP."""
+    async def _no_sleep(_seconds):
+        return None
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+    api = _FakeAPIFootball()
     repo = _FakeOddsRepo()
     service = _service_with(api, repo)
 
@@ -240,10 +306,28 @@ def test_sync_odds_fallback_global_for_missing_league(monkeypatch):
     total = asyncio.run(service.sync_odds_for_matches(matches))
 
     assert api.range_calls == []
-    assert len(api.date_calls) == 1
-    assert api.date_calls[0]["date_str"] == "2026-08-15"
-    assert api.date_calls[0]["league"] is None
-    assert total == 3
+    assert api.date_calls == []
+    assert total == 0
+
+
+def test_sync_odds_skips_match_with_null_league_id(caplog):
+    """Un league_external_id nulo no aborta el loop completo."""
+    api = _FakeAPIFootball()
+    repo = _FakeOddsRepo()
+    service = _service_with(api, repo)
+
+    matches = [
+        {"match_id": 9, "league_external_id": None,
+         "home_team_name": "Unknown FC", "away_team_name": "Other FC"},
+        {"match_id": 10, "league_external_id": 39, "match_date_str": "2026-08-15",
+         "home_team_name": "Arsenal", "away_team_name": "Chelsea"},
+    ]
+
+    with caplog.at_level("WARNING", logger="apps.api.services.odds_service"):
+        total = asyncio.run(service.sync_odds_for_matches(matches))
+
+    assert total == 0
+    assert any("falta league_external_id" in record.message for record in caplog.records)
 
 
 def test_fuzzy_match_does_not_cross_leagues(monkeypatch):
@@ -254,7 +338,7 @@ def test_fuzzy_match_does_not_cross_leagues(monkeypatch):
 
     # El fixture Real Madrid vs Barcelona existe SOLO en la liga 39.
     api = _FakeAPIFootball(
-        fixtures_by_range={(39, 2026): [_fixture(101, "Real Madrid", "Barcelona")]},
+        fixtures_by_date={"2026-08-16": [_fixture(101, "Real Madrid", "Barcelona", league_id=39)]},
     )
     repo = _FakeOddsRepo()
     service = _service_with(api, repo)

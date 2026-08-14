@@ -1,0 +1,51 @@
+name: Capturar CLV BetMind AI
+
+# CLV debe ejecutarse cerca del kickoff porque captura la línea de cierre en
+# una ventana estricta de 5–10 min. Se programa cada 5 min para no perder esa
+# ventana; clv_tracker retorna antes del /status cuando no hay partidos, por
+# lo que los ciclos vacíos cuestan 0 requests de API-Football.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: betmind-clv-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  capture-clv:
+    runs-on: ubuntu-latest
+    env:
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      DEBUG: "false"
+
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e packages/ml
+          pip install -r apps/api/requirements.txt
+
+      - name: Capturar líneas de cierre
+        run: python -m apps.api.jobs.clv_tracker

@@ -37,6 +37,10 @@ CORNERS_LEAGUE_AVG: dict[str, float] = {
     "premier_league": 10.4, "laliga": 9.2, "bundesliga": 10.1,
     "serie_a": 9.6, "liga_betplay": 8.8, "serie_a_bra": 9.5,
     "liga_profesional_arg": 9.0, "liga_mx": 9.3, "mls": 9.1,
+    # Ligas activas sin calibración propia: conservan el fallback histórico
+    # explícito hasta contar con una muestra suficiente por competición.
+    "ucl": 9.5, "uel": 9.5, "libertadores": 9.5,
+    "sudamericana": 9.5, "eredivisie": 9.5,
     "primera_chile": 8.9, "liga_pro_ecu": 8.7, "liga_1_peru": 8.6,
     "allsvenskan": 10.0, "superliga_den": 9.8, "super_league_sui": 9.5,
     "default": 9.5,

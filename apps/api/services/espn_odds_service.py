@@ -31,6 +31,7 @@ from apps.api.repositories.bookmaker_odd_repository import (
 from apps.api.services.cache_service import CacheService
 from apps.api.services.odds_service import OddsService
 from apps.api.services.providers.espn_provider import ESPN_LEAGUE_SLUGS
+from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +269,8 @@ class EspnOddsService:
         groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for match in matches:
             league_id = match.get("league_external_id")
+            if not league_id or int(league_id) not in ACTIVE_LEAGUE_IDS:
+                continue
             slug = ESPN_LEAGUE_SLUGS.get(int(league_id)) if league_id else None
             if not slug:
                 continue

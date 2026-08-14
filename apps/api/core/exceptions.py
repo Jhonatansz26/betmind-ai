@@ -40,3 +40,19 @@ class AccountSuspendedError(ExternalAPIException):
     def __init__(self, service: str, detail: str = "Account suspended"):
         super().__init__(service=service, detail=detail)
         self.suspended = True
+
+
+class PlanRestrictionError(ExternalAPIException):
+    """El plan no permite el recurso solicitado, por ejemplo una temporada."""
+
+    def __init__(
+        self,
+        service: str,
+        detail: str,
+        payload: object | None = None,
+        status_code: int | None = None,
+    ):
+        super().__init__(service=service, detail=detail)
+        self.payload = payload
+        self.status_code = status_code
+        self.plan_restricted = True

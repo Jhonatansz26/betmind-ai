@@ -18,6 +18,7 @@ from apps.api.models.prediction import Prediction
 from apps.api.core.enums import FINISHED_MATCH_STATUSES, UPCOMING_MATCH_STATUSES
 from apps.api.services.api_football import APIFootballService
 from apps.api.services.data_ingestion import DataIngestionService
+from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -231,10 +232,15 @@ async def sync_league_matches(
     Todos los partidos se guardan con `regulation_time_only=True` (90 minutos).
     
     Args:
-        league_id: ID externo de la liga en API-Football (ej: 39=Premier, 140=LaLiga, 239=BetPlay)
+        league_id: ID externo de una liga incluida en ACTIVE_LEAGUE_IDS
         season: Temporada (año, ej: 2024)
         last_matches: Cantidad de partidos recientes a sincronizar (default: 50)
     """
+    if league_id not in ACTIVE_LEAGUE_IDS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="League is outside the active BetMind scope; its ID is not confirmed yet",
+        )
     if not settings.API_FOOTBALL_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -281,7 +287,7 @@ async def sync_all_target_leagues(
     _admin: str = Depends(require_admin_key),
 ):
     """
-    Sincroniza todas las ligas objetivo: Premier League, LaLiga, Liga BetPlay.
+    Sincroniza todas las ligas del alcance activo.
     
     Ejecuta sincronización completa de ligas, equipos y partidos para todas
     las ligas configuradas como objetivo.

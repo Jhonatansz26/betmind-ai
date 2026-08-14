@@ -1,4 +1,9 @@
-name: Ejecutar Predicciones Diarias BetMind AI
+name: Predicciones frecuentes BetMind AI
+
+# Este workflow corre cada 2h porque batch_predict y evaluate_predictions
+# trabajan sobre datos ya persistidos y no consumen API-Football. El sync de
+# fixtures, la ingesta de estadísticas y CLV tienen workflows separados con
+# frecuencias limitadas para proteger la cuota diaria del plan Free.
 
 on:
   schedule:
@@ -45,16 +50,6 @@ jobs:
           pip install -e packages/ml
           pip install -r apps/api/requirements.txt
 
-      - name: Sincronizar partidos en ventana móvil
-        id: sync-matches
-        # Cascada: ESPN Scoreboard (fixtures + cuotas, sin API key, cache en
-        # Redis) -> API-Football fallback (solo copas sin slug ESPN o partidos
-        # sin cuotas). El sync puede fallar (red, fuentes down, datos vacíos)
-        # sin que eso deba impedir que batch_predict corra sobre los datos ya
-        # en la DB. El fallo se reporta al final del job (ver paso "Verificar sync").
-        continue-on-error: true
-        run: python scripts/sync_today_matches.py
-
       - name: Ejecutar Predicciones Batch
         run: |
           python scripts/batch_predict.py --mode full --limit 150
@@ -63,17 +58,3 @@ jobs:
         # Idempotente (ON CONFLICT DO NOTHING): evalúa solo partidos FINISHED
         # con predicción aún no evaluada. Sin alertas todavía — solo datos.
         run: python -m apps.api.jobs.evaluate_predictions --days 30
-
-      - name: Ingestar estadísticas post-partido
-        # Prioriza partidos con predicción+EV; guard de cuota >30 requests de
-        # API-Football. Fallback automático a SofaScore (payloads cacheados en
-        # Redis) cuando el partido tiene sofascore_event_id.
-        # Un fallo acá no debe tumbar el resto del cron (criterio P0-2).
-        continue-on-error: true
-        run: python -m apps.api.jobs.ingest_match_statistics --days 30
-
-      - name: Verificar sync de partidos
-        if: steps.sync-matches.outcome == 'failure'
-        run: |
-          echo "El paso 'Sincronizar partidos en ventana móvil' falló. Revisá sus logs."
-          exit 1

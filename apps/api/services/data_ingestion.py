@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.models.league import League
 from apps.api.models.match import Match
 from apps.api.models.team import Team
+from apps.api.config import FEATURED_LEAGUES
 from apps.api.repositories.league_repository import LeagueRepository
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.team_repository import TeamRepository
@@ -15,6 +16,7 @@ from apps.api.services.api_football import APIFootballService
 from apps.api.services.providers.base_provider import DataProviderPort, RawFixture, RawTeam
 from apps.api.services.providers.provider_registry import get_provider, get_provider_for_league
 from apps.api.services.providers.espn_provider import ESPN_LEAGUE_SLUGS
+from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +130,13 @@ class DataIngestionService:
         return []
 
     async def sync_league(self, external_league_id: int) -> League | None:
+        if external_league_id not in ACTIVE_LEAGUE_IDS:
+            logger.info(
+                "Skipping league sync for inactive league %s; active scope=%s",
+                external_league_id,
+                sorted(ACTIVE_LEAGUE_IDS),
+            )
+            return None
         factories: list[tuple[str, Callable[[], Awaitable[League | None]]]] = []
         for provider, league_code in self._resolve_official_chain(external_league_id):
             factories.append((
@@ -185,6 +194,9 @@ class DataIngestionService:
             return None
 
     async def _sync_league_from_api_football(self, external_league_id: int) -> League | None:
+        if external_league_id not in ACTIVE_LEAGUE_IDS:
+            logger.info("Skipping API-Football league lookup for inactive league %s", external_league_id)
+            return None
         try:
             leagues_data = await self._api.get_leagues(league_id=external_league_id)
 
@@ -212,6 +224,9 @@ class DataIngestionService:
     async def sync_teams_for_league(
         self, league_id: int, season: int
     ) -> list[Team]:
+        if league_id not in ACTIVE_LEAGUE_IDS:
+            logger.info("Skipping team sync for inactive league %s", league_id)
+            return []
         factories: list[tuple[str, Callable[[], Awaitable[list[Team]]]]] = []
         for provider, league_code in self._resolve_official_chain(league_id):
             factories.append((
@@ -264,6 +279,10 @@ class DataIngestionService:
     ) -> list[Team]:
         teams: list[Team] = []
 
+        if league_id not in ACTIVE_LEAGUE_IDS:
+            logger.info("Skipping API-Football team lookup for inactive league %s", league_id)
+            return teams
+
         try:
             teams_data = await self._api.get_teams_by_league(league_id, season)
 
@@ -288,6 +307,9 @@ class DataIngestionService:
     async def sync_matches_for_league(
         self, league_id: int, season: int, last_n: int = 50
     ) -> list[Match]:
+        if league_id not in ACTIVE_LEAGUE_IDS:
+            logger.info("Skipping match sync for inactive league %s", league_id)
+            return []
         factories: list[tuple[str, Callable[[], Awaitable[list[Match]]]]] = []
         # Plan A — proveedores oficiales (ESPN, football-data.org, API-Football)
         for provider, league_code in self._resolve_official_chain(league_id):
@@ -446,6 +468,10 @@ class DataIngestionService:
     ) -> list[Match]:
         matches: list[Match] = []
 
+        if league_id not in ACTIVE_LEAGUE_IDS:
+            logger.info("Skipping API-Football fixture lookup for inactive league %s", league_id)
+            return matches
+
         try:
             league = await self._league_repo.get_by_external_id(league_id)
             if not league:
@@ -540,6 +566,13 @@ class DataIngestionService:
     ) -> SyncResult:
         result = SyncResult()
 
+        if external_league_id not in ACTIVE_LEAGUE_IDS:
+            result.errors.append(
+                f"League {external_league_id} is outside the active league scope"
+            )
+            logger.info("Skipping full sync for inactive league %s", external_league_id)
+            return result
+
         try:
             league = await self.sync_league(external_league_id)
             if not league:
@@ -574,9 +607,9 @@ class DataIngestionService:
         total_result = SyncResult()
 
         target_leagues = [
-            (39, "Premier League"),
-            (140, "LaLiga"),
-            (239, "Liga BetPlay"),
+            (info["api_football_id"], info["name"])
+            for info in FEATURED_LEAGUES.values()
+            if info["api_football_id"] in ACTIVE_LEAGUE_IDS
         ]
 
         for league_id, league_name in target_leagues:

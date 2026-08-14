@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     DB_POOL_TIMEOUT: int = 30
 
     API_FOOTBALL_KEY: str = ""
+    # API-Football Free documenta 10 req/min y 100 req/día. Usamos 8/min
+    # como margen conservador; ambos valores viven en un solo lugar.
+    API_FOOTBALL_REQUESTS_PER_MINUTE: int = 8
+    API_FOOTBALL_REQUESTS_PER_DAY: int = 100
     FOOTBALL_DATA_KEY: str | None = None
     GROQ_API_KEY: str = ""
     GROQ_API_KEYS: str = ""

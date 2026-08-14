@@ -13,13 +13,16 @@ ordenados por prioridad:
   2. Resto de partidos FINISHED.
 
 Guarda de cuota del plan Free (100 requests/día): el job se detiene cuando
-x-ratelimit-requests-remaining <= 30. Throttling de 6 segundos entre llamadas
-(límite ~10 req/min del plan).
+x-ratelimit-requests-remaining se registra para observabilidad. El limiter coordina la
+cuota por minuto y la cuota diaria entre procesos.
 
 Idempotente: solo procesa partidos con home_corners IS NULL.
 
 Uso:
     python -m apps.api.jobs.ingest_match_statistics [--days N] [--limit N] [--match-ids 1,2,3]
+
+El límite predeterminado es de 25 partidos por corrida. ``--limit 0`` solo
+desactiva el límite si se solicita explícitamente.
 """
 from __future__ import annotations
 
@@ -33,17 +36,22 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from apps.api.db.database import async_session_factory
+from apps.api.models.league import League
 from apps.api.models.match import Match
 from apps.api.models.prediction import Prediction
 from apps.api.services.api_football import APIFootballService
+from apps.api.services.api_football_fixture_ids import (
+    confirmed_api_football_fixture_id as _confirmed_api_football_fixture_id,
+)
 from apps.api.core.exceptions import AccountSuspendedError
+from apps.api.services.api_football_rate_limiter import DailyQuotaExhaustedError
 from apps.api.services.scrapers.espn_summary_scraper import store_espn_advanced_stats
+from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_WINDOW_DAYS = 30
-QUOTA_GUARD_REMAINING = 30
-THROTTLE_SECONDS = 6
+DEFAULT_STATS_LIMIT = 25
 
 
 def _has_non_null_ev(prediction: Prediction | None) -> bool:
@@ -78,19 +86,23 @@ def _has_ev_priority(candidates: list[Match]) -> tuple[list[Match], list[Match]]
 async def _pending_matches(
     days: int,
     match_ids: list[int] | None = None,
-    limit: int = 0,
+    limit: int = DEFAULT_STATS_LIMIT,
 ) -> list[Match]:
     """Partidos FINISHED sin stats, ordenados por fecha desc (más recientes primero)."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     async with async_session_factory() as session:
         stmt = (
-            select(Match)
-            .options(selectinload(Match.predictions))
+        select(Match)
+            .options(
+                selectinload(Match.predictions),
+                selectinload(Match.bookmaker_odds),
+            )
             .where(
                 Match.status == "FINISHED",
                 Match.home_corners.is_(None),
                 Match.match_date >= cutoff,
+                Match.league.has(League.external_id.in_(ACTIVE_LEAGUE_IDS)),
             )
             .order_by(Match.match_date.desc())
         )
@@ -99,11 +111,21 @@ async def _pending_matches(
         result = await session.execute(stmt)
         candidates = list(result.scalars().all())
 
+    eligible = [match for match in candidates if _confirmed_api_football_fixture_id(match) is not None]
+    skipped_without_api_id = len(candidates) - len(eligible)
+    if skipped_without_api_id:
+        logger.info(
+            "Ingest stats: se excluyen %s partidos sin fixture_id API-Football confirmado "
+            "(de %s pendientes)",
+            skipped_without_api_id,
+            len(candidates),
+        )
+
     if not match_ids:
-        with_ev, without_ev = _has_ev_priority(candidates)
+        with_ev, without_ev = _has_ev_priority(eligible)
         ordered = with_ev + without_ev
     else:
-        ordered = candidates
+        ordered = eligible
 
     if limit > 0:
         ordered = ordered[:limit]
@@ -118,8 +140,18 @@ async def _ingest_one(
     """Procesa un partido: 'persisted' | 'empty' | 'error'."""
     # Definir SIEMPRE (también con use_api=False) para el log final: evita
     # UnboundLocalError en el warning de abajo.
-    fixture_id = match.external_id
+    confirmed_fixture_id = _confirmed_api_football_fixture_id(match)
+    fixture_id = confirmed_fixture_id or match.external_id
 
+    if use_api:
+        if confirmed_fixture_id is None:
+            logger.info(
+                "Se omite API-Football para match %s: no hay fixture_id confirmado",
+                match.id,
+            )
+            use_api = False
+        else:
+            fixture_id = confirmed_fixture_id
     if use_api:
         try:
             raw = await api.get_fixture_statistics(fixture_id)
@@ -178,7 +210,7 @@ async def _ingest_one(
 
 async def ingest_match_statistics(
     days: int = DEFAULT_WINDOW_DAYS,
-    limit: int = 0,
+    limit: int = DEFAULT_STATS_LIMIT,
     match_ids: list[int] | None = None,
 ) -> dict[str, int]:
     """
@@ -201,6 +233,11 @@ async def ingest_match_statistics(
             logger.warning(
                 "Ingest stats: API-Football no disponible — solo fallback SofaScore"
             )
+    except DailyQuotaExhaustedError:
+        af_available = False
+        logger.warning(
+            "Ingest stats: cuota diaria de API-Football agotada — solo fallback SofaScore"
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Ingest stats: API-Football /status falló: {exc}")
 
@@ -209,17 +246,15 @@ async def ingest_match_statistics(
     logger.info("Ingest stats: %s matches sin stats en ventana de %s días", len(matches), days)
 
     for match in matches:
-        remaining = api.get_remaining_requests()
-        if af_available and remaining is not None and remaining <= QUOTA_GUARD_REMAINING:
-            logger.info(
-                "Ingest stats: guard de cuota activado (%s <= %s restantes) — se detiene el job",
-                remaining, QUOTA_GUARD_REMAINING,
+        try:
+            outcome = await _ingest_one(api, match, use_api=af_available)
+        except DailyQuotaExhaustedError:
+            logger.warning(
+                "Ingest stats: cuota diaria de API-Football agotada — "
+                "se detiene el job y no se reintenta en loop"
             )
             stats["stopped_by_guard"] = 1
             break
-
-        try:
-            outcome = await _ingest_one(api, match, use_api=af_available)
         except Exception as exc:  # noqa: BLE001 — un fixture malo no tumba el lote
             logger.error("Ingest stats: error para match %s (fixture %s): %s", match.id, match.external_id, exc)
             stats["errors"] += 1
@@ -228,7 +263,6 @@ async def ingest_match_statistics(
                 stats["persisted"] += 1
             else:
                 stats["empty"] += 1
-        await asyncio.sleep(THROTTLE_SECONDS)
 
     return stats
 
@@ -237,8 +271,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ingesta de stats post-partido (API-Football)")
     parser.add_argument("--days", type=int, default=DEFAULT_WINDOW_DAYS,
                         help="Ventana de partidos FINISHED a considerar (días)")
-    parser.add_argument("--limit", type=int, default=0,
-                        help="Máximo de partidos a procesar (0 = sin límite)")
+    parser.add_argument(
+        "--limit", type=int, default=DEFAULT_STATS_LIMIT,
+        help=(
+            "Máximo de partidos a procesar "
+            f"(default: {DEFAULT_STATS_LIMIT}; use un valor explícito mayor, "
+            "o 0 solo si desea desactivarlo)"
+        ),
+    )
     parser.add_argument("--match-ids", type=str, default="",
                         help="Solo estos match_ids internos (separados por coma, para tests)")
     args = parser.parse_args()
