@@ -36,6 +36,7 @@ from apps.api.services.odds_service import OddsService
 from apps.api.services.espn_odds_service import EspnOddsService
 from apps.api.services.sofascore_odds_service import SofaScoreOddsService
 from apps.api.services.api_football import APIFootballService
+from apps.api.services.api_football_rate_limiter import DailyQuotaExhaustedError
 from apps.api.services.cache_service import CacheService
 from apps.api.services.providers.espn_provider import (
     EspnDataProvider,
@@ -48,6 +49,7 @@ from apps.api.models.base import Base
 from apps.api.models.team import Team
 from apps.api.models.match import Match
 from apps.api.core.enums import normalize_match_status
+from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 COLOMBIA_TZ = ZoneInfo("America/Bogota")
 
@@ -56,6 +58,14 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# FEATURED_LEAGUES sigue siendo el catálogo histórico del producto; este
+# pipeline solo debe consultar las ligas confirmadas en ACTIVE_LEAGUE_IDS.
+ACTIVE_FEATURED_LEAGUES = {
+    key: info
+    for key, info in FEATURED_LEAGUES.items()
+    if info["api_football_id"] in ACTIVE_LEAGUE_IDS
+}
 
 engine_kwargs = {
     "echo": settings.DEBUG,
@@ -89,7 +99,7 @@ def print_header():
     print(f"Fecha actual (COT): {now_local.strftime('%Y-%m-%d %H:%M:%S')} UTC-5")
     print(f"Fuentes: ESPN (partidos+cuotas) -> SofaScore (cuotas especiales) -> API-Football (fallback)")
     print(f"Zona horaria: America/Bogota (UTC-5)")
-    print(f"Ligas configuradas: {len(FEATURED_LEAGUES)}")
+    print(f"Ligas activas: {len(ACTIVE_FEATURED_LEAGUES)}")
     print(f"Rango: ahora - 2h hasta ahora + 36h")
     print("=" * 80 + "\n")
 
@@ -187,7 +197,7 @@ async def sync_upcoming_matches():
     odds_to_sync: list[dict] = []
 
     # ── Paso 1: fixtures ESPN por liga ─────────────────────────────────────
-    for league_key, league_info in FEATURED_LEAGUES.items():
+    for league_key, league_info in ACTIVE_FEATURED_LEAGUES.items():
         league_name = league_info["name"]
         country = league_info["country"]
         external_league_id = league_info["api_football_id"]
@@ -344,6 +354,11 @@ async def sync_upcoming_matches():
     af_service = APIFootballService()
     try:
         af_status = await af_service.check_account_status()
+    except DailyQuotaExhaustedError:
+        af_status = "quota_exhausted"
+        logger.warning(
+            "API-Football cuota diaria agotada en pre-flight — se omite la fuente"
+        )
     except Exception as e:
         af_status = "error"
         logger.warning(f"API-Football /status falló: {e}")
@@ -360,11 +375,16 @@ async def sync_upcoming_matches():
         try:
             dates_to_fetch = [today_cot.strftime("%Y-%m-%d"), tomorrow_cot.strftime("%Y-%m-%d")]
 
-            # Collect featured league API IDs
-            featured_ids = {info["api_football_id"] for info in FEATURED_LEAGUES.values()}
-
+            # API-Football Free permite fixtures por fecha sin league/season.
+            # Filtrar por league.id inmediatamente después del fetch conserva
+            # el alcance activo antes de parsear o persistir fixtures.
+            featured_ids = set(ACTIVE_LEAGUE_IDS)
             for fetch_date in dates_to_fetch:
                 raw_fixtures = await af_service.get_fixtures_by_date(fetch_date)
+                raw_fixtures = [
+                    fixture for fixture in raw_fixtures
+                    if (fixture.get("league") or {}).get("id") in ACTIVE_LEAGUE_IDS
+                ]
                 if not raw_fixtures:
                     continue
 
@@ -510,6 +530,12 @@ async def sync_upcoming_matches():
 
             total_matches += new_matches
 
+        except DailyQuotaExhaustedError:
+            af_status = "quota_exhausted"
+            logger.warning(
+                "API-Football cuota diaria agotada durante fixtures — "
+                "se omiten los fallbacks restantes"
+            )
         except Exception as e:
             error_msg = f"API-Football fallback: {str(e)}"
             errors.append(error_msg)

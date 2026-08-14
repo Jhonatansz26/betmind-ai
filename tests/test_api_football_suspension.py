@@ -11,7 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from apps.api.core.exceptions import AccountSuspendedError, ExternalAPIException
+from apps.api.core.exceptions import (
+    AccountSuspendedError,
+    ExternalAPIException,
+    PlanRestrictionError,
+)
 from apps.api.services.api_football import APIFootballService
 from apps.api.services.odds_service import OddsService
 
@@ -32,7 +36,8 @@ ACTIVE_STATUS_PAYLOAD = {"response": {"account": {"active": True, "plan": "Free"
 
 @pytest.fixture
 def service() -> APIFootballService:
-    return APIFootballService(api_key="test-key")
+    # Estas pruebas mockean el HTTP; no deben depender de un Redis real.
+    return APIFootballService(api_key="test-key", rate_limiter=AsyncMock())
 
 
 def _fake_response(status_code: int, payload=None, text=None):
@@ -61,8 +66,8 @@ async def test_request_raises_account_suspended_on_http_200_errors_access(servic
 
 
 @pytest.mark.asyncio
-async def test_request_raises_account_suspended_on_plan_error(service):
-    """errors.plan sin acceso a la temporada también es fallo DEFINITIVO."""
+async def test_request_raises_plan_restriction_on_plan_error(service):
+    """errors.plan se distingue de una cuenta suspendida."""
     fake_client = MagicMock()
     fake_client.get = AsyncMock(return_value=_fake_response(200, SUSPENDED_PLAN_PAYLOAD))
 
@@ -70,8 +75,27 @@ async def test_request_raises_account_suspended_on_plan_error(service):
         client_cls.return_value.__aenter__ = AsyncMock(return_value=fake_client)
         client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        with pytest.raises(AccountSuspendedError):
+        with pytest.raises(PlanRestrictionError) as exc_info:
             await service._request("fixtures")
+        assert exc_info.value.plan_restricted is True
+        assert not isinstance(exc_info.value, AccountSuspendedError)
+        assert exc_info.value.payload == SUSPENDED_PLAN_PAYLOAD
+
+
+@pytest.mark.asyncio
+async def test_request_raises_plan_restriction_on_top_level_plan_error(service):
+    """También se clasifica el formato top-level {plan: ...}."""
+    payload = {"plan": "Free plans do not have access to this season, try from 2022 to 2024."}
+    fake_client = MagicMock()
+    fake_client.get = AsyncMock(return_value=_fake_response(200, payload))
+
+    with patch("apps.api.services.api_football.httpx.AsyncClient") as client_cls:
+        client_cls.return_value.__aenter__ = AsyncMock(return_value=fake_client)
+        client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with pytest.raises(PlanRestrictionError) as exc_info:
+            await service._request("fixtures")
+        assert exc_info.value.payload == payload
 
 
 @pytest.mark.asyncio
@@ -105,6 +129,20 @@ async def test_request_still_raises_generic_for_other_errors(service):
         with pytest.raises(ExternalAPIException) as exc_info:
             await service._request("fixtures")
         assert not isinstance(exc_info.value, AccountSuspendedError)
+
+
+def test_statistics_payload_with_blocked_shots_is_not_suspension():
+    """El stat 'Blocked Shots' no debe activar el detector de suspensión."""
+    payload = {
+        "errors": {},
+        "results": 2,
+        "response": [{
+            "team": {"id": 1},
+            "statistics": [{"type": "Blocked Shots", "value": 3}],
+        }],
+    }
+
+    assert APIFootballService._is_suspension_payload(payload) is False
 
 
 @pytest.mark.asyncio

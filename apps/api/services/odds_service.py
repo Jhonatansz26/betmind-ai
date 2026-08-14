@@ -1,6 +1,4 @@
-import asyncio
 import logging
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +8,8 @@ from apps.api.core.exceptions import AccountSuspendedError
 from apps.api.repositories.bookmaker_odd_repository import BookmakerOddsRepository
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.services.api_football import APIFootballService
+from apps.api.services.api_football_rate_limiter import DailyQuotaExhaustedError
+from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -148,16 +148,12 @@ class OddsService:
         """
         Sincroniza cuotas desde API-Football para una lista de partidos.
 
-        Los partidos se agrupan por (league_external_id, temporada) y por cada
-        grupo se hace UNA llamada a get_fixtures_by_date_range() acotada a esa
-        liga y al rango de fechas del grupo (antes: una llamada global por
-        fecha que traía TODOS los fixtures del mundo). El matching de equipos
-        queda restringido a fixtures de la MISMA liga, reduciendo el riesgo de
-        fuzzy-match cruzado entre ligas que contaminaría el EV con la cuota de
-        otro partido.
-
-        Partidos sin `league_external_id`: fallback al comportamiento viejo
-        (get_fixtures_by_date global por fecha) SOLO para esos partidos.
+        API-Football Free restringe el acceso por `league+season` para la
+        temporada actual, por lo que no usamos get_fixtures_by_date_range().
+        Hacemos una llamada global por fecha con get_fixtures_by_date() y,
+        apenas llega la respuesta, filtramos por league.id contra
+        ACTIVE_LEAGUE_IDS antes de construir cualquier fixture map. Luego cada
+        partido solo se compara contra fixtures de su misma liga.
 
         Args:
             matches: Lista de dicts con keys:
@@ -171,6 +167,26 @@ class OddsService:
             Total de cuotas sincronizadas.
         """
         total_odds = 0
+        active_matches: list[dict[str, Any]] = []
+        skipped_matches = 0
+        for match in matches:
+            try:
+                league_id = int(match.get("league_external_id"))
+            except (TypeError, ValueError):
+                league_id = None
+            if league_id not in ACTIVE_LEAGUE_IDS:
+                skipped_matches += 1
+                continue
+            active_matches.append(match)
+
+        if skipped_matches:
+            logger.info(
+                "Omitidos %s partidos de cuotas por no pertenecer a ACTIVE_LEAGUE_IDS",
+                skipped_matches,
+            )
+        if not active_matches:
+            return 0
+        matches = active_matches
 
         # Pre-flight: si la cuenta está suspendida/plan sin acceso, NO iterar
         # partidos contra API-Football (cada llamada tarda 30s y falla).
@@ -187,81 +203,53 @@ class OddsService:
             )
             return 0
 
-        # 1. Agrupar por (liga, temporada). La temporada es el año del partido
-        #    (misma convención que el resto del código: match_date.year).
-        #    Partidos sin league_external_id caen en el fallback global.
-        league_groups: dict[tuple[int, int], list[dict[str, Any]]] = {}
-        fallback_matches: list[dict[str, Any]] = []
+        # 1. Agrupar por fecha. Todos los partidos ya fueron validados contra
+        #    ACTIVE_LEAGUE_IDS.
+        matches_by_date: dict[str, set[int]] = {}
         for m in matches:
-            league_id = m.get("league_external_id")
-            if not league_id:
-                fallback_matches.append(m)
-                continue
+            league_id = int(m["league_external_id"])
             date_str = m.get("match_date_str") or ""
-            year = date_str[:4] if len(date_str) >= 4 and date_str[:4].isdigit() else None
-            season = int(year) if year else datetime.now().year
-            league_groups.setdefault((int(league_id), season), []).append(m)
+            if date_str:
+                matches_by_date.setdefault(date_str, set()).add(league_id)
 
-        if fallback_matches:
-            logger.warning(
-                f"{len(fallback_matches)} partido(s) sin league_external_id: "
-                "se usarán fixtures globales por fecha (fallback, con riesgo "
-                "de fuzzy-match cruzado entre ligas)"
-            )
-
-        # 2. Una llamada acotada por (liga, temporada) con el rango de fechas
-        #    del grupo. El fixture map resultante solo contiene equipos de ESA liga.
+        # 2. Una llamada global por fecha, sin league ni season. Filtrar por
+        #    league.id ocurre antes de construir cada fixture map.
         league_fixture_maps: dict[int, dict[str, dict[str, Any]]] = {}
-        for (league_id, season), group in league_groups.items():
-            dates = sorted({m["match_date_str"] for m in group if m.get("match_date_str")})
-            if not dates:
-                continue
-            try:
-                fixtures = await self._api.get_fixtures_by_date_range(
-                    league=league_id,
-                    season=season,
-                    date_from=dates[0],
-                    date_to=dates[-1],
-                )
-                league_fixture_maps.setdefault(league_id, {}).update(
-                    self._build_fixture_map(fixtures)
-                )
-                logger.info(
-                    f"Fetched {len(fixtures)} fixtures for league {league_id} "
-                    f"season {season} ({dates[0]} -> {dates[-1]})"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Error fetching fixtures for league {league_id} season {season}: {e}"
-                )
-                continue
-
-        # 3. Fallback por fecha global (comportamiento viejo) para los partidos
-        #    sin league_external_id.
-        fallback_fixture_map: dict[str, dict[str, Any]] = {}
-        fallback_dates = sorted({
-            m["match_date_str"] for m in fallback_matches if m.get("match_date_str")
-        })
-        for date_str in fallback_dates:
+        for date_str, league_ids in sorted(matches_by_date.items()):
             try:
                 fixtures = await self._api.get_fixtures_by_date(date_str=date_str)
-                fallback_fixture_map.update(self._build_fixture_map(fixtures))
+                active_fixtures = [
+                    fixture for fixture in fixtures
+                    if (fixture.get("league") or {}).get("id") in ACTIVE_LEAGUE_IDS
+                ]
+                for league_id in league_ids:
+                    league_fixtures = [
+                        fixture for fixture in active_fixtures
+                        if (fixture.get("league") or {}).get("id") == league_id
+                    ]
+                    league_fixture_maps.setdefault(league_id, {}).update(
+                        self._build_fixture_map(league_fixtures)
+                    )
                 logger.info(
-                    f"Fetched {len(fixtures)} fixtures from API-Football for "
-                    f"{date_str} (fallback sin liga)"
+                    "Fetched %s fixtures for %s; %s belong to active leagues",
+                    len(fixtures), date_str, len(active_fixtures),
                 )
+            except DailyQuotaExhaustedError:
+                logger.warning(
+                    "API-Football daily quota exhausted during fixtures sync; "
+                    "stopping odds sync"
+                )
+                return total_odds
             except Exception as e:
-                logger.error(f"Error fetching fixtures for {date_str}: {e}")
+                logger.error(
+                    f"Error fetching fixtures for date {date_str}: {e}"
+                )
                 continue
 
         for index, match in enumerate(matches):
             try:
-                league_id = match.get("league_external_id")
-                fixture_map = (
-                    league_fixture_maps.get(int(league_id), {})
-                    if league_id
-                    else fallback_fixture_map
-                )
+                league_id = int(match["league_external_id"])
+                fixture_map = league_fixture_maps.get(league_id, {})
                 api_fixture = self._find_api_fixture(match, fixture_map)
                 if not api_fixture:
                     logger.debug(
@@ -285,7 +273,12 @@ class OddsService:
                         f"(fixture_id={fixture_id})"
                     )
 
-                await asyncio.sleep(6)
+            except DailyQuotaExhaustedError:
+                logger.warning(
+                    "API-Football daily quota exhausted during odds sync; "
+                    "stopping the remaining fixtures"
+                )
+                break
             except AccountSuspendedError:
                 # Fallo DEFINITIVO de la fuente: cortar todo el loop, no tiene
                 # sentido seguir consultando partido por partido.
@@ -300,7 +293,6 @@ class OddsService:
                     f"Error syncing odds for {match['home_team_name']} vs "
                     f"{match['away_team_name']}: {e}"
                 )
-                await asyncio.sleep(6)
                 continue
 
         logger.info(f"Total odds synced: {total_odds}")
@@ -562,32 +554,64 @@ class OddsService:
 
         Args:
             match: dict con match_id, league_external_id, match_date_str,
-                   home_team_name, away_team_name (mismo formato que
-                   sync_odds_for_matches).
+                   home_team_name, away_team_name y, preferentemente,
+                   api_fixture_id (mismo formato que sync_odds_for_matches).
             dates: fechas a consultar (default: {match_date_str}).
 
         Returns:
             Lista de dicts {market_name, odds_value, external_fixture_id}.
         """
-        # Cuenta suspendida -> el Plan B (ESPN moneyline) ya cubre el CLV.
         try:
-            if await self._api.check_account_status() != "active":
-                logger.warning(
-                    "CLV: API-Football no disponible — se omite el Plan A "
-                    "(queda el Plan B de ESPN moneyline)"
-                )
-                return []
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"CLV: API-Football /status falló: {exc}")
+            league_id = int(match.get("league_external_id"))
+        except (TypeError, ValueError):
+            league_id = None
+        if league_id not in ACTIVE_LEAGUE_IDS:
+            logger.info(
+                "CLV: se omite partido sin liga activa (league_external_id=%s)",
+                match.get("league_external_id"),
+            )
+            return []
+
+        # El job hace un único preflight de cuenta por ejecución. No repetirlo
+        # por partido: consume cuota y puede generar una ráfaga redundante.
+        # Match.external_id es el fixture_id de API-Football persistido por el
+        # sync, así que el camino normal de CLV tampoco necesita pedir
+        # /fixtures?date= ni volver a hacer fuzzy matching.
+        fixture_id = match.get("api_fixture_id")
+        try:
+            fixture_id = int(fixture_id) if fixture_id is not None else None
+        except (TypeError, ValueError):
+            fixture_id = None
+
+        if fixture_id is not None:
+            odds_data = await self._fetch_and_parse_odds(fixture_id)
+            for entry in odds_data:
+                entry["external_fixture_id"] = fixture_id
+            return odds_data
 
         target_dates = dates or {match["match_date_str"]}
         all_fixtures: list[dict[str, Any]] = []
+        # CLV suele procesar varios partidos del mismo dÃ­a. Reutilizar el
+        # resultado dentro de esta instancia evita un /fixtures?date= por
+        # partido cuando todavÃ­a no existe un api_football_fixture_id
+        # explÃ­cito en el modelo Match.
+        fixture_cache = getattr(self, "_closing_fixture_cache", None)
+        if fixture_cache is None:
+            fixture_cache = {}
+            self._closing_fixture_cache = fixture_cache
         for date_str in sorted(target_dates):
-            try:
-                fixtures = await self._api.get_fixtures_by_date(date_str=date_str)
-                all_fixtures.extend(fixtures)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("CLV: fixtures unavailable for %s: %s", date_str, exc)
+            if date_str not in fixture_cache:
+                try:
+                    fixture_cache[date_str] = await self._api.get_fixtures_by_date(
+                        date_str=date_str
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("CLV: fixtures unavailable for %s: %s", date_str, exc)
+                    fixture_cache[date_str] = []
+            all_fixtures.extend(
+                fixture for fixture in fixture_cache[date_str]
+                if (fixture.get("league") or {}).get("id") == league_id
+            )
 
         fixture_map = self._build_fixture_map(all_fixtures)
         api_fixture = self._find_api_fixture(match, fixture_map)

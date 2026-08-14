@@ -4,9 +4,19 @@ from typing import Any, Optional
 
 import httpx
 
-from apps.api.config import settings
-from apps.api.core.exceptions import AccountSuspendedError, ExternalAPIException
+from apps.api.config import FEATURED_LEAGUES, settings
+from apps.api.core.exceptions import (
+    AccountSuspendedError,
+    ExternalAPIException,
+    PlanRestrictionError,
+)
 from apps.api.core.enums import normalize_match_status
+from apps.api.services.api_football_rate_limiter import (
+    APIFootballRateLimiter,
+    DailyQuotaExhaustedError,
+    rate_limiter,
+)
+from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +29,12 @@ class APIFootballService:
     
     BASE_URL = "https://v3.football.api-sports.io"
     
+    # Compatibilidad para callers antiguos; el alcance efectivo siempre sale
+    # de ACTIVE_LEAGUE_IDS y no de este catálogo.
     LEAGUE_IDS = {
-        "premier_league": 39,
-        "laliga": 140,
-        "liga_betplay": 239,
+        key: info["api_football_id"]
+        for key, info in FEATURED_LEAGUES.items()
+        if info["api_football_id"] in ACTIVE_LEAGUE_IDS
     }
     
     # Labels del endpoint /fixtures/statistics verificados en la doc de
@@ -41,32 +53,92 @@ class APIFootballService:
         "offsides": ("Offsides",),
     }
     
-    def __init__(self, api_key: str | None = None):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        rate_limiter: APIFootballRateLimiter | None = None,
+    ):
         self._api_key = api_key or settings.API_FOOTBALL_KEY
         self._headers = {"x-apisports-key": self._api_key}
         self._remaining_requests: int | None = None
+        self._remaining_per_minute: int | None = None
+        self._rate_limiter = rate_limiter or globals()["rate_limiter"]
+
+    def _observe_rate_limit_headers(self, headers: httpx.Headers) -> None:
+        """Registra las cuotas diaria y por minuto devueltas por el proveedor."""
+        daily_remaining = headers.get("x-ratelimit-requests-remaining")
+        daily_limit = headers.get("x-ratelimit-requests-limit")
+        minute_remaining = headers.get("x-ratelimit-remaining")
+        minute_limit = headers.get("x-ratelimit-limit")
+
+        if daily_remaining and daily_remaining.isdigit():
+            self._remaining_requests = int(daily_remaining)
+        if minute_remaining and minute_remaining.isdigit():
+            self._remaining_per_minute = int(minute_remaining)
+
+        if any(value is not None for value in (
+            daily_remaining, daily_limit, minute_remaining, minute_limit,
+        )):
+            logger.info(
+                "API-Football rate headers: daily=%s/%s, minute=%s/%s",
+                daily_remaining or "?",
+                daily_limit or "?",
+                minute_remaining or "?",
+                minute_limit or "?",
+            )
+
+        if daily_remaining and daily_remaining.isdigit() and int(daily_remaining) < 10:
+            logger.warning("API-Football daily rate limit low: %s requests remaining", daily_remaining)
+        if minute_remaining and minute_remaining.isdigit() and int(minute_remaining) <= 2:
+            logger.warning("API-Football minute rate limit low: %s requests remaining", minute_remaining)
 
     @staticmethod
     def _is_suspension_payload(data: dict[str, Any] | str | list | None) -> bool:
         """
-        True si el payload indica cuenta suspendida/plan sin acceso.
+        True si el payload indica una cuenta realmente suspendida/bloqueada.
 
         API-Football devuelve HTTP 200 con errores en el body:
           {'errors': {'access': 'Your account is suspended, check on ...'}}
           {'errors': {'plan': 'Free plans do not have access to this season...'}}
         También respuestas no-200 con el mismo texto en el cuerpo.
+
+        No se busca ``"blocked"`` en el payload completo: respuestas de
+        estadísticas contienen el campo legítimo ``Blocked Shots``.
         """
+        if data is None:
+            return False
+        if isinstance(data, dict):
+            errors = data.get("errors")
+            if not errors:
+                return False
+            text = errors if isinstance(errors, str) else str(errors)
+        elif isinstance(data, str):
+            text = data
+        else:
+            return False
+        lowered = text.lower()
+        return (
+            "account is suspended" in lowered
+            or "your account is suspended" in lowered
+            or "account suspended" in lowered
+            or "account is banned" in lowered
+            or "your account is banned" in lowered
+            or "account is blocked" in lowered
+            or "your account is blocked" in lowered
+        )
+
+    @staticmethod
+    def _is_plan_restriction_payload(data: dict[str, Any] | str | list | None) -> bool:
+        """True si API-Football rechaza el recurso por límites del plan."""
         if data is None:
             return False
         text = data if isinstance(data, str) else str(data)
         lowered = text.lower()
-        if "suspended" in lowered:
-            return True
-        if isinstance(data, dict):
-            errors = data.get("errors")
-            if errors:
-                return "suspended" in str(errors).lower() or "access" in str(errors).lower()
-        return False
+        return (
+            "free plans do not have access" in lowered
+            or "plan restriction" in lowered
+            or "plan does not have access" in lowered
+        )
 
     async def _request(
         self, endpoint: str, params: Optional[dict[str, Any]] = None
@@ -84,6 +156,9 @@ class APIFootballService:
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
+                # Se reserva justo antes del request. El singleton coordina
+                # también procesos separados a través de Redis.
+                await self._rate_limiter.acquire()
                 response = await client.get(
                     url,
                     headers=self._headers,
@@ -99,6 +174,13 @@ class APIFootballService:
                     )
                 
                 if response.status_code != 200:
+                    if self._is_plan_restriction_payload(response.text[:500]):
+                        raise PlanRestrictionError(
+                            service="api-football",
+                            detail=f"HTTP {response.status_code}: {response.text[:500]}",
+                            payload=response.text[:500],
+                            status_code=response.status_code,
+                        )
                     # La suspensión también puede llegar como HTTP 403/401 con
                     # el texto en el body: se detecta antes del error genérico.
                     if self._is_suspension_payload(response.text[:500]):
@@ -119,9 +201,16 @@ class APIFootballService:
                         detail=f"Invalid JSON response: {str(e)[:200]}",
                     )
                 
+                if self._is_plan_restriction_payload(data):
+                    raise PlanRestrictionError(
+                        service="api-football",
+                        detail=str(data.get("errors") or data.get("plan") or data)[:500],
+                        payload=data,
+                        status_code=response.status_code,
+                    )
+
                 # Cuenta suspendida: fallo DEFINITIVO (no reintentar en esta
-                # ejecución). Se detecta ANTES del chequeo genérico de errors
-                # para que los callers puedan saltearse API-Football entero.
+                # ejecución). Solo se detectan marcadores explícitos de bloqueo.
                 if self._is_suspension_payload(data):
                     raise AccountSuspendedError(
                         service="api-football",
@@ -137,11 +226,7 @@ class APIFootballService:
                         detail=error_msg[:500],
                     )
                 
-                remaining = response.headers.get("x-ratelimit-requests-remaining")
-                if remaining and remaining.isdigit():
-                    self._remaining_requests = int(remaining)
-                    if int(remaining) < 10:
-                        logger.warning(f"API-Football rate limit low: {remaining} requests remaining")
+                self._observe_rate_limit_headers(response.headers)
                 
                 return data
                 
@@ -171,12 +256,18 @@ class APIFootballService:
         url = f"{self.BASE_URL}/status"
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
+                await self._rate_limiter.acquire()
                 response = await client.get(url, headers=self._headers)
+            self._observe_rate_limit_headers(response.headers)
             if response.status_code != 200:
                 if self._is_suspension_payload(response.text[:500]):
                     return "suspended"
                 return "error"
             data = response.json()
+        except DailyQuotaExhaustedError:
+            # El caller debe cortar la fuente; convertirlo en "error" haría
+            # que algunos jobs intentaran otra vez por cada partido.
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"API-Football /status falló: {exc}")
             return "error"
@@ -196,6 +287,10 @@ class APIFootballService:
         el caller procede hasta conocer el estado real de la cuota).
         """
         return self._remaining_requests
+
+    def get_remaining_requests_per_minute(self) -> int | None:
+        """Requests restantes del límite por minuto, si vino el header."""
+        return self._remaining_per_minute
 
     async def get_leagues(
         self,
@@ -220,11 +315,11 @@ class APIFootballService:
 
     async def get_target_leagues(self) -> list[dict[str, Any]]:
         """
-        Obtiene solo las ligas objetivo: Premier League, LaLiga, Liga BetPlay.
+        Obtiene solo las ligas del alcance activo.
         """
         all_leagues = await self.get_leagues()
         
-        target_ids = set(self.LEAGUE_IDS.values())
+        target_ids = ACTIVE_LEAGUE_IDS
         filtered = [
             lg for lg in all_leagues
             if lg.get("league", {}).get("id") in target_ids

@@ -190,7 +190,8 @@ async def test_find_event_for_match_resolves_via_team_search():
 
     match = {
         "match_id": 1,
-        "home_team_name": "Palmeiras",
+            "league_external_id": 13,
+            "home_team_name": "Palmeiras",
         "away_team_name": "Cerro Porteño",
         "match_ts": 1786572000,
     }
@@ -260,6 +261,7 @@ async def test_sync_odds_for_matches_links_event_and_persists():
 
     matches = [{
         "match_id": 1,
+        "league_external_id": 13,
         "home_team_name": "Palmeiras",
         "away_team_name": "Cerro Porteño",
         "match_ts": 1786572000,
@@ -334,6 +336,7 @@ async def test_sync_odds_for_matches_uses_redis_cache():
 
         matches = [{
             "match_id": 1,
+            "league_external_id": 13,
             "home_team_name": "Palmeiras",
             "away_team_name": "Cerro Porteño",
             "match_ts": 1786572000,

@@ -31,6 +31,7 @@ from apps.api.repositories.bookmaker_odd_repository import (
 )
 from apps.api.services.cache_service import CacheService
 from apps.api.services.sofascore_ingester import REQUEST_HEADERS, SOFASCORE_BASE_URL
+from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -348,6 +349,12 @@ class SofaScoreOddsService:
         """
         total_odds = 0
         for match in matches:
+            try:
+                league_id = int(match.get("league_external_id"))
+            except (TypeError, ValueError):
+                league_id = None
+            if league_id not in ACTIVE_LEAGUE_IDS:
+                continue
             try:
                 event = await self._find_event_for_match(match)
                 if event is None:

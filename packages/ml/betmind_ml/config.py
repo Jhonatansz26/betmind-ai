@@ -6,6 +6,27 @@ import os
 
 MODEL_VERSION = "poisson_v1.0"
 
+# Alcance actual del pipeline: IDs confirmados con partidos existentes en la
+# base de producción (consulta read-only, 2026-08-13). Mantener esta lista
+# como la única fuente de verdad para fixtures, odds, CLV y estadísticas.
+ACTIVE_LEAGUE_IDS: frozenset[int] = frozenset({
+    39,   # Premier League
+    140,  # La Liga
+    2,    # UEFA Champions League
+    3,    # UEFA Europa League
+    13,   # CONMEBOL Libertadores
+    11,   # CONMEBOL Sudamericana
+    71,   # Brasil Serie A
+    128,  # Argentina Liga Profesional
+    239,  # Liga BetPlay Dimayor
+    262,  # México Liga MX
+    253,  # MLS
+    88,   # Eredivisie
+})
+
+# No quedan ligas pendientes en el alcance activo actual.
+PENDING_ACTIVE_LEAGUES: tuple[str, ...] = ()
+
 # ── Configuración de API Keys ─────────────────────────────────────────────────
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -106,6 +127,12 @@ CARDS_LINE_BY_LEAGUE: dict[str, float] = {
     # Europa (más tácticas, menos tarjetas)
     "premier_league": 3.5,
     "laliga": 4.0,
+    # Ligas activas sin calibración propia: fallback histórico explícito.
+    "ucl": 4.0,
+    "uel": 4.0,
+    "libertadores": 4.0,
+    "sudamericana": 4.0,
+    "eredivisie": 4.0,
     "bundesliga": 3.5,
     "serie_a": 4.0,
     # Norteamérica

@@ -16,7 +16,7 @@ from apps.api.models.league import League
 from apps.api.models.prediction import Prediction
 from apps.api.services.team_normalizer import canonical_team_name, team_name_similarity
 from apps.api.core.exceptions import MatchNotFoundException
-from betmind_ml.config import DECAY_FACTOR, STRENGTH_WINDOW
+from betmind_ml.config import ACTIVE_LEAGUE_IDS, DECAY_FACTOR, STRENGTH_WINDOW
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +229,7 @@ class MatchRepository:
             .where(
                 and_(
                     Match.league_id == league_id,
+                    Match.league.has(League.external_id.in_(ACTIVE_LEAGUE_IDS)),
                     Match.status == "FINISHED",
                     Match.regulation_time_only == True,  # noqa: E712
                 )

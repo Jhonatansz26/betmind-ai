@@ -14,8 +14,8 @@ Concurrencia:
     idempotencia total aunque el advisory lock se libere antes de procesar
     (colisiones -> log + skip, nunca doble escritura).
   - Ventana estricta: solo partidos con kickoff en [now+5m, now+10m].
-  - Throttling: procesamiento serial con asyncio.sleep(6) entre fixtures
-    (patrón del límite de ~10 req/min de API-Football).
+  - El rate limiting de API-Football lo coordina el limiter distribuido;
+    compartido por el cliente HTTP; no hay sleeps locales por fixture.
 
 CLV por mercado: (opening_odds / closing_odds) - 1. Positivo = el modelo
 venció la línea de cierre. clv_value = media de los deltas por mercado.
@@ -32,15 +32,18 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
 from apps.api.db.database import async_session_factory
+from apps.api.models.league import League
 from apps.api.models.match import Match
 from apps.api.services.odds_service import OddsService
+from apps.api.services.api_football_fixture_ids import confirmed_api_football_fixture_id
+from apps.api.services.api_football_rate_limiter import DailyQuotaExhaustedError
+from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
 
 # Ventana de captura estricta antes del kickoff.
 CAPTURE_WINDOW_MINUTES_BEFORE_KICKOFF = 10
 CAPTURE_WINDOW_MINUTES_AFTER_START = 5
-THROTTLE_SECONDS = 6
 MAX_FIXTURES_PER_RUN = 12
 
 # Clave del advisory lock (entero arbitrario, evita colisiones con otros jobs).
@@ -164,12 +167,14 @@ async def capture_closing_lines() -> dict[str, int]:
                     selectinload(Match.league),
                     selectinload(Match.home_team),
                     selectinload(Match.away_team),
+                    selectinload(Match.bookmaker_odds),
                 )
                 .where(
                     Match.status == "SCHEDULED",
                     Match.match_date >= window_start,
                     Match.match_date <= window_end,
                     Match.closing_odds_captured_at.is_(None),
+                    Match.league.has(League.external_id.in_(ACTIVE_LEAGUE_IDS)),
                 )
                 .order_by(Match.match_date)
                 .limit(MAX_FIXTURES_PER_RUN)
@@ -179,28 +184,38 @@ async def capture_closing_lines() -> dict[str, int]:
             await session.execute(select(func.pg_advisory_unlock(_CLV_ADVISORY_LOCK_KEY)))
             await session.commit()
 
+    confirmed_matches: list[tuple[Match, int]] = []
+    for match in matches:
+        fixture_id = confirmed_api_football_fixture_id(match)
+        if fixture_id is None:
+            logger.info(
+                "CLV: se omite match %s en ventana: sin fixture_id API-Football confirmado",
+                match.id,
+            )
+            continue
+        confirmed_matches.append((match, fixture_id))
+
     logger.info(
-        "CLV: %s scheduled matches in capture window [%s, %s]",
-        len(matches), window_start.isoformat(), window_end.isoformat(),
+        "CLV: %s matches en ventana, %s con fixture_id confirmado [%s, %s]",
+        len(matches), len(confirmed_matches),
+        window_start.isoformat(), window_end.isoformat(),
     )
+
+    # No hay motivo para consultar /status si la ventana está vacía. Este
+    # retorno temprano es esencial porque clv_sync.yml se ejecuta cada 5 min
+    # para no perder la ventana estricta de 5–10 min antes del kickoff.
+    if not confirmed_matches:
+        return {
+            "captured": 0, "skipped_no_odds": 0, "skipped_no_match": 0,
+            "failed": 0, "collisions_avoided": 0,
+        }
 
     odds_session = None
     odds_service: OddsService | None = None
-    # Pre-flight de UNA llamada: si la cuenta está suspendida, el Plan A
-    # (API-Football) se omite por completo y queda solo el Plan B (ESPN).
     af_available = True
-    try:
-        from apps.api.services.api_football import APIFootballService
-        if await APIFootballService().check_account_status() != "active":
-            af_available = False
-            logger.warning(
-                "CLV: API-Football no disponible — Plan A omitido (solo ESPN moneyline)"
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"CLV: API-Football /status falló: {exc}")
 
     try:
-        for match in matches:
+        for match, fixture_id in confirmed_matches:
             match_slug = ESPN_LEAGUE_SLUG_BY_API_ID.get(match.league.external_id) if match.league else None
 
             try:
@@ -216,6 +231,7 @@ async def capture_closing_lines() -> dict[str, int]:
                     try:
                         match_payload = {
                             "match_id": match.id,
+                            "api_fixture_id": fixture_id,
                             "league_external_id": match.league.external_id if match.league else None,
                             "match_date_str": match.match_date.strftime("%Y-%m-%d"),
                             "home_team_name": match.home_team.name if match.home_team else "",
@@ -223,6 +239,12 @@ async def capture_closing_lines() -> dict[str, int]:
                         }
                         closing_entries = await odds_service.fetch_closing_odds_for_match(match_payload)
                         closing = {entry["market_name"]: entry["odds_value"] for entry in closing_entries}
+                    except DailyQuotaExhaustedError:
+                        af_available = False
+                        logger.warning(
+                            "CLV: cuota diaria de API-Football agotada — "
+                            "se omite Plan A para los partidos restantes"
+                        )
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("CLV/API-Football failed for match %s: %s", match.id, exc)
 
@@ -235,8 +257,6 @@ async def capture_closing_lines() -> dict[str, int]:
                             closing_source = "espn"
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("CLV/ESPN failed for match %s: %s", match.id, exc)
-
-                await asyncio.sleep(THROTTLE_SECONDS)
 
                 if not closing:
                     skipped_no_odds += 1
