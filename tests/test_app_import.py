@@ -24,7 +24,7 @@ def test_full_app_imports():
 def test_all_routes_registered():
     from apps.api.main import app
 
-    paths = {route.path for route in app.routes}
+    paths = {getattr(route, "path", None) for route in app.routes}
     assert "/api/v1/auth/login" in paths
     assert "/api/v1/webhooks/wompi" in paths
     assert "/api/v1/tickets/generate" in paths
