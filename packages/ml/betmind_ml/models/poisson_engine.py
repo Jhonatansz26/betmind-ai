@@ -15,7 +15,6 @@ FUNDAMENTO MATEMÁTICO:
 """
 import logging
 import math
-import warnings
 from scipy.stats import poisson  # type: ignore
 
 from betmind_ml.schemas.team_strength import TeamStrengthProfile
@@ -107,90 +106,6 @@ def _defensive_strength_factor(defense_index: float) -> float:
     average, so they must reduce the opponent's expected-goals lambda.
     """
     return max(float(defense_index), 0.01)
-
-
-def estimate_lambdas_from_odds(
-    bookmaker_odds: dict[str, float],
-    league_key: str = "default",
-) -> tuple[float, float]:
-    """
-    Deriva Goles Esperados directamente desde cuotas de bookmaker cuando
-    no hay datos historicos disponibles. Resuelve el problema de 'Modelo por calcular'.
-
-    .. deprecated::
-        Esta funcion produce una prediccion tautologica (las probabilidades
-        del modelo se derivan de las mismas cuotas con las que luego se
-        compara el EV). Usar solo como referencia o en analisis exploratorios.
-        El pipeline principal ahora retorna INSUFFICIENT_DATA cuando no hay
-        datos historicos suficientes.
-
-    Algoritmo:
-        1. Extrae probabilidades implicitas del mercado 1X2, ajustando el overround.
-        2. Estima lambda_total desde la cuota Over 2.5 (o usa 2.7 global).
-        3. Distribuye lambda_total entre local/visitante segun ratio 1X2.
-
-    Args:
-        bookmaker_odds: Dict con al menos "1X2_HOME", "1X2_DRAW", "1X2_AWAY".
-                        Opcional: "OVER_2_5", "BTTS_YES".
-
-    Returns:
-        (lambda_home, lambda_away) estimados.
-    """
-    warnings.warn(
-        "estimate_lambdas_from_odds is deprecated and produces tautological "
-        "predictions. Use only for reference/exploratory analysis. "
-        "The main pipeline now returns INSUFFICIENT_DATA when team strength "
-        "data is unreliable.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    odds_home = bookmaker_odds.get("1X2_HOME", 2.0)
-    odds_draw = bookmaker_odds.get("1X2_DRAW", 3.5)
-    odds_away = bookmaker_odds.get("1X2_AWAY", 3.5)
-    odds_over25 = bookmaker_odds.get("OVER_2_5")
-
-    if odds_home < 1.05 or odds_away < 1.05:
-        logger.warning("estimate_lambdas_from_odds: odds anomalas, usando fallback global")
-        return 1.50, 1.20
-
-    overround = (1.0 / odds_home) + (1.0 / odds_draw) + (1.0 / odds_away)
-    if overround <= 0:
-        overround = 1.08
-
-    p_home = (1.0 / odds_home) / overround
-    p_draw = (1.0 / odds_draw) / overround
-    p_away = (1.0 / odds_away) / overround
-
-    if p_home + p_away <= 0:
-        return 1.50, 1.20
-
-    if odds_over25 and odds_over25 > 1.05:
-        margin = (1.0 / odds_over25) + (1.0 / odds_over25)
-        p_over = (1.0 / odds_over25) / (margin / 2) if margin > 0 else 0.50
-        p_over = max(0.15, min(p_over, 0.85))
-    else:
-        p_over = 0.52
-
-    lambda_total = 0.5 + 4.0 * p_over
-    lambda_total = max(0.6, min(lambda_total, 4.5))
-
-    home_ratio = p_home / (p_home + p_away) if (p_home + p_away) > 0 else 0.55
-    home_advantage = HOME_ADVANTAGE_BY_LEAGUE.get(league_key, HOME_ADVANTAGE_BY_LEAGUE["default"])
-
-    lambda_home = lambda_total * home_ratio * (1.0 + (home_advantage - 1.0) * 0.5)
-    lambda_away = lambda_total * (1.0 - home_ratio) * (1.0 - (home_advantage - 1.0) * 0.3)
-
-    lambda_home = round(max(0.3, min(lambda_home, 5.0)), 4)
-    lambda_away = round(max(0.2, min(lambda_away, 4.5)), 4)
-
-    logger.info(
-        "Lambdas estimados desde cuotas: P=%.1f%%/%.1f%%/%.1f%% Over=%.1f%% | "
-        "ratio=%.2f | λ_home=%.3f λ_away=%.3f",
-        p_home * 100, p_draw * 100, p_away * 100,
-        p_over * 100, home_ratio, lambda_home, lambda_away,
-    )
-
-    return lambda_home, lambda_away
 
 
 def build_score_matrix(lambda_home: float, lambda_away: float) -> ScoreMatrix:
