@@ -6,6 +6,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# El paquete ML vive en packages/ml: se agrega al path explícitamente para
+# no depender de que el editable install (pip install -e packages/ml) quede
+# disponible en el entorno de arranque (falla en Render con Python 3.14
+# aunque el build sea exitoso). Con esto el import funciona siempre.
+ML_PACKAGE_DIR = PROJECT_ROOT / "packages" / "ml"
+if str(ML_PACKAGE_DIR) not in sys.path:
+    sys.path.insert(0, str(ML_PACKAGE_DIR))
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
