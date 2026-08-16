@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select, delete, and_
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models.bookmaker_odd import BookmakerOdd
@@ -138,16 +138,3 @@ class BookmakerOddsRepository:
         for odd in odds:
             grouped.setdefault(odd.match_id, []).append(odd)
         return grouped
-
-    async def delete_stale_odds(
-        self,
-        older_than_hours: int = 12,
-    ) -> int:
-        cutoff = datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=older_than_hours)
-        stmt = delete(BookmakerOdd).where(BookmakerOdd.fetched_at < cutoff)
-        result = await self._session.execute(stmt)
-        await self._session.flush()
-        deleted = result.rowcount
-        if deleted:
-            logger.info(f"Deleted {deleted} stale odds older than {older_than_hours}h")
-        return deleted

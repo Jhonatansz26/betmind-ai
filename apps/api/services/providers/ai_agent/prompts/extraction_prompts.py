@@ -4,18 +4,6 @@ El anti-alucinación key: pedimos SOLO lo que está en el texto,
 con instrucción explícita de dejar null si no está visible.
 """
 
-SEARCH_QUERY_GENERATOR = """
-Eres un asistente especializado en encontrar información deportiva de fútbol.
-Genera {n_queries} queries de búsqueda web en español e inglés para encontrar
-los partidos de {league_name} programados para {time_window}.
-
-Reglas:
-- Incluye el nombre oficial de la liga y el año {season}
-- Incluye queries para sitios como sofascore, flashscore, ESPN, y medios deportivos locales
-- Responde SOLO con un JSON array de strings: ["query1", "query2", ...]
-- Sin explicaciones adicionales
-"""
-
 MATCH_EXTRACTOR_SYSTEM = """
 Eres un extractor de datos deportivos de alta precisión. Tu trabajo es extraer
 información estructurada de partidos de fútbol desde texto web.

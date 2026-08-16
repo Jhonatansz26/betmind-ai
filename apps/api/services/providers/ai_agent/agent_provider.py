@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
+from apps.api.core.stable_hash import stable_hash_int
 from apps.api.services.providers.base_provider import DataProviderPort, RawFixture, RawTeam
 from apps.api.services.providers.ai_agent.graph import get_agent_graph
 from apps.api.services.providers.ai_agent.schemas.agent_state import AgentState
@@ -142,13 +143,13 @@ class AISearchAgentProvider(DataProviderPort):
                 return None
             
             return RawFixture(
-                external_id=fixture_dict.get("external_id", hash(f"{fixture_dict.get('home_team')}-{fixture_dict.get('away_team')}-{match_date}")),
+                external_id=fixture_dict.get("external_id", stable_hash_int(f"{fixture_dict.get('home_team')}-{fixture_dict.get('away_team')}-{match_date}")),
                 league_code=fixture_dict.get("league_code", ""),
                 league_name=fixture_dict.get("league_name", ""),
                 home_team=fixture_dict.get("home_team", "Unknown"),
-                home_team_external_id=fixture_dict.get("home_team_external_id", hash(fixture_dict.get("home_team", ""))),
+                home_team_external_id=fixture_dict.get("home_team_external_id", stable_hash_int(fixture_dict.get("home_team", ""))),
                 away_team=fixture_dict.get("away_team", "Unknown"),
-                away_team_external_id=fixture_dict.get("away_team_external_id", hash(fixture_dict.get("away_team", ""))),
+                away_team_external_id=fixture_dict.get("away_team_external_id", stable_hash_int(fixture_dict.get("away_team", ""))),
                 match_date=match_date,
                 status=fixture_dict.get("status", "SCHEDULED"),
                 home_score=fixture_dict.get("home_score"),

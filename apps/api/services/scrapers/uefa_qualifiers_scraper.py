@@ -16,6 +16,7 @@ from typing import Optional
 
 import httpx
 
+from apps.api.core.stable_hash import stable_hash_int
 from apps.api.services.providers.base_provider import RawFixture
 
 logger = logging.getLogger(__name__)
@@ -257,5 +258,9 @@ def _extract_match_id(url: str) -> str:
 
 
 def _hash_match_id(match_id: str) -> int:
-    """Convierte string ID a int para RawFixture.external_id."""
-    return abs(hash(match_id)) % (10 ** 9)
+    """Convierte string ID a int para RawFixture.external_id.
+
+    Hash estable (SHA-256) — ``hash()`` de Python varía entre procesos por
+    PYTHONHASHSEED y rompería la deduplicación por external_id.
+    """
+    return stable_hash_int(match_id) % (10 ** 9)
