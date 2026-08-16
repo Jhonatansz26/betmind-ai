@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from betmind_ml.backtesting.runner import run_full_backtest
 from apps.api.repositories.match_repository import MatchRepository
-from apps.api.repositories.bookmaker_odd_repository import BookmakerOddRepository
+from apps.api.repositories.bookmaker_odd_repository import BookmakerOddsRepository
 from apps.api.dependencies import get_async_session, require_admin_key
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ async def run_backtest(
         }
 
     # Cuotas históricas (apertura preferida) para el cálculo de EV real.
-    odds_repo = BookmakerOddRepository(session)
+    odds_repo = BookmakerOddsRepository(session)
     odds_by_match = await odds_repo.get_odds_for_matches([m.id for m in all_matches])
 
     matches_dicts = [
