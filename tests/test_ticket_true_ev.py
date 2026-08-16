@@ -130,7 +130,7 @@ def test_build_ticket_uses_real_combined_ev():
                     "market_name": "1X2_HOME",
                     "market_label": "Home Win",
                     "our_probability": P_HOME_WIN,
-                    "bookmaker_odds": 2.30,
+                    "bookmaker_odds": 1.70,  # Rango controlado (1.30-1.75) → parlay-eligible
                     "implied_probability": 0.40,
                     "expected_value": 0.09,
                 },
@@ -148,7 +148,7 @@ def test_build_ticket_uses_real_combined_ev():
                     "market_name": "OVER_1_5",
                     "market_label": "Over 1.5",
                     "our_probability": P_OVER_1_5,
-                    "bookmaker_odds": 1.90,
+                    "bookmaker_odds": 1.70,  # Rango controlado (1.30-1.75) → parlay-eligible
                     "implied_probability": 0.48,
                     "expected_value": 0.10,
                 },

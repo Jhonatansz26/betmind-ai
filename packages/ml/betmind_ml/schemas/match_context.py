@@ -57,6 +57,15 @@ class MatchContext(BaseModel):
         description="Nombres de jugadores clave del visitante que no juegan"
     )
 
+    lineups_confirmed: bool = Field(
+        False,
+        description=(
+            "True solo si ambos 11 titulares están confirmados. Gate de los "
+            "player props: sin lineups confirmados no hay perfil de minutos "
+            "confiable por jugador y no se emiten proyecciones individuales."
+        ),
+    )
+
     @property
     def altitude_impact(self) -> str:
         if self.stadium_altitude_masl >= 2500:

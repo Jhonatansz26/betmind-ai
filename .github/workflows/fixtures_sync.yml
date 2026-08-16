@@ -1,8 +1,8 @@
-name: Sincronizar fixtures y cuotas BetMind AI
+﻿name: Sincronizar fixtures y cuotas BetMind AI
 
-# Este workflow corre cada 6h: mantiene la ventana móvil de fixtures/cuotas
-# sin repetir 12 veces al día las llamadas de fallback a API-Football. Las
-# predicciones frecuentes consumen únicamente los datos ya persistidos.
+# Este workflow corre cada 6h: mantiene la ventana mÃ³vil de fixtures/cuotas
+# sin repetir 12 veces al dÃ­a las llamadas de fallback a API-Football. Las
+# predicciones frecuentes consumen Ãºnicamente los datos ya persistidos.
 
 on:
   schedule:
@@ -28,6 +28,7 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       DEBUG: "false"
+      AUTO_CREATE_TABLES: "false"
 
     steps:
       - name: Clonar repositorio
@@ -46,5 +47,5 @@ jobs:
           pip install -e packages/ml
           pip install -r apps/api/requirements.txt
 
-      - name: Sincronizar partidos en ventana móvil
+      - name: Sincronizar partidos en ventana mÃ³vil
         run: python scripts/sync_today_matches.py

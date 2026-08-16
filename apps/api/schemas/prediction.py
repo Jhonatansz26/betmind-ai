@@ -172,6 +172,14 @@ class PredictionResponse(BaseModel):
 
     probabilities: ProbabilityDistribution
     ev_analysis: list[EVAnalysis]
+    player_props: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Proyecciones de player props por jugador (solo cuando ambos "
+            "lineups están confirmados). Cada item: player_name, stat_type, "
+            "stat_per_90, projected_minutes, expected_stat, status."
+        ),
+    )
     confidence_score: int = Field(..., ge=0, le=100)
     risk_level: str = Field("MEDIUM", description="LOW | MEDIUM | HIGH — nivel de riesgo de la predicción")
     tactical_narrative: str = Field(..., description="Explicación en lenguaje natural")

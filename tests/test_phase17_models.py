@@ -363,3 +363,86 @@ class TestMatchTensionIndex:
 
         ctx = infer_context_type()
         assert ctx == MatchContextType.REGULAR
+
+
+class TestGeneratePlayerPredictions:
+    """Facade generate_predictions: gates de datos y proveedor de perfiles."""
+
+    def test_no_provider_returns_empty(self):
+        """Sin proveedor de perfiles no se emite ninguna proyección."""
+        from apps.api.engine.player_props_model import generate_predictions
+
+        assert generate_predictions(match_id=1) == []
+
+    def test_provider_filters_by_gates(self):
+        """Solo pasan los jugadores confirmados con >= 60 minutos y datos."""
+        from apps.api.engine.player_props_model import (
+            generate_predictions,
+            PlayerPropStatus,
+        )
+
+        def provider(match_id):
+            assert match_id == 42
+            return [
+                # Válido: titular confirmado, 90 min, datos
+                {
+                    "player_name": "Starter 90",
+                    "stat_type": "shots_on_target",
+                    "stat_per_90": 2.5,
+                    "projected_minutes": 90,
+                    "is_confirmed_starter": True,
+                    "opponent_defense_factor": 1.1,
+                },
+                # No titular
+                {
+                    "player_name": "Benched",
+                    "stat_type": "shots_on_target",
+                    "stat_per_90": 3.0,
+                    "projected_minutes": 90,
+                    "is_confirmed_starter": False,
+                },
+                # Minutos insuficientes
+                {
+                    "player_name": "Sub 45",
+                    "stat_type": "shots_on_target",
+                    "stat_per_90": 3.0,
+                    "projected_minutes": 45,
+                    "is_confirmed_starter": True,
+                },
+                # Sin datos per 90
+                {
+                    "player_name": "No Data",
+                    "stat_type": "shots_on_target",
+                    "stat_per_90": 0.0,
+                    "projected_minutes": 90,
+                    "is_confirmed_starter": True,
+                },
+            ]
+
+        projections = generate_predictions(match_id=42, player_provider=provider)
+
+        assert len(projections) == 1
+        assert projections[0].player_name == "Starter 90"
+        assert projections[0].status == PlayerPropStatus.AVAILABLE
+        # expected = 2.5 * (90/90) * 1.1 = 2.75
+        assert abs(projections[0].expected_stat - 2.75) < 0.01
+
+    def test_min_minutes_gate_respected(self):
+        """El gate de minutos mínimo filtra titulares con menos minutos."""
+        from apps.api.engine.player_props_model import generate_predictions
+
+        def provider(match_id):
+            return [
+                {
+                    "player_name": "Short Minutes",
+                    "stat_type": "shots_on_target",
+                    "stat_per_90": 2.0,
+                    "projected_minutes": 55,
+                    "is_confirmed_starter": True,
+                },
+            ]
+
+        projections = generate_predictions(
+            match_id=1, min_minutes_gate=60, player_provider=provider
+        )
+        assert projections == []

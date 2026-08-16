@@ -51,6 +51,14 @@ class GeneratedTicket(BaseModel):
     cons: list[str]
     staking_suggestion: str
     replacement_candidates: list[TicketLegSchema] = Field(default_factory=list)
+    isolated_singles: list[TicketLegSchema] = Field(
+        default_factory=list,
+        description=(
+            "Selecciones SINGLE de +EV de alta volatilidad aisladas por el "
+            "interceptor de ruteo (nunca viajaron dentro de la combinada). "
+            "El orquestador de salida las rescata como boletos de una pierna."
+        ),
+    )
     optimized_count: bool = False
     original_requested: int | None = None
 

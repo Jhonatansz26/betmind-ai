@@ -1,8 +1,8 @@
-name: Ingestar estadísticas BetMind AI
+﻿name: Ingestar estadÃ­sticas BetMind AI
 
-# Este workflow corre una vez al día: procesa hasta 25 partidos pendientes,
+# Este workflow corre una vez al dÃ­a: procesa hasta 25 partidos pendientes,
 # priorizando predicciones con EV, y evita gastar 12 preflights diarios del
-# cron de predicciones. El límite protege la cuota Free y permite drenar el
+# cron de predicciones. El lÃ­mite protege la cuota Free y permite drenar el
 # backlog progresivamente.
 
 on:
@@ -29,6 +29,7 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       DEBUG: "false"
+      AUTO_CREATE_TABLES: "false"
 
     steps:
       - name: Clonar repositorio
@@ -47,5 +48,5 @@ jobs:
           pip install -e packages/ml
           pip install -r apps/api/requirements.txt
 
-      - name: Ingestar estadísticas post-partido
+      - name: Ingestar estadÃ­sticas post-partido
         run: python -m apps.api.jobs.ingest_match_statistics --days 30
