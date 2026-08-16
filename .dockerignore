@@ -1,0 +1,14 @@
+.git
+.env
+.env.*.local
+*.db
+*.sqlite
+__pycache__
+*.pyc
+.pytest_cache
+tests
+docs
+apps/web
+apps/mobile
+node_modules
+.github
