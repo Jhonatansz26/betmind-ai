@@ -6,8 +6,9 @@ post-fetch por league.id activa y que el fuzzy-match de equipos NO cruce entre
 ligas.
 """
 import asyncio
+import pytest
 
-from apps.api.services.odds_service import OddsService
+from apps.api.services.odds_service import OddsService, validate_match_integrity
 
 _ODDS_PAYLOAD = {
     "fixture": {"id": 0},
@@ -101,23 +102,26 @@ def test_team_match_strength_classification():
     assert OddsService._team_match_strength("arsenal", "arsenal") == "exact"
     assert OddsService._team_match_strength("inter milan", "inter") == "substring"
     assert OddsService._team_match_strength(
-        "independiente rivadavia", "independ rivadavia"
+        "union santa fe", "santa fe union"
     ) == "tokens"
+    # La abreviación "Independ. Rivadavia" dejó de matchear por tokens
+    # (criterio estricto de subconjunto total): falso negativo aceptado
+    # por decisión del fix 2 — preferimos no matchear a matchear mal.
+    assert OddsService._team_match_strength(
+        "independiente rivadavia", "independ rivadavia"
+    ) is None
     assert OddsService._team_match_strength("arsenal", "chelsea") is None
-    # _fuzzy_team_match conserva su contrato booleano
-    assert OddsService._fuzzy_team_match("independiente rivadavia", "independ rivadavia") is True
-    assert OddsService._fuzzy_team_match("arsenal", "chelsea") is False
 
 
 def test_find_api_fixture_logs_warning_on_token_fallback(caplog):
     """Match por TOKENS deja rastro WARNING con los nombres completos."""
     service = OddsService.__new__(OddsService)
     fixture_map = {
-        "independ rivadavia|gimnasia la plata": _fixture(10, "Independ Rivadavia", "Gimnasia La Plata"),
+        "santa fe union|gimnasia la plata": _fixture(10, "Santa Fe Union", "Gimnasia La Plata"),
     }
     match = {
         "match_id": 1,
-        "home_team_name": "Independiente Rivadavia",
+        "home_team_name": "Union Santa Fe",
         "away_team_name": "Gimnasia La Plata",
     }
 
@@ -127,8 +131,8 @@ def test_find_api_fixture_logs_warning_on_token_fallback(caplog):
     assert found is not None
     assert found["fixture"]["id"] == 10
     assert any(
-        "TOKENS" in r.message and "Independiente Rivadavia" in r.message
-        and "independ rivadavia" in r.message
+        "TOKENS" in r.message and "Union Santa Fe" in r.message
+        and "santa fe union" in r.message
         for r in caplog.records
         if r.levelname == "WARNING"
     )
@@ -352,3 +356,60 @@ def test_fuzzy_match_does_not_cross_leagues(monkeypatch):
 
     assert total == 0  # la liga 140 no tiene ese fixture: no matchea
     assert repo.calls == []
+
+
+class TestValidateMatchIntegrity:
+    """Red flags del filtro anti-trampas: filiales/juveniles y copas tempranas."""
+
+    def test_normal_match_passes(self):
+        assert validate_match_integrity(
+            "Millonarios FC", "Atlético Nacional", "LEAGUE"
+        ) is True
+
+    def test_teams_with_b_inside_name_not_flagged(self):
+        """Sin falso positivo: nombres con 'B' interior (Betis, Bilbao, Bayer)."""
+        assert validate_match_integrity(
+            "Real Betis", "Athletic Bilbao", "LEAGUE"
+        ) is True
+        assert validate_match_integrity(
+            "Bayer Leverkusen", "Borussia Dortmund", "LEAGUE"
+        ) is True
+
+    def test_youth_team_suffix_blocked(self):
+        with pytest.raises(ValueError, match="Youth/Reserve"):
+            validate_match_integrity("Villarreal B", "Valencia CF", "LEAGUE")
+
+    def test_second_team_roman_numeral_blocked(self):
+        with pytest.raises(ValueError, match="Youth/Reserve"):
+            validate_match_integrity("Deportivo Cali II", "América de Cali", "LEAGUE")
+
+    def test_reserves_blocked(self):
+        with pytest.raises(ValueError, match="Youth/Reserve"):
+            validate_match_integrity("Real Madrid Reserves", "Getafe", "LEAGUE")
+
+    def test_u20_blocked_in_any_context(self):
+        with pytest.raises(ValueError, match="Youth/Reserve"):
+            validate_match_integrity("Flamengo U20", "Botafogo", "KNOCKOUT_CUP")
+
+    def test_early_cup_round_blocked(self):
+        with pytest.raises(ValueError, match="Early cup round"):
+            validate_match_integrity("FC Alpha", "FC Beta", "KNOCKOUT_CUP", "Round of 32")
+
+    def test_early_group_stage_blocked(self):
+        with pytest.raises(ValueError, match="Early cup round"):
+            validate_match_integrity(
+                "FC Alpha", "FC Beta", "KNOCKOUT_CUP", "Group Stage - Matchday 1"
+            )
+
+    def test_late_cup_round_passes(self):
+        assert validate_match_integrity(
+            "FC Alpha", "FC Beta", "KNOCKOUT_CUP", "Semi-finals"
+        ) is True
+
+    def test_cup_without_round_info_passes_youth_check_only(self):
+        assert validate_match_integrity("FC Alpha", "FC Beta", "KNOCKOUT_CUP") is True
+
+    def test_league_match_round_name_ignored(self):
+        assert validate_match_integrity(
+            "FC Alpha", "FC Beta", "LEAGUE", "Round of 32"
+        ) is True

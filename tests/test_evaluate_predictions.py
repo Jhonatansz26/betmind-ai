@@ -132,7 +132,8 @@ def test_job_skips_unresolvable_markets(monkeypatch):
 
 
 def test_job_is_idempotent(monkeypatch):
-    """Segunda corrida no duplica filas (ON CONFLICT DO NOTHING)."""
+    """Segunda corrida no duplica filas: los mercados ya evaluados se
+    saltan (skipped_existing) y no se re-insertan."""
     async def scenario():
         engine, factory = await _db()
         async with factory() as session:
@@ -144,7 +145,10 @@ def test_job_is_idempotent(monkeypatch):
 
         assert first["markets_evaluated"] == 4
         assert second["markets_evaluated"] == 0
-        assert second["matches_scanned"] == 0  # ya no aparece como pendiente
+        # C3: el partido se vuelve a escanear, pero sus mercados ya están
+        # evaluados -> se cuentan como skipped_existing (antes: contador muerto).
+        assert second["matches_scanned"] == 1
+        assert second["skipped_existing"] == 4
 
         async with factory() as session:
             count = (await session.execute(

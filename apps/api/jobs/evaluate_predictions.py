@@ -58,9 +58,30 @@ def _markets_from_prediction(prediction: Prediction | None) -> list[dict]:
     return markets if isinstance(markets, list) else []
 
 
+def _latest_prediction(match: Match) -> Prediction | None:
+    """Predicción más reciente por created_at (id como tie-break).
+
+    C3: antes se tomaba match.predictions[0] sin orden — no determinístico
+    si hay más de una predicción para el partido.
+    """
+    if not match.predictions:
+        return None
+    return sorted(
+        match.predictions,
+        key=lambda p: (p.created_at or datetime.min, p.id),
+        reverse=True,
+    )[0]
+
+
 async def evaluate_finished_predictions(days: int = DEFAULT_WINDOW_DAYS) -> dict[str, int]:
     """
     Evalúa predicciones de partidos FINISHED aún sin evaluar.
+
+    C3: ya NO se excluye el partido completo cuando tiene algún outcome —
+    se evalúan los MERCADOS pendientes (sin fila en prediction_outcomes),
+    de modo que un mercado que quedó skipped_unresolvable en una pasada
+    (ej. córneres sin stats ingeridas todavía) se reintenta en la siguiente
+    cuando los datos ya existen.
 
     Returns:
         stats: {matches_scanned, markets_evaluated, skipped_unresolvable,
@@ -72,16 +93,14 @@ async def evaluate_finished_predictions(days: int = DEFAULT_WINDOW_DAYS) -> dict
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
 
     async with async_session_factory() as session:
-        already_evaluated = select(PredictionOutcome.match_id).distinct()
-
         stmt = (
             select(Match)
             .options(selectinload(Match.predictions))
             .where(
                 Match.status == "FINISHED",
+                Match.regulation_time_only.is_(True),
                 Match.match_date >= cutoff,
                 Match.id.in_(select(Prediction.match_id)),
-                Match.id.notin_(already_evaluated),
             )
             .order_by(Match.match_date.asc())
         )
@@ -89,15 +108,33 @@ async def evaluate_finished_predictions(days: int = DEFAULT_WINDOW_DAYS) -> dict
         matches = list(result.scalars().all())
         stats["matches_scanned"] = len(matches)
 
+        # Outcomes ya persistidos para estos partidos (una sola query).
+        match_ids = [m.id for m in matches]
+        if match_ids:
+            existing_result = await session.execute(
+                select(PredictionOutcome.match_id, PredictionOutcome.market_name).where(
+                    PredictionOutcome.match_id.in_(match_ids)
+                )
+            )
+            already_done = {
+                (row.match_id, row.market_name) for row in existing_result
+            }
+        else:
+            already_done = set()
+
         now = datetime.now(timezone.utc)
         rows_to_insert: list[dict] = []
         for match in matches:
             score = _score_from_match(match)
-            prediction = match.predictions[0] if match.predictions else None
+            prediction = _latest_prediction(match)
             for market in _markets_from_prediction(prediction):
                 market_name = market.get("market_name")
                 probability = market.get("our_probability")
                 if not market_name or probability is None:
+                    continue
+
+                if (match.id, market_name) in already_done:
+                    stats["skipped_existing"] += 1
                     continue
 
                 outcome = resolve_market_outcome(market_name, score)

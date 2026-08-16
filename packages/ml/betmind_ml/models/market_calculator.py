@@ -184,17 +184,22 @@ def calculate_corners_markets(
     away_corners_against_avg: float | None = None,
     home_adv_factor: float = 1.0,
 ) -> list[MarketProbability]:
+    """Mercados Over/Under de córneres (Binomial Negativa).
+
+    μ = córneres totales esperados = córneres del local (con ventaja local)
+    + córneres del visitante. NOTA (fix C1): los promedios *against* ya NO se
+    usan — sumar for + against duplicaría el total del partido (lo que el
+    local recibe es lo que el visitante saca); se aceptan solo por
+    compatibilidad de firma con build_all_markets.
+    """
     expected_league = CORNERS_LEAGUE_AVG.get(league_key, CORNERS_LEAGUE_AVG["default"])
 
     home_for = home_corners_for_avg if home_corners_for_avg and home_corners_for_avg > 0 else expected_league / 2
     away_for = away_corners_for_avg if away_corners_for_avg and away_corners_for_avg > 0 else expected_league / 2
-    home_against = home_corners_against_avg if home_corners_against_avg and home_corners_against_avg > 0 else expected_league / 2
-    away_against = away_corners_against_avg if away_corners_against_avg and away_corners_against_avg > 0 else expected_league / 2
 
-    expected_corners = (
-        (home_for + home_against) * 0.5 * home_adv_factor
-        + (away_for + away_against) * 0.5
-    ) * 0.5
+    # Fix C1: sin el "*0.5" final el total esperado quedaba a la mitad del
+    # valor real (ej. PL fallback: 5.72 en vez de 10.4).
+    expected_corners = home_for * home_adv_factor + away_for
 
     if expected_corners <= 0:
         expected_corners = expected_league
@@ -255,16 +260,20 @@ def calculate_shots_on_target_markets(
     home_sot_against_avg: float | None = None,
     away_sot_against_avg: float | None = None,
 ) -> list[MarketProbability]:
+    """Mercados Over/Under de remates a puerta (Poisson).
+
+    μ = remates a puerta totales esperados = local + visitante. Los promedios
+    *against* no se usan (mismo motivo que córneres, fix C1); se aceptan por
+    compatibilidad de firma.
+    """
     expected_league = SHOTS_OT_LEAGUE_AVG.get(league_key, SHOTS_OT_LEAGUE_AVG["default"])
 
     home_for = home_sot_for_avg if home_sot_for_avg and home_sot_for_avg > 0 else expected_league / 2
     away_for = away_sot_for_avg if away_sot_for_avg and away_sot_for_avg > 0 else expected_league / 2
-    home_against = home_sot_against_avg if home_sot_against_avg and home_sot_against_avg > 0 else expected_league / 2
-    away_against = away_sot_against_avg if away_sot_against_avg and away_sot_against_avg > 0 else expected_league / 2
 
-    expected_sot = (
-        (home_for + home_against) * 0.5 + (away_for + away_against) * 0.5
-    ) * 0.5
+    # Fix C1: sin el "*0.5" final el total esperado quedaba a la mitad
+    # (ej. PL fallback: 4.60 en vez de 9.2).
+    expected_sot = home_for + away_for
 
     if expected_sot <= 0:
         expected_sot = expected_league

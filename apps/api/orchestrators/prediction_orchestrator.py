@@ -20,7 +20,7 @@ from betmind_ml.schemas.match_context import MatchContext, MatchImportance
 from betmind_ml.schemas.referee import RefereeProfile
 from betmind_ml.schemas.prediction_output import MatchPredictionOutput, PredictionVerdict
 from betmind_ml.schemas.tactical_analysis import TacticalAnalysis
-from betmind_ml.config import EV_POSITIVE_THRESHOLD
+from betmind_ml.config import EV_POSITIVE_THRESHOLD, MODEL_VERSION
 
 logger = logging.getLogger(__name__)
 _CACHE_TTL_SECONDS = 60 * 60 * 6  # 6 horas
@@ -79,7 +79,11 @@ class PredictionOrchestrator:
         home_form = await self._match_repo.get_recent_form(match.home_team_id, last_n=10)
         away_form = await self._match_repo.get_recent_form(match.away_team_id, last_n=10)
         h2h = await self._match_repo.get_h2h(match.home_team_id, match.away_team_id, last_n=6)
-        league_matches = await self._match_repo.get_league_matches(match.league_id)
+        # A3: el prior de liga se calcula SOLO con la temporada del partido
+        # (antes: promedios diluidos con todas las temporadas históricas).
+        league_matches = await self._match_repo.get_league_matches(
+            match.league_id, season=match.match_date.year
+        )
 
         # 4. Convertir a formato dict para el pipeline ML
         home_matches = [self._match_repo.match_to_dict(m) for m in home_form]
@@ -129,8 +133,31 @@ class PredictionOrchestrator:
         # 6b. Persistir prediccion cuantitativa en DB (para LEFT JOIN desde /v1/matches)
         await self._persist_prediction(match.id, quant_output)
 
+        # 6c. Player Props: proyecciones individuales SOLO con lineups
+        # confirmados (gate de datos: sin 11 confirmado no hay perfil de
+        # minutos confiable). El provider de perfiles se inyecta cuando la
+        # ingesta de lineups/estadísticas individuales exista; mientras
+        # tanto lineups_confirmed=False y no se emite nada.
+        match_context = self._build_match_context(match)
+        player_predictions: list = []
+        if match_context.lineups_confirmed:
+            from apps.api.engine.player_props_model import (
+                generate_predictions as generate_player_predictions,
+            )
+            player_predictions = generate_player_predictions(
+                match_id=match.id,
+                min_minutes_gate=60,
+            )
+            logger.info(
+                "Player props generadas para match_id=%s: %d",
+                match.id, len(player_predictions),
+            )
+
         # 7. Construir respuesta
-        response = self._build_response(match, quant_output, tactical_output)
+        response = self._build_response(
+            match, quant_output, tactical_output,
+            player_predictions=player_predictions,
+        )
 
         # 8. Persistir en cache
         await self._cache.set(cache_key, response, ttl=_CACHE_TTL_SECONDS)
@@ -285,13 +312,20 @@ class PredictionOrchestrator:
         return None
 
     def _build_match_context(self, match: Match) -> MatchContext:
-        """Construye el contexto del partido para el Cerebro Táctico."""
+        """Construye el contexto del partido para el Cerebro Táctico.
+
+        lineups_confirmed se mantiene False hasta que exista la ingesta de
+        alineaciones confirmadas; cuando ese proveedor exista, debe poblar el
+        contexto y los player props se habilitan automáticamente (gate en
+        get_prediction → 6c).
+        """
         return MatchContext(
             match_id=match.id,
             match_importance=MatchImportance.REGULAR,
             is_derby=False,
             rivalry_intensity=1,
             stadium_altitude_masl=0.0,
+            lineups_confirmed=False,
         )
 
     def _build_bookmaker_odds(self, odds: OddsInput | None) -> dict[str, float] | None:
@@ -407,6 +441,7 @@ class PredictionOrchestrator:
             await self._match_repo.upsert_prediction(
                 match_id=match_id,
                 prediction_type=quant_output.model_version,
+                model_version=MODEL_VERSION,
                 confidence=str(quant_output.confidence_score),
                 value_score=round(
                     sum(m.expected_value or 0 for m in quant_output.markets)
@@ -547,7 +582,10 @@ class PredictionOrchestrator:
         home_form = await self._match_repo.get_recent_form(match.home_team_id, last_n=10)
         away_form = await self._match_repo.get_recent_form(match.away_team_id, last_n=10)
         h2h = await self._match_repo.get_h2h(match.home_team_id, match.away_team_id, last_n=6)
-        league_matches = await self._match_repo.get_league_matches(match.league_id)
+        # A3: mismo criterio que la ruta principal — solo la temporada vigente.
+        league_matches = await self._match_repo.get_league_matches(
+            match.league_id, season=match.match_date.year
+        )
 
         # Convertir a formato dict
         home_matches = [self._match_repo.match_to_dict(m) for m in home_form]
@@ -639,35 +677,6 @@ class PredictionOrchestrator:
         except Exception as exc:
             logger.warning("Cascada LLM falló para match_id=%s: %s; usando síntesis", match.id, exc)
             return quant_output, self._build_minimal_tactical_analysis(match, quant_output)
-
-    async def _fallback_quant_with_gemini(
-        self, match: Match, odds: OddsInput | None,
-    ) -> tuple[MatchPredictionOutput, TacticalAnalysis]:
-        """Capa 2: ejecuta análisis cuantitativo y prueba Gemini. Capa 1 si falla."""
-        quant_output = await self._run_quantitative_analysis(match, odds)
-        gemini_tactical = await self._try_gemini_analysis(match, quant_output)
-        if gemini_tactical is not None:
-            return quant_output, gemini_tactical
-        tactical_output = self._build_minimal_tactical_analysis(match, quant_output)
-        return quant_output, tactical_output
-
-    async def _try_gemini_analysis(
-        self, match: Match, quant_output: MatchPredictionOutput,
-    ) -> TacticalAnalysis | None:
-        """Intenta generar análisis táctico via Gemini como fallback."""
-        try:
-            cascade = LLMCascadeService()
-            prompt_data = self._build_gemini_prompt(match, quant_output)
-            result = await cascade.generate_tactical_json(
-                system_prompt=prompt_data["system"],
-                user_prompt=prompt_data["user"],
-            )
-            if result.content is None:
-                return None
-            return self._gemini_result_to_tactical(match, quant_output, result)
-        except Exception as e:
-            logger.warning("Gemini fallback falló para match_id=%s: %s", match.id, e)
-            return None
 
     def _build_gemini_prompt(
         self, match: Match, quant: MatchPredictionOutput,
@@ -768,6 +777,7 @@ class PredictionOrchestrator:
         match: Match,
         quant: MatchPredictionOutput,
         tactical: TacticalAnalysis,
+        player_predictions: list | None = None,
     ) -> PredictionResponse:
         """Construye la respuesta para la API."""
         from apps.api.schemas.prediction import ProbabilityDistribution, EVAnalysis, Verdict
@@ -846,6 +856,9 @@ class PredictionOrchestrator:
             lambda_away=getattr(quant, 'lambda_away', 0) or 0,
             probabilities=probabilities,
             ev_analysis=ev_analysis,
+            player_props=[
+                p.model_dump() for p in (player_predictions or [])
+            ] if player_predictions else [],
             confidence_score=tactical.overall_confidence,
             risk_level=getattr(quant, 'risk_level', 'MEDIUM') or 'MEDIUM',
             tactical_narrative=tactical_narrative,

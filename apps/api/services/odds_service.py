@@ -133,6 +133,57 @@ SHOTS_OT_BET_NAMES = (
     "Total Shots on Goal",
 )
 
+# ── Red Flags de integridad del partido ───────────────────────────────────────
+# Escenarios anómalos que el sistema penaliza para proteger el bankroll:
+# equipos filiales/juveniles (inexperiencia e inestabilidad) y fases
+# tempranas de copa (rotación masiva de plantillas).
+#
+# Los sufijos de filiales se evalúan SOLO al final del nombre (endswith,
+# case-insensitive): "Villarreal B", "Real Madrid II", "Flamengo U20".
+# Matchear substrings intermedios (" B") produciría falsos positivos con
+# equipos de primera división ("Betis", "Bilbao", "Bayer", "Benfica"...).
+YOUTH_TEAM_SUFFIXES = [" ii", " b", " u20", " sub-20", " reserves"]
+EARLY_CUP_ROUNDS = ["Round of 64", "Round of 32", "Group Stage - Matchday 1"]
+
+
+def validate_match_integrity(
+    home_team: str,
+    away_team: str,
+    match_type: str = "LEAGUE",
+    round_name: str | None = None,
+) -> bool:
+    """
+    Valida la integridad de un partido antes de sincronizar cuotas.
+
+    Bloquea (levanta ValueError) los partidos con red flags:
+      1. Equipos filiales/juveniles (nombre que termina en sufijos como
+         " II", " B", " U20", " Reserves") — varianza alta por
+         inexperiencia e inestabilidad.
+      2. Fases tempranas de copas nacionales (p. ej. Round of 64/32,
+         Group Stage Matchday 1) — riesgo alto de rotación de plantillas.
+
+    El flag de fase temprana solo se evalúa cuando el partido es
+    KNOCKOUT_CUP y el proveedor expone el nombre de la ronda; sin ese
+    dato la regla de equipos filiales sigue activa.
+    """
+    home_lower = (home_team or "").strip().lower()
+    away_lower = (away_team or "").strip().lower()
+
+    for suffix in YOUTH_TEAM_SUFFIXES:
+        if home_lower.endswith(suffix) or away_lower.endswith(suffix):
+            raise ValueError(
+                f"RED FLAG: Youth/Reserve team detected ({suffix!r}). "
+                "High variance."
+            )
+
+    if match_type == "KNOCKOUT_CUP" and round_name in EARLY_CUP_ROUNDS:
+        raise ValueError(
+            f"RED FLAG: Early cup round detected ({round_name!r}). "
+            "High rotation risk."
+        )
+
+    return True
+
 
 class OddsService:
     def __init__(self, session: AsyncSession):
@@ -238,16 +289,42 @@ class OddsService:
         self,
         matches: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+        """
+        Filtra partidos por liga activa y por red flags de integridad.
+
+        El validador corre AQUÍ — antes de cualquier llamada de red
+        (/fixtures, /odds) — para que un partido con filiales o fases
+        tempranas de copa no gaste la cuota diaria de API-Football.
+        """
         active_matches = []
         skipped_matches = 0
         for match in matches:
             if self._active_league_id(match) is None:
                 skipped_matches += 1
                 continue
+            # Red flags: equipos filiales/juveniles y fases tempranas de copa
+            # se excluyen de la sincronización (nunca generan boleto ni EV).
+            try:
+                validate_match_integrity(
+                    home_team=str(match.get("home_team_name", "")),
+                    away_team=str(match.get("away_team_name", "")),
+                    match_type=str(match.get("match_type") or "LEAGUE"),
+                    round_name=match.get("round_name"),
+                )
+            except ValueError as red_flag:
+                logger.warning(
+                    "RED FLAG [match_id=%s] %s vs %s: %s — partido excluido de cuotas",
+                    match.get("match_id"),
+                    match.get("home_team_name"),
+                    match.get("away_team_name"),
+                    red_flag,
+                )
+                skipped_matches += 1
+                continue
             active_matches.append(match)
         if skipped_matches:
             logger.info(
-                "Omitidos %s partidos de cuotas por no pertenecer a ACTIVE_LEAGUE_IDS",
+                "Omitidos %s partidos de cuotas (ligas inactivas o red flags)",
                 skipped_matches,
             )
         return active_matches
@@ -406,16 +483,31 @@ class OddsService:
         return None
 
     @staticmethod
+    def _norm_match_name(name: str) -> str:
+        """Normaliza un nombre para comparación: minúsculas, sin tildes.
+
+        "Atlético Junior" (DB) == "Atletico Junior" (ESPN) deben ser el
+        mismo equipo; la diferencia de acentuación no puede romper el match.
+        """
+        import unicodedata
+        decomposed = unicodedata.normalize("NFKD", name)
+        return "".join(c for c in decomposed if not unicodedata.combining(c)).lower()
+
+    @staticmethod
     def _team_match_strength(name_a: str, name_b: str) -> str | None:
         """
         Fuerza del match entre dos nombres de equipo.
 
         Returns:
-            "exact"     → igualdad exacta (normalizada)
+            "exact"     → igualdad exacta (normalizada, sin tildes)
             "substring" → uno contiene al otro
-            "tokens"    → solape de tokens (fallback MÁS débil)
+            "tokens"    → un nombre es SUBCONJUNTO de tokens del otro
+                          (fallback MÁS débil)
             None        → no hay match
         """
+        name_a = OddsService._norm_match_name(name_a)
+        name_b = OddsService._norm_match_name(name_b)
+
         if name_a == name_b:
             return "exact"
         if name_a in name_b or name_b in name_a:
@@ -425,18 +517,16 @@ class OddsService:
         tokens_b = set(name_b.replace(".", "").replace("-", " ").split())
         if len(tokens_a) >= 2 and len(tokens_b) >= 2:
             overlap = tokens_a & tokens_b
-            if len(overlap) >= min(len(tokens_a), len(tokens_b)) - 1:
+            # Fix (fix 2, Grupo 2): exigir cobertura TOTAL del conjunto más
+            # grande. Antes se exigía min-1, que admitía 1 token de
+            # diferencia → "real madrid" vs "atletico madrid" matcheaba por
+            # tokens ({madrid} ≥ min(2,2)-1). Con subconjunto estricto,
+            # "union santa fe" vs "santa fe union" sigue matcheando pero
+            # Real Madrid ≠ Atlético Madrid.
+            if len(overlap) >= max(len(tokens_a), len(tokens_b)):
                 return "tokens"
 
         return None
-
-    @staticmethod
-    def _fuzzy_team_match(name_a: str, name_b: str) -> bool:
-        """
-        Matching difuso de nombres de equipos.
-        Retorna True si los nombres son suficientemente similares.
-        """
-        return OddsService._team_match_strength(name_a, name_b) is not None
 
     async def _fetch_and_parse_odds(
         self, fixture_id: int
@@ -499,8 +589,10 @@ class OddsService:
 
                         mapped_market = mapping.get(val_name)
                         if mapped_market == "1X2_DRAW":
-                            # Verificación estricta: cuota de empate puro (columna X / Draw) nunca puede ser anómala (< 2.10)
-                            if odds_val < 2.10:
+                            # Verificación estricta: cuota de empate puro
+                            # (columna X / Draw) nunca puede ser anómala
+                            # (por debajo de MIN_DRAW_ODDS_THRESHOLD).
+                            if odds_val < settings.MIN_DRAW_ODDS_THRESHOLD:
                                 logger.warning(
                                     f"Bloqueada cuota anómala para 1X2_DRAW (@ {odds_val}) en fixture {fixture_id}. "
                                     f"Sospecha de Doble Oportunidad o DNB."
@@ -569,7 +661,7 @@ class OddsService:
         odds = await self._odds_repo.get_odds_for_match(match_id)
         result: dict[str, float] = {}
         for odd in odds:
-            if odd.market_name == "1X2_DRAW" and odd.odds_value < 2.10:
+            if odd.market_name == "1X2_DRAW" and odd.odds_value < settings.MIN_DRAW_ODDS_THRESHOLD:
                 logger.debug(f"Filtered draw odds @ {odd.odds_value} for match {match_id}")
                 continue
             current = result.get(odd.market_name)
@@ -591,7 +683,7 @@ class OddsService:
         for odd in odds:
             if odd.opening_odds_value is None:
                 continue
-            if odd.market_name == "1X2_DRAW" and odd.opening_odds_value < 2.10:
+            if odd.market_name == "1X2_DRAW" and odd.opening_odds_value < settings.MIN_DRAW_ODDS_THRESHOLD:
                 logger.debug(
                     "Filtered anomalous opening draw odds @ %s for match %s",
                     odd.opening_odds_value, match_id,
