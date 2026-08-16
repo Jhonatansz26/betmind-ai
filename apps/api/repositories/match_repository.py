@@ -5,7 +5,7 @@ de partidos en la base de datos. Zero lógica de negocio aquí.
 """
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
@@ -108,6 +108,7 @@ class MatchRepository:
                     Match.regulation_time_only == True,  # noqa: E712
                 )
             )
+            .options(selectinload(Match.advanced_stats))
             .order_by(Match.match_date.desc())
             .limit(last_n)
         )
@@ -223,6 +224,9 @@ class MatchRepository:
         """
         Obtiene todos los partidos finalizados de una liga/temporada.
         Usado para calcular promedios de la liga en el motor ML.
+
+        A3: cuando ``season`` se pasa, filtra por año calendario del kickoff
+        (rango de fechas con índice, no extract()).
         """
         stmt = (
             select(Match)
@@ -234,8 +238,15 @@ class MatchRepository:
                     Match.regulation_time_only == True,  # noqa: E712
                 )
             )
+            .options(selectinload(Match.advanced_stats))
             .order_by(Match.match_date.desc())
         )
+        if season is not None:
+            start = datetime(season, 1, 1, tzinfo=timezone.utc)
+            end = datetime(season + 1, 1, 1, tzinfo=timezone.utc)
+            stmt = stmt.where(
+                and_(Match.match_date >= start, Match.match_date < end)
+            )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -286,8 +297,12 @@ class MatchRepository:
         Convierte un objeto Match ORM a dict para el pipeline ML.
         Formato esperado: {home_team_id, away_team_id, home_goals, away_goals,
                             home_corners, away_corners, home_yellows, away_yellows, ...}
+
+        Incluye home_xg/away_xg SOLO si la relación advanced_stats ya está
+        cargada en el ORM (los repositorios la precargan con selectinload);
+        __dict__.get evita disparar lazy-load en contexto async.
         """
-        return {
+        result = {
             "home_team_id": match.home_team_id,
             "away_team_id": match.away_team_id,
             "home_goals": match.home_score or 0,
@@ -303,6 +318,11 @@ class MatchRepository:
             "home_shots_on_target": match.home_shots_on_target,
             "away_shots_on_target": match.away_shots_on_target,
         }
+        advanced_stats = match.__dict__.get("advanced_stats")
+        if advanced_stats is not None:
+            result["home_xg"] = advanced_stats.home_xg
+            result["away_xg"] = advanced_stats.away_xg
+        return result
 
     async def save_prediction(self, prediction: Prediction) -> Prediction:
         """Persiste una predicción calculada. Retorna el objeto con ID asignado."""
@@ -644,6 +664,7 @@ class MatchRepository:
         home_defense_index: float | None = None,
         away_defense_index: float | None = None,
         markets_json: str | None = None,
+        model_version: str | None = None,
     ) -> Prediction:
         """Inserta o actualiza la prediccion cuantitativa para un partido."""
         try:
@@ -663,6 +684,8 @@ class MatchRepository:
                 existing.home_defense_index = home_defense_index
                 existing.away_defense_index = away_defense_index
                 existing.markets_json = markets_json
+                if model_version is not None:
+                    existing.model_version = model_version
                 await self._session.flush()
                 return existing
             else:
@@ -679,6 +702,7 @@ class MatchRepository:
                     home_defense_index=home_defense_index,
                     away_defense_index=away_defense_index,
                     markets_json=markets_json,
+                    model_version=model_version,
                 )
                 self._session.add(obj)
                 await self._session.flush()

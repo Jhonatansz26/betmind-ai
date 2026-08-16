@@ -8,12 +8,16 @@ con Ponderacion Exponencial por Tiempo (Time Decay):
     peso[k] = DECAY_FACTOR ** k    donde k=0 es el partido mas reciente
 
 de forma que los partidos recientes tienen mayor influencia en
-el calculo de promedios de goles y los indices de ataque/defensa.
+el calculo de promedios y los indices de ataque/defensa.
 
-    attack_index  = (goles_marcados_ponderados) / (promedio_liga)
-    defense_index = (promedio_liga) / (goles_recibidos_ponderados)
+Los indices usan una MEZCLA BAYESIANA 75/25 entre la estadistica avanzada
+(xG — lo que predice el proceso de creación de chances) y los goles reales
+(el resultado). Cuando no hay xG disponible, se degrada limpio a goles puros:
 
-Un defense_index > 1.0 significa que el equipo recibe MENOS goles
+    attack_index  = (0.75 * xg_marcado + 0.25 * goles_marcados) / base_mezclada_liga
+    defense_index = base_mezclada_liga / (0.75 * xg_recibido + 0.25 * goles_recibidos)
+
+Un defense_index > 1.0 significa que el equipo recibe MENOS goles/xG
 que el promedio de la liga (buena defensa).
 """
 import logging
@@ -21,6 +25,10 @@ from betmind_ml.schemas.team_strength import TeamStrengthProfile
 from betmind_ml.config import MIN_MATCHES_FOR_STRENGTH, STRENGTH_WINDOW, DECAY_FACTOR
 
 logger = logging.getLogger(__name__)
+
+# Peso del xG (proceso) frente a los goles reales (resultado) en la mezcla.
+# 75/25: la estadística avanzada predice el futuro mejor que el resultado.
+XG_BLEND_WEIGHT = 0.75
 
 
 def _compute_weighted_average(values: list[float]) -> float:
@@ -46,11 +54,12 @@ def _compute_weighted_average(values: list[float]) -> float:
 
 def calculate_league_averages(all_matches: list[dict]) -> dict:
     """
-    Calcula los promedios de goles de la liga entera.
-    Input: lista de dicts con home_goals, away_goals (ya filtrados a 90 min).
+    Calcula los promedios de la liga entera (goles y xG por equipo/partido).
+    Input: lista de dicts con home_goals, away_goals y, opcionalmente,
+    home_xg, away_xg (ya filtrados a 90 min).
     """
     if not all_matches:
-        return {"avg_goals_per_team_per_match": 1.35}  # fallback global histórico
+        return {"avg_goals_per_team_per_match": 1.35, "avg_xg_per_team_per_match": None}  # fallback global histórico
 
     total_goals = sum(
         (m.get("home_goals") or 0) + (m.get("away_goals") or 0)
@@ -60,11 +69,71 @@ def calculate_league_averages(all_matches: list[dict]) -> dict:
     total_matches = len([m for m in all_matches if m.get("home_goals") is not None])
 
     if total_matches == 0:
-        return {"avg_goals_per_team_per_match": 1.35}
+        return {"avg_goals_per_team_per_match": 1.35, "avg_xg_per_team_per_match": None}
 
     # Dividimos entre 2 porque cada partido tiene dos equipos
     avg = total_goals / (total_matches * 2)
-    return {"avg_goals_per_team_per_match": round(avg, 4)}
+
+    # Promedio de xG por equipo/partido — solo sobre partidos con xG.
+    # Sin cobertura de xG en la liga, queda None y el blend 75/25 se degrada
+    # a goles puros (comportamiento histórico).
+    xg_matches = [
+        m for m in all_matches
+        if m.get("home_xg") is not None and m.get("away_xg") is not None
+    ]
+    avg_xg = None
+    if xg_matches:
+        total_xg = sum((m["home_xg"] or 0) + (m["away_xg"] or 0) for m in xg_matches)
+        avg_xg = round(total_xg / (len(xg_matches) * 2), 4)
+
+    return {
+        "avg_goals_per_team_per_match": round(avg, 4),
+        "avg_xg_per_team_per_match": avg_xg,
+    }
+
+
+def calculate_attack_index(
+    team_xg_for: float | None,
+    team_goals_for: float,
+    league_avg_xg: float | None,
+    league_avg_goals: float,
+) -> float:
+    """
+    Índice de ataque con mezcla bayesiana 75/25 xG vs goles reales.
+
+    blend_equipo = 0.75 * xG_a_favor + 0.25 * goles_a_favor
+    blend_liga   = 0.75 * avg_xg_liga + 0.25 * avg_goles_liga
+    attack_index = blend_equipo / blend_liga
+
+    Sin xG (team_xg_for o league_avg_xg en None) se degrada a goles puros:
+    attack_index = goles_a_favor / avg_goles_liga.
+    """
+    if team_xg_for is None or league_avg_xg is None:
+        return team_goals_for / max(league_avg_goals, 0.01)
+    blend_team = XG_BLEND_WEIGHT * team_xg_for + (1 - XG_BLEND_WEIGHT) * team_goals_for
+    blend_league = XG_BLEND_WEIGHT * league_avg_xg + (1 - XG_BLEND_WEIGHT) * league_avg_goals
+    return blend_team / max(blend_league, 0.01)
+
+
+def calculate_defense_index(
+    team_xg_against: float | None,
+    team_goals_against: float,
+    league_avg_xg: float | None,
+    league_avg_goals: float,
+) -> float:
+    """
+    Índice de defensa con mezcla bayesiana 75/25 xG vs goles reales.
+
+    blend_equipo = 0.75 * xG_recibido + 0.25 * goles_recibidos
+    defense_index = blend_liga / blend_equipo   (>1 = mejor defensa que la liga)
+
+    Sin xG se degrada a goles puros: defense_index = avg_goles_liga / goles_recibidos.
+    """
+    if team_xg_against is None or league_avg_xg is None:
+        return league_avg_goals / max(team_goals_against, 0.01)
+    blend_team = XG_BLEND_WEIGHT * team_xg_against + (1 - XG_BLEND_WEIGHT) * team_goals_against
+    blend_league = XG_BLEND_WEIGHT * league_avg_xg + (1 - XG_BLEND_WEIGHT) * league_avg_goals
+    return blend_league / max(blend_team, 0.01)
 
 
 def calculate_team_strength(
@@ -96,9 +165,11 @@ def calculate_team_strength(
             team_name, match_count, MIN_MATCHES_FOR_STRENGTH
         )
 
-    # ── Calcular promedios de goles ───────────────────────────────────────────
+    # ── Calcular promedios de goles y xG ─────────────────────────────────────
     goals_scored = []
     goals_conceded = []
+    xg_scored = []
+    xg_conceded = []
 
     for match in recent:
         is_home = match.get("home_team_id") == team_id
@@ -106,29 +177,61 @@ def calculate_team_strength(
             if match.get("home_goals") is not None:
                 goals_scored.append(match["home_goals"])
                 goals_conceded.append(match.get("away_goals", 0))
+            if match.get("home_xg") is not None and match.get("away_xg") is not None:
+                xg_scored.append(match["home_xg"])
+                xg_conceded.append(match["away_xg"])
         else:
             if match.get("away_goals") is not None:
                 goals_scored.append(match["away_goals"])
                 goals_conceded.append(match.get("home_goals", 0))
+            if match.get("home_xg") is not None and match.get("away_xg") is not None:
+                xg_scored.append(match["away_xg"])
+                xg_conceded.append(match["home_xg"])
 
     avg_scored_raw = _compute_weighted_average(goals_scored)
     avg_conceded_raw = _compute_weighted_average(goals_conceded)
+    avg_xg_scored_raw = _compute_weighted_average(xg_scored)
+    avg_xg_conceded_raw = _compute_weighted_average(xg_conceded)
 
     league_avg = league_averages["avg_goals_per_team_per_match"]
+    league_avg_xg = league_averages.get("avg_xg_per_team_per_match")
+    has_xg = bool(xg_scored) and league_avg_xg is not None
+    if has_xg:
+        logger.info(
+            "TeamStrength: %s con xG disponible (%d partidos) — blend 75%% xG / 25%% goles",
+            team_name, len(xg_scored),
+        )
 
-    # ── Bayesian Shrinkage hacia el prior de liga (k=5) ──────────────────────
-    k = 5.0
+    # ── Promedios crudos (la única contracción vive en prediction_pipeline) ──
+    # Antes había DOS capas de contracción bayesiana: k=5 aquí y
+    # weight=count/5 en el pipeline. Con 3 partidos, el dato real pesaba
+    # 0.6 * 0.375 = 22.5% en vez del 60% de la fórmula única del pipeline.
+    # Se eliminó la capa de acá; las muestras chicas quedan contenidas por
+    # la mezcla del pipeline (weight=count/5) y el clamping de λ en
+    # poisson_engine. Sin datos, se cae al promedio de liga.
     if match_count == 0:
         avg_scored = league_avg
         avg_conceded = league_avg
     else:
-        weight = match_count / (match_count + k)
-        avg_scored = weight * avg_scored_raw + (1 - weight) * league_avg
-        avg_conceded = weight * avg_conceded_raw + (1 - weight) * league_avg
+        avg_scored = avg_scored_raw
+        avg_conceded = avg_conceded_raw
 
     # ── Calcular índices relativos ────────────────────────────────────────────
-    attack_index = avg_scored / max(league_avg, 0.01)
-    defense_index = league_avg / max(avg_conceded, 0.01)
+    # Blend bayesiano 75/25: xG (proceso) pondera sobre los goles (resultado).
+    # Sin xG disponible, los índices se degradan a goles puros (sin cambio
+    # respecto al comportamiento histórico).
+    attack_index = calculate_attack_index(
+        team_xg_for=avg_xg_scored_raw if has_xg else None,
+        team_goals_for=avg_scored,
+        league_avg_xg=league_avg_xg if has_xg else None,
+        league_avg_goals=league_avg,
+    )
+    defense_index = calculate_defense_index(
+        team_xg_against=avg_xg_conceded_raw if has_xg else None,
+        team_goals_against=avg_conceded,
+        league_avg_xg=league_avg_xg if has_xg else None,
+        league_avg_goals=league_avg,
+    )
 
     # ── Forma reciente (últimos 5) ────────────────────────────────────────────
     form_data = _calculate_form(team_id, team_matches[:5])

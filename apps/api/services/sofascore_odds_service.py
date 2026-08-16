@@ -30,6 +30,7 @@ from apps.api.repositories.bookmaker_odd_repository import (
     BookmakerOddsRepository,
 )
 from apps.api.services.cache_service import CacheService
+from apps.api.services.odds_service import validate_match_integrity
 from apps.api.services.sofascore_ingester import REQUEST_HEADERS, SOFASCORE_BASE_URL
 from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
@@ -349,6 +350,25 @@ class SofaScoreOddsService:
         """
         total_odds = 0
         for match in matches:
+            # Red flags de integridad (mismo filtro que API-Football/ESPN):
+            # filiales/juveniles y fases tempranas de copa se excluyen antes
+            # de gastar las llamadas de search/events/odds de SofaScore.
+            try:
+                validate_match_integrity(
+                    home_team=str(match.get("home_team_name", "")),
+                    away_team=str(match.get("away_team_name", "")),
+                    match_type=str(match.get("match_type") or "LEAGUE"),
+                    round_name=match.get("round_name"),
+                )
+            except ValueError as red_flag:
+                logger.warning(
+                    "RED FLAG [match_id=%s] %s vs %s: %s — partido excluido de cuotas SofaScore",
+                    match.get("match_id"),
+                    match.get("home_team_name"),
+                    match.get("away_team_name"),
+                    red_flag,
+                )
+                continue
             raw_league_id = match.get("league_external_id")
             if raw_league_id is None:
                 logger.warning(

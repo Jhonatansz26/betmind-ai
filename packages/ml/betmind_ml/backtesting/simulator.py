@@ -38,6 +38,7 @@ class BacktestMatch:
     historical_odds_draw: float | None = None
     historical_odds_away: float | None = None
     historical_odds_over_25: float | None = None
+    historical_odds_under_25: float | None = None
 
 
 @dataclass
@@ -52,9 +53,6 @@ class BacktestPrediction:
 
     predicted_result: str = ""
     result_correct: bool = False
-
-    ev_home_realized: float | None = None
-    ev_over_25_realized: float | None = None
 
     def __post_init__(self):
         m = self.match
@@ -79,6 +77,26 @@ class BacktestPrediction:
         if valid_probs:
             self.predicted_result = max(valid_probs, key=valid_probs.get)
             self.result_correct = (self.predicted_result == self.actual_result)
+
+
+def _historical_odds_dict(match: BacktestMatch) -> dict[str, float] | None:
+    """Cuotas históricas del partido en el formato del pipeline ML.
+
+    Mapea los campos historical_odds_* a los nombres de mercado que consume
+    run_prediction (bookmaker_odds) — el mismo contrato que
+    _build_bookmaker_odds del orquestador. Filtra cuotas <= 1.0.
+    """
+    result: dict[str, float] = {}
+    for market_name, value in (
+        ("1X2_HOME", match.historical_odds_home),
+        ("1X2_DRAW", match.historical_odds_draw),
+        ("1X2_AWAY", match.historical_odds_away),
+        ("OVER_2_5", match.historical_odds_over_25),
+        ("UNDER_2_5", match.historical_odds_under_25),
+    ):
+        if value is not None and value > 1.0:
+            result[market_name] = float(value)
+    return result if result else None
 
 
 def run_walkforward_simulation(
@@ -152,21 +170,6 @@ def run_walkforward_simulation(
             continue
 
         try:
-            prediction = run_prediction(
-                match_id=test_match.get("match_id", i),
-                home_team_id=home_id,
-                home_team_name=test_match.get("home_team_name", f"Team_{home_id}"),
-                away_team_id=away_id,
-                away_team_name=test_match.get("away_team_name", f"Team_{away_id}"),
-                league_id=league_id,
-                league_key=league_key,
-                season=season,
-                home_matches=home_training,
-                away_matches=away_training,
-                all_league_matches=training_pool,
-                h2h_matches=h2h_training,
-            )
-
             backtest_match = BacktestMatch(
                 match_id=test_match.get("match_id", i),
                 home_team_id=home_id,
@@ -183,6 +186,27 @@ def run_walkforward_simulation(
                 historical_odds_draw=test_match.get("odds_draw"),
                 historical_odds_away=test_match.get("odds_away"),
                 historical_odds_over_25=test_match.get("odds_over_25"),
+                historical_odds_under_25=test_match.get("odds_under_25"),
+            )
+
+            # A1: pasar las cuotas históricas al pipeline para que el EV
+            # real (p*odds-1) se calcule en el backtest. Antes se llamaba
+            # sin bookmaker_odds -> expected_value siempre None -> ROI/Yield
+            # fijos en 0.
+            prediction = run_prediction(
+                match_id=test_match.get("match_id", i),
+                home_team_id=home_id,
+                home_team_name=test_match.get("home_team_name", f"Team_{home_id}"),
+                away_team_id=away_id,
+                away_team_name=test_match.get("away_team_name", f"Team_{away_id}"),
+                league_id=league_id,
+                league_key=league_key,
+                season=season,
+                home_matches=home_training,
+                away_matches=away_training,
+                all_league_matches=training_pool,
+                h2h_matches=h2h_training,
+                bookmaker_odds=_historical_odds_dict(backtest_match),
             )
 
             results.append(BacktestPrediction(

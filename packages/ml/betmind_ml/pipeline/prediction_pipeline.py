@@ -7,14 +7,14 @@ No tiene dependencias de DB — recibe todo como parámetros.
 """
 import logging
 from betmind_ml.schemas.team_strength import TeamStrengthProfile
-from betmind_ml.schemas.prediction_output import MatchPredictionOutput, MarketProbability, PredictionVerdict, ScoreMatrix
+from betmind_ml.schemas.prediction_output import MatchPredictionOutput, PredictionVerdict, ScoreMatrix
 from betmind_ml.features.strength_calculator import (
     calculate_league_averages,
     calculate_team_strength,
 )
 from betmind_ml.models.poisson_engine import calculate_lambdas, build_score_matrix
 from betmind_ml.models.market_calculator import build_all_markets
-from betmind_ml.ev.ev_calculator import enrich_markets_batch, get_top_ev_opportunities
+from betmind_ml.ev.ev_calculator import enrich_markets_batch
 from betmind_ml.config import MODEL_VERSION, CONFIDENCE_WEIGHTS, MIN_MATCHES_FOR_STRENGTH, HOME_ADVANTAGE_BY_LEAGUE
 
 logger = logging.getLogger(__name__)
@@ -89,7 +89,6 @@ def run_prediction(
     # ── 3. Fallback Bayesiano con prior de liga ──────────────────────────────
     home_matches_count = getattr(home_strength, 'match_count', 0)
     away_matches_count = getattr(away_strength, 'match_count', 0)
-    reliable_count = sum(1 for c in (home_matches_count, away_matches_count) if c >= MIN_MATCHES_FOR_STRENGTH)
 
     # ── 4. Lambdas (xG) con blending bayesiano ───────────────────────────────
     lambda_home, lambda_away = calculate_lambdas(
@@ -103,7 +102,7 @@ def run_prediction(
     # Mezcla bayesiana: cuando un equipo tiene < 5 partidos,
     # su lambda se funde con el promedio de la liga proporcionalmente
     if home_matches_count < MIN_MATCHES_FOR_STRENGTH:
-        league_prior = league_averages["avg_goals_per_team_per_match"] * (HOME_ADVANTAGE_BY_LEAGUE.get(league_key, 1.0) if not is_neutral_venue else 1.0)
+        league_prior = league_averages["avg_goals_per_team_per_match"] * (HOME_ADVANTAGE_BY_LEAGUE.get(league_key, HOME_ADVANTAGE_BY_LEAGUE["default"]) if not is_neutral_venue else 1.0)
         weight = home_matches_count / MIN_MATCHES_FOR_STRENGTH
         lambda_home = lambda_home * weight + league_prior * (1 - weight)
         logger.info("Bayesian blend home: λ_home=%.3f (weight=%.2f, prior=%.2f, N=%d)", lambda_home, weight, league_prior, home_matches_count)
@@ -118,7 +117,7 @@ def run_prediction(
     MIN_LAMBDA = 0.15
     league_base = league_averages.get("avg_goals_per_team_per_match", 1.35) or 1.35
     if lambda_home < MIN_LAMBDA:
-        lambda_home = league_base * (HOME_ADVANTAGE_BY_LEAGUE.get(league_key, 1.0) if not is_neutral_venue else 1.0)
+        lambda_home = league_base * (HOME_ADVANTAGE_BY_LEAGUE.get(league_key, HOME_ADVANTAGE_BY_LEAGUE["default"]) if not is_neutral_venue else 1.0)
         lambda_home = max(lambda_home, MIN_LAMBDA)
     if lambda_away < MIN_LAMBDA:
         lambda_away = league_base
@@ -135,7 +134,7 @@ def run_prediction(
         away_corners_for_avg=away_corners_for_avg,
         home_corners_against_avg=home_corners_against_avg,
         away_corners_against_avg=away_corners_against_avg,
-        home_adv_factor=HOME_ADVANTAGE_BY_LEAGUE.get(league_key, 1.0) if not is_neutral_venue else 1.0,
+        home_adv_factor=HOME_ADVANTAGE_BY_LEAGUE.get(league_key, HOME_ADVANTAGE_BY_LEAGUE["default"]) if not is_neutral_venue else 1.0,
         home_yellows_avg=home_yellows_avg,
         away_yellows_avg=away_yellows_avg,
         cards_mti=cards_mti,
@@ -256,17 +255,3 @@ def _calculate_confidence(
     raw_score = sum(scores[key] * weights[key] for key in weights if key in scores)
 
     return round(min(max(raw_score, 0), 100)), flags
-
-
-def _build_prior_markets(
-    league_avg_goals: float,
-    league_key: str = "default",
-    is_neutral_venue: bool = False,
-) -> list[MarketProbability]:
-    """Fallback defensivo: mercados del prior de liga para nunca devolver 0.0."""
-    home_adv = HOME_ADVANTAGE_BY_LEAGUE.get(league_key, 1.0) if not is_neutral_venue else 1.0
-    lambda_home = league_avg_goals * home_adv
-    lambda_away = league_avg_goals
-
-    prior_matrix = build_score_matrix(lambda_home, lambda_away)
-    return build_all_markets(prior_matrix.matrix, lambda_home, lambda_away, league_key=league_key)

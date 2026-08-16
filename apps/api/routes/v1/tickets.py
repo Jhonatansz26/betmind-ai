@@ -23,7 +23,10 @@ from apps.api.models.bookmaker_odd import BookmakerOdd
 from apps.api.models.match import Match
 from apps.api.models.league import League
 from apps.api.repositories.match_repository import LEAGUE_KEY_TO_EXTERNAL_ID
-from apps.api.engine.ticket_builder import build_ticket_for_mode
+from apps.api.engine.ticket_builder import (
+    build_ticket_for_mode,
+    rescue_isolated_singles,
+)
 from apps.api.dependencies import (
     get_async_session,
     get_cache_service,
@@ -81,7 +84,9 @@ async def save_ticket(
                 )
         else:
             anon_key = f"save:daily:ip:{client_ip}:{cot_date}"
-            saved_count = await cache.increment(anon_key, ttl_seconds=86_400)
+            saved_count = await cache.increment(
+                anon_key, ttl_seconds=86_400, on_error=6
+            )
             if saved_count > 5:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -466,7 +471,7 @@ async def generate_tickets(
             if current_user_id is not None
             else f"gen:daily:ip:{client_ip}:{cot_date}"
         )
-        count = await cache.increment(gen_key, ttl_seconds=86_400)
+        count = await cache.increment(gen_key, ttl_seconds=86_400, on_error=3)
         if count > 2:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -544,6 +549,12 @@ async def generate_tickets(
             tickets.append(ticket)
             for leg in ticket.legs:
                 used_match_ids.add(leg.match_id)
+
+    # Rescate de singles fantasma: los +EV puros de alta volatilidad que el
+    # interceptor aisló de las combinadas se emiten como boletos de una
+    # pierna junto al parlay principal (sin duplicar match_id y con límite
+    # lógico de boletos por respuesta).
+    tickets = rescue_isolated_singles(tickets, used_match_ids)
 
     response = TicketGenerateResponse(
         generated_at=datetime.now(COT).isoformat(),

@@ -109,13 +109,30 @@ class CacheService:
             logger.debug(f"Error escribiendo JSON en Redis key '{key}': {e}")
             return False
 
-    async def increment(self, key: str, ttl_seconds: int = 86_400) -> int:
+    async def increment(
+        self, key: str, ttl_seconds: int = 86_400, on_error: int | None = None
+    ) -> int:
+        """Incrementa un contador diario; retorna el nuevo valor.
+
+        Si Redis falla y ``on_error`` está seteado, retorna ``on_error`` en
+        vez de 0: los callers que chequean ``count > limite`` pasan a
+        FAIL-CLOSED (el límite se aplica) en vez de abrirse. Se loguea a
+        nivel ERROR para detectar el problema rápido.
+        """
         try:
             count = await self.client.incr(key)
             if count == 1:
                 await self.client.expire(key, ttl_seconds)
             return count
         except (RedisError, ConnectionError, OSError) as e:
+            if on_error is not None:
+                logger.error(
+                    "Redis unavailable al incrementar '%s' (ttl=%ss); aplicando "
+                    "fail-closed (on_error=%s) — los límites freemium pueden "
+                    "bloquear usuarios legítimos mientras Redis siga caído: %s",
+                    key, ttl_seconds, on_error, e,
+                )
+                return on_error
             logger.debug(f"Error incrementando Redis key '{key}': {e}")
             return 0
 

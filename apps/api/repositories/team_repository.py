@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.models.team import Team
-from apps.api.services.team_normalizer import canonical_team_name, fuzzy_match_team
+from apps.api.services.team_normalizer import team_identity_key, fuzzy_match_team
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +43,14 @@ class TeamRepository:
 
     async def _find_by_normalized_name(self, name: str) -> Optional[Team]:
         """
-        Busca equipo existente por nombre canonicalizado (cross-provider matching).
-        Carga todos los equipos y compara en memoria con canonical_team_name().
-        Si no hay match exacto, intenta fuzzy matching.
+        Busca equipo existente por clave de identidad conservadora
+        (team_identity_key), que NO elimina prefijos distintivos
+        ("real"/"atletico"/"deportivo"), evitando fusionar clubes distintos
+        ("Deportivo Cali" ≠ "América de Cali"). Si no hay match exacto,
+        intenta fuzzy matching.
         """
-        norm_target = canonical_team_name(name)
-        if not norm_target:
+        identity_target = team_identity_key(name)
+        if not identity_target:
             return None
 
         stmt = select(Team).limit(5000)
@@ -56,9 +58,9 @@ class TeamRepository:
         all_teams = result.scalars().all()
 
         for team in all_teams:
-            if canonical_team_name(team.name) == norm_target:
+            if team_identity_key(team.name) == identity_target:
                 logger.debug(
-                    "Cross-provider match: '%s' (ext=%s) → canonical '%s' (ext=%s, id=%s)",
+                    "Cross-provider match: '%s' (ext=%s) → identity '%s' (ext=%s, id=%s)",
                     name, None, team.name, team.external_id, team.id,
                 )
                 return team

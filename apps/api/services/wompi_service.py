@@ -220,6 +220,33 @@ class WompiClient:
             raise WompiAPIError(response.status_code, str(message), payload)
         return payload
 
+    async def _put(self, path: str) -> dict[str, Any]:
+        private_key = self._require_private_key()
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.put(
+                    f"{self._base_url}/{path.lstrip('/')}",
+                    headers={
+                        "Authorization": f"Bearer {private_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
+        except httpx.HTTPError as exc:
+            raise WompiAPIError(503, "No se pudo conectar con Wompi.") from exc
+
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"raw": response.text}
+        if not response.is_success:
+            message = (
+                payload.get("error", {}).get("reason")
+                if isinstance(payload.get("error"), dict)
+                else None
+            ) or payload.get("message") or "Wompi rechazó la operación."
+            raise WompiAPIError(response.status_code, str(message), payload)
+        return payload
+
     async def get_acceptance_tokens(self) -> tuple[str, str]:
         public_key = self._require_public_key()
         try:
@@ -327,4 +354,24 @@ class WompiClient:
         data = payload.get("data")
         if not isinstance(data, dict) or not data.get("id"):
             raise WompiAPIError(502, "Wompi no devolvió datos de la transacción.", payload)
+        return data
+
+    async def void_payment_source(self, payment_source_id: str) -> dict[str, Any]:
+        """Detiene el cobro recurrente anulando la fuente de pago en Wompi.
+
+        `PUT /payment_sources/{id}/void` (private key) — documentado por
+        Wompi como el mecanismo para cancelar la suscripción/fuente: tras
+        quedar en estado `VOIDED`, Wompi ya no permite crear transacciones
+        con esa fuente, así que no hay más cobros recurrentes posibles.
+        """
+        payload = await self._put(f"/payment_sources/{payment_source_id}/void")
+        data = payload.get("data")
+        if not isinstance(data, dict) or not data.get("id"):
+            raise WompiAPIError(502, "Wompi no devolvió una fuente de pago válida al anular.", payload)
+        if data.get("status") != "VOIDED":
+            raise WompiAPIError(
+                502,
+                f"La fuente de pago no quedó anulada (status={data.get('status')!r}).",
+                payload,
+            )
         return data

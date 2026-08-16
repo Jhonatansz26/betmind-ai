@@ -1,7 +1,11 @@
 from dataclasses import dataclass
+import logging
+
 from apps.api.schemas.ticket import TicketMode, TicketLegSchema, GeneratedTicket
 from apps.api.engine.kelly import calculate_quarter_kelly, MAX_KELLY_STAKE
 from betmind_ml.config import EV_POSITIVE_THRESHOLD
+
+logger = logging.getLogger(__name__)
 
 HIGH_VARIANCE_LEAGUES = {
     "liga_betplay", "liga_profesional_arg", "liga_mx",
@@ -60,6 +64,90 @@ MODE_CONFIG = {
     },
 }
 
+# ── Ruteo Dinámico (Interceptor Simple vs. Combinada) ────────────────────────
+# Regla inquebrantable: en EDGE/VALUE, el +EV puro a cuota volátil (>= 2.00)
+# NUNCA viaja dentro de una combinada (el producto de varianzas destruye el
+# apalancamiento): se aísla como apuesta simple. Solo las cuotas controladas
+# (1.30-1.99) son elegibles para combinadas — sin agujero negro en el rango.
+# El modo BOLD es la excepción deliberada: su producto ES la varianza, por
+# eso las cuotas >= 2.00 con +EV siguen siendo PARLAY_ELIGIBLE para no
+# romper el ensamblaje de sus combinadas de alto riesgo.
+HIGH_VOLATILITY_ODDS_THRESHOLD = 2.00
+PARLAY_ODDS_LOW = 1.30
+PARLAY_ODDS_HIGH = 1.99
+ROUTING_EV_THRESHOLD = EV_POSITIVE_THRESHOLD
+
+
+def _normalize_ticket_mode(ticket_mode: TicketMode | str | None) -> TicketMode | None:
+    """
+    Normaliza el modo operativo para el ruteo sin romper por formato.
+
+    - Enum TicketMode → se devuelve tal cual.
+    - str → se convierte a minúscula y se valida contra el Enum ("BOLD" → bold).
+    - None o formato desconocido → None: el interceptor aplica la política
+      estricta por defecto (EDGE/VALUE: cuotas >= 2.00 se aíslan como SINGLE).
+    """
+    if ticket_mode is None:
+        return None
+    if isinstance(ticket_mode, TicketMode):
+        return ticket_mode
+    if isinstance(ticket_mode, str):
+        try:
+            return TicketMode(ticket_mode.strip().lower())
+        except ValueError:
+            logger.warning("Ruteo: modo desconocido %r — política estricta default", ticket_mode)
+            return None
+    logger.warning("Ruteo: tipo de modo inesperado %r — política estricta default", type(ticket_mode).__name__)
+    return None
+
+
+def route_prediction(
+    odds: float | None,
+    ev_value: float | None,
+    ticket_mode: TicketMode | str | None = None,
+) -> dict:
+    """
+    Interceptor estricto de ruteo ANTES del ensamblaje del boleto.
+
+    - PARLAY_ELIGIBLE: cuota controlada (1.30-1.99) con +EV puro (>= 3%) →
+      única población permitida para armado de combinadas (aplanamiento de
+      varianza). Todo el rango entre 1.30 y 1.99 es válido: no hay agujero
+      negro de cuotas.
+    - SINGLE: en modos EDGE/VALUE, cuota de alta volatilidad (>= 2.00) con
+      +EV puro → se aísla obligatoriamente como apuesta simple, jamás entra
+      a una combinada.
+    - BOLD: excepción deliberada — su producto ES la varianza, por lo que
+      las cuotas >= 2.00 con +EV permanecen PARLAY_ELIGIBLE y el
+      ensamblaje de combinadas de alto riesgo no se rompe.
+    - DISCARD: cuotas fuera de rango (< 1.30), sin +EV puro (< 3%) o con
+      valores nulos → rechazadas sin importar su EV.
+
+    El modo se normaliza con _normalize_ticket_mode: strings ("BOLD", "bold")
+    y enums se aceptan; formatos desconocidos o None caen a la política
+    estricta (SINGLE para >= 2.00).
+    """
+    if odds is None or ev_value is None:
+        return {"mode": "DISCARD", "reason": "Variance out of bounds"}
+
+    if odds < PARLAY_ODDS_LOW or ev_value < ROUTING_EV_THRESHOLD:
+        return {"mode": "DISCARD", "reason": "Variance out of bounds"}
+
+    if odds <= PARLAY_ODDS_HIGH:
+        return {"mode": "PARLAY_ELIGIBLE", "reason": "Controlled Variance"}
+
+    # odds >= HIGH_VOLATILITY_ODDS_THRESHOLD (2.00) con +EV puro
+    if _normalize_ticket_mode(ticket_mode) == TicketMode.BOLD:
+        return {"mode": "PARLAY_ELIGIBLE", "reason": "High Volatility allowed in BOLD"}
+
+    return {"mode": "SINGLE", "reason": "High Volatility +EV"}
+
+
+# Combinaciones PROHIBIDAS por correlación/coherencia de mercado (heurística).
+# NOTA: esto NO es lo mismo que bet_builder_engine._MUTUALLY_EXCLUSIVE, que
+# cubre la exclusión LÓGICA (pares Over/Under de la misma línea, 1X2, BTTS).
+# Acá prohibimos pares de mercados DISTINTOS con correlación negativa
+# empírica (ej. UNDER_2_5 + BTTS_YES). Se mantienen separadas a propósito:
+# una es una verdad formal, la otra una política de riesgo.
 FORBIDDEN_COMBINATIONS: list[frozenset] = [
     frozenset({"UNDER_2_5",  "BTTS_YES"}),
     frozenset({"UNDER_1_5",  "BTTS_YES"}),
@@ -359,6 +447,106 @@ def _build_quantitative_reasoning(
     return ". ".join(metrics) + "."
 
 
+def _build_single_ticket(
+    mode: TicketMode,
+    single_candidates: list[TicketLegSchema],
+    config: dict,
+) -> GeneratedTicket:
+    """
+    Emite la mejor pierna de +EV de alta volatilidad como APUESTA SIMPLE.
+
+    Política: las cuotas volátiles con +EV puro se procesan obligatoriamente
+    como singles. Cuando no hay piernas de varianza controlada suficientes
+    para armar una combinada en el modo, la mejor pierna SINGLE se aísla
+    como boleto de una sola selección en lugar de forzar un parlay con
+    cuotas fuera de rango. Las demás piernas aisladas quedan expuestas en
+    isolated_singles para que el orquestador de salida las rescate.
+    """
+    leg = max(single_candidates, key=lambda c: c.confidence_score)
+    combined = leg.bookmaker_odds
+    real_ev = round(leg.expected_value or 0.0, 4)
+    combined_kelly = _calculate_combined_kelly(
+        [leg], config["max_ticket_exposure"]
+    )
+    base_confidence = min(max(round(real_ev * 400 + 5), 0), 95)
+
+    if combined_kelly > 0:
+        staking = f"Kelly: {combined_kelly * 100:.1f}% del bankroll"
+    else:
+        staking = config["staking"]
+
+    remaining_singles = [c for c in single_candidates if c is not leg]
+
+    return GeneratedTicket(
+        mode=mode,
+        mode_label=_build_mode_label(mode),
+        legs=[leg],
+        combined_odds=combined,
+        average_ev=real_ev,
+        kelly_stake=combined_kelly,
+        confidence_score=base_confidence,
+        correlation_validated=True,
+        tactical_summary=(
+            f"SINGLE de +EV alta volatilidad: {leg.market_label} @ {combined:.2f} "
+            f"({leg.home_team} vs {leg.away_team}). EV real {real_ev * 100:.1f}%."
+        ),
+        pros=[
+            "Pierna aislada como SINGLE por +EV puro de alta volatilidad",
+            f"Cuota {combined:.2f} fuera del rango de varianza controlada (1.30-1.99)",
+        ],
+        cons=_build_cons([leg], real_ev, combined),
+        staking_suggestion=staking,
+        replacement_candidates=remaining_singles,
+        isolated_singles=remaining_singles,
+        optimized_count=False,
+        original_requested=None,
+    )
+
+
+def build_isolated_single_ticket(
+    mode: TicketMode,
+    leg: TicketLegSchema,
+) -> GeneratedTicket:
+    """Emite un boleto de UNA pierna desde una selección SINGLE aislada.
+
+    Usado por el orquestador de salida (rescue_isolated_singles) para
+    convertir cada pierna de +EV de alta volatilidad que el parlay no
+    absorbió en su propio boleto simple.
+    """
+    return _build_single_ticket(mode, [leg], MODE_CONFIG[mode])
+
+
+MAX_TICKETS_PER_RESPONSE = 8  # límite lógico de boletos por respuesta
+
+
+def rescue_isolated_singles(
+    tickets: list[GeneratedTicket],
+    used_match_ids: set[int],
+    max_tickets: int = MAX_TICKETS_PER_RESPONSE,
+) -> list[GeneratedTicket]:
+    """
+    Rescata los SINGLES de +EV de alta volatilidad que los parlays no
+    absorbieron y los agrega a la respuesta como boletos de una pierna.
+
+    Reglas:
+      - No duplicar match_id: una pierna cuyo partido ya está cubierto por
+        otro boleto de la respuesta se descarta (mismo partido, doble
+        exposición).
+      - Límite lógico de boletos por respuesta (max_tickets): evita que el
+        payload explote en días con muchos singles aislados.
+    """
+    rescued = list(tickets)
+    for ticket in tickets:
+        for single in (ticket.isolated_singles or []):
+            if len(rescued) >= max_tickets:
+                return rescued
+            if single.match_id in used_match_ids:
+                continue
+            rescued.append(build_isolated_single_ticket(ticket.mode, single))
+            used_match_ids.add(single.match_id)
+    return rescued
+
+
 def build_ticket_for_mode(
     mode: TicketMode,
     available_predictions: list[dict],
@@ -380,6 +568,7 @@ def build_ticket_for_mode(
     max_individual_odds = config.get("max_individual_odds", 999)
 
     candidates: list[TicketLegSchema] = []
+    single_candidates: list[TicketLegSchema] = []
 
     for pred in available_predictions:
         if pred["match_id"] in exclude:
@@ -453,9 +642,36 @@ def build_ticket_for_mode(
             if not _passes_anti_cascara_filter(leg):
                 continue
 
+            # Interceptor de ruteo: la volatilidad de la cuota y el modo
+            # operativo deciden el destino de la pierna. DISCARD se elimina,
+            # SINGLE se aísla (nunca en combinada, excepto BOLD donde la
+            # volatilidad es parlay-eligible) y PARLAY_ELIGIBLE alimenta el
+            # ensamblaje.
+            routing = route_prediction(bm_odds, ev, ticket_mode=mode)
+            if routing["mode"] == "DISCARD":
+                logger.info(
+                    "Routing DISCARD: %s %s @ %.2f (EV %+.3f) — %s",
+                    pred["home_team"], pred["away_team"], bm_odds, ev,
+                    routing["reason"],
+                )
+                continue
+            if routing["mode"] == "SINGLE":
+                logger.info(
+                    "Routing SINGLE: %s %s %s @ %.2f (EV %+.3f) — aislada de combinadas",
+                    pred["home_team"], pred["away_team"], mkt_name, bm_odds, ev,
+                )
+                single_candidates.append(leg)
+                continue
+
             candidates.append(leg)
 
     if not candidates:
+        if single_candidates:
+            logger.info(
+                "Sin piernas de varianza controlada en modo %s — emitiendo "
+                "SINGLE de +EV alta volatilidad (pierna aislada)", mode.value,
+            )
+            return _build_single_ticket(mode, single_candidates, config)
         return None
 
     candidates.sort(key=lambda c: c.confidence_score, reverse=True)
@@ -485,6 +701,12 @@ def build_ticket_for_mode(
         selected_market_names.append(candidate.market_name)
 
     if not selected or (not requested_count and len(selected) < 2):
+        if single_candidates:
+            logger.info(
+                "Sin combinada viable en modo %s — emitiendo SINGLE de +EV "
+                "alta volatilidad (pierna aislada)", mode.value,
+            )
+            return _build_single_ticket(mode, single_candidates, config)
         return None
 
     combined = calculate_combined_odds(selected)
@@ -519,6 +741,13 @@ def build_ticket_for_mode(
                 break
 
     if len(selected) > 1 and not (target_min <= combined <= target_max):
+        if single_candidates:
+            logger.info(
+                "Combinada fuera del rango objetivo (%s) en modo %s — "
+                "emitiendo SINGLE de +EV alta volatilidad (pierna aislada)",
+                f"{combined:.2f}", mode.value,
+            )
+            return _build_single_ticket(mode, single_candidates, config)
         return None
 
     match_score_matrices: dict[int, list[list[float]]] = {
@@ -571,6 +800,9 @@ def build_ticket_for_mode(
                 selected_market_names + [candidate.market_name]
             )[0]
         ],
+        # Singles de +EV de alta volatilidad que el parlay NO absorbió:
+        # el orquestador de salida los rescata como boletos de una pierna.
+        isolated_singles=single_candidates,
         optimized_count=bool(requested_count and len(selected) < requested_count),
         original_requested=requested_count,
     )

@@ -40,6 +40,18 @@ def _jwt_secret() -> str:
     return settings.SUPABASE_JWT_SECRET or settings.SECRET_KEY
 
 
+def _reset_token_secret() -> str:
+    """Signing secret for password-reset tokens.
+
+    Uses RESET_TOKEN_SECRET when configured — this immediately invalidates
+    every outstanding reset token (recommended after any suspected leak).
+    Falls back to the main JWT secret for backward compatibility; the
+    "purpose" claim check in get_current_user_id still blocks their misuse
+    as session tokens.
+    """
+    return settings.RESET_TOKEN_SECRET or _jwt_secret()
+
+
 def create_access_token(user_id: int) -> str:
     """Emit a session JWT valid for ACCESS_TOKEN_EXPIRE_MINUTES (7 days)."""
     now = datetime.now(tz=timezone.utc)
@@ -66,7 +78,7 @@ def create_reset_token(user_id: int) -> str:
         "iat": now,
         "exp": expire,
     }
-    return jwt.encode(payload, _jwt_secret(), algorithm=settings.ALGORITHM)
+    return jwt.encode(payload, _reset_token_secret(), algorithm=settings.ALGORITHM)
 
 
 def decode_reset_token(token: str) -> int:
@@ -76,7 +88,7 @@ def decode_reset_token(token: str) -> int:
     bad signature, etc.) so callers can map it to a 400 response.
     """
     try:
-        payload = jwt.decode(token, _jwt_secret(), algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, _reset_token_secret(), algorithms=[settings.ALGORITHM])
     except JWTError as exc:
         raise ValueError("Token inválido o expirado") from exc
 

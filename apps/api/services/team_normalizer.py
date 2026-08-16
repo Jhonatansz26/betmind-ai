@@ -236,8 +236,13 @@ def fuzzy_match_team(search_name: str, candidates: list[str]) -> Optional[str]:
     """
     Tries to find a fuzzy match for search_name among candidate names.
     Returns the best matching candidate name, or None if no match found.
+
+    Usa team_identity_key (misma base conservadora que el match exacto del
+    repositorio) para que el fallback no re-introduzca la fusión agresiva
+    que canonical_team_name sí hace: "Real Madrid" ≠ "Atlético Madrid" y
+    "Deportivo Cali" ≠ "América de Cali".
     """
-    norm_search = canonical_team_name(search_name)
+    norm_search = team_identity_key(search_name)
     if not norm_search:
         return None
 
@@ -247,7 +252,7 @@ def fuzzy_match_team(search_name: str, candidates: list[str]) -> Optional[str]:
         return None
 
     for candidate in candidates:
-        norm_cand = canonical_team_name(candidate)
+        norm_cand = team_identity_key(candidate)
         cand_tokens = set(norm_cand.split()) - _STOP_WORDS
         if not cand_tokens:
             continue
@@ -261,15 +266,21 @@ def fuzzy_match_team(search_name: str, candidates: list[str]) -> Optional[str]:
             return candidate
 
     for candidate in candidates:
-        norm_cand = canonical_team_name(candidate)
+        norm_cand = team_identity_key(candidate)
         cand_tokens = set(norm_cand.split()) - _STOP_WORDS
         if not cand_tokens:
             continue
 
+        # Fix (fusión de equipos): el segundo pase exige overlap sobre el
+        # conjunto MÁS GRANDE (no el más chico). Antes, "Deportivo Cali"
+        # (1 token) matcheaba 1.0 contra "América de Cali" (2 tokens) porque
+        # la intersección se dividía por min(1,2)=1. Con umbral 0.9 sobre
+        # max, este pase queda redundante con el primero (0.6/max); se
+        # mantiene como red de seguridad explícita.
         intersection = search_tokens & cand_tokens
         if len(intersection) > 0:
-            overlap_smaller = len(intersection) / min(len(search_tokens), len(cand_tokens))
-            if overlap_smaller >= 0.75:
+            overlap_larger = len(intersection) / max(len(search_tokens), len(cand_tokens))
+            if overlap_larger >= 0.9:
                 return candidate
 
     return None

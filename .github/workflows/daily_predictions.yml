@@ -1,8 +1,8 @@
-name: Predicciones frecuentes BetMind AI
+﻿name: Predicciones frecuentes BetMind AI
 
 # Este workflow corre cada 2h porque batch_predict y evaluate_predictions
 # trabajan sobre datos ya persistidos y no consumen API-Football. El sync de
-# fixtures, la ingesta de estadísticas y CLV tienen workflows separados con
+# fixtures, la ingesta de estadÃ­sticas y CLV tienen workflows separados con
 # frecuencias limitadas para proteger la cuota diaria del plan Free.
 
 on:
@@ -32,6 +32,7 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       DEBUG: "false"
+      AUTO_CREATE_TABLES: "false"
 
     steps:
       - name: Clonar repositorio
@@ -55,6 +56,6 @@ jobs:
           python scripts/batch_predict.py --mode full --limit 150
 
       - name: Evaluar predicciones contra resultados reales
-        # Idempotente (ON CONFLICT DO NOTHING): evalúa solo partidos FINISHED
-        # con predicción aún no evaluada. Sin alertas todavía — solo datos.
+        # Idempotente (ON CONFLICT DO NOTHING): evalÃºa solo partidos FINISHED
+        # con predicciÃ³n aÃºn no evaluada. Sin alertas todavÃ­a â€” solo datos.
         run: python -m apps.api.jobs.evaluate_predictions --days 30

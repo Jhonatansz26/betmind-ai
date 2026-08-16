@@ -6,6 +6,12 @@ from typing import Annotated, Any
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, NoDecode
 
+from betmind_ml.config import (
+    GROQ_TIMEOUT_SECONDS as _DEFAULT_GROQ_TIMEOUT_SECONDS,
+    GROQ_SINGLE_CALL_TIMEOUT as _DEFAULT_GROQ_SINGLE_CALL_TIMEOUT,
+    GROQ_NARRATIVE_TIMEOUT as _DEFAULT_GROQ_NARRATIVE_TIMEOUT,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,6 +59,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "BetMind AI"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+    # En dev (sqlite) el arranque crea el schema con create_all. En
+    # producción DEBE ser false: el schema solo cambia por migraciones.
+    AUTO_CREATE_TABLES: bool = True
     ALLOWED_ORIGINS: Annotated[list[str], NoDecode] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -83,6 +92,18 @@ class Settings(BaseSettings):
     # 7 days — no refresh token for MVP (conscious scope decision)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
     # Password-reset tokens use a hard-coded 30-minute TTL in auth_service.py
+    # Dedicated signing secret for password-reset JWTs. When configured, it
+    # immediately invalidates every outstanding reset token (mitigation for
+    # potentially-compromised reset tokens) without touching session tokens.
+    # Defaults to the main JWT secret when unset, keeping existing deployments
+    # working (the "purpose" claim check still blocks their misuse).
+    RESET_TOKEN_SECRET: str | None = None
+    # Explicit opt-in for the X-Betmind-Dev-Pro header backdoor. Must be
+    # false in every non-local deployment; DEBUG alone is NOT sufficient.
+    ENABLE_DEV_BACKDOOR: bool = False
+    # IPs/CIDRs trusted to forward the real client IP via X-Forwarded-For
+    # (comma-separated or JSON list). X-Forwarded-For is ignored otherwise.
+    TRUSTED_PROXIES: Annotated[list[str], NoDecode] = []
     ADMIN_API_KEY: str = ""
     # Frontend base URL used to build password-reset links
     FRONTEND_URL: str = "http://localhost:3000"
@@ -110,9 +131,17 @@ class Settings(BaseSettings):
     SUBSCRIPTION_GRACE_DAYS: int = 3
     PENDING_PAYMENT_RECONCILE_DELAY_MINUTES: int = 10
 
-    GROQ_TIMEOUT_SECONDS: float = 90.0
-    GROQ_SINGLE_CALL_TIMEOUT: float = 25.0
-    GROQ_NARRATIVE_TIMEOUT: float = 80.0
+    # Timeouts de Groq: defaults tomados de betmind_ml.config (fuente única);
+    # se pueden sobreescribir por variable de entorno.
+    GROQ_TIMEOUT_SECONDS: float = _DEFAULT_GROQ_TIMEOUT_SECONDS
+    GROQ_SINGLE_CALL_TIMEOUT: float = _DEFAULT_GROQ_SINGLE_CALL_TIMEOUT
+    GROQ_NARRATIVE_TIMEOUT: float = _DEFAULT_GROQ_NARRATIVE_TIMEOUT
+
+    # Cuota mínima aceptable para 1X2_DRAW en el parseo de cuotas de
+    # API-Football y en las lecturas de bookmaker_odds: valores por debajo
+    # suelen ser Doble Oportunidad/DNB colados en la columna X (cuota de
+    # empate puro < 2.10 es anómala). Ajustable sin tocar código.
+    MIN_DRAW_ODDS_THRESHOLD: float = 2.10
 
     model_config = {
         "env_file_encoding": "utf-8",
@@ -147,18 +176,18 @@ class Settings(BaseSettings):
         
         return v
 
-    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @field_validator("ALLOWED_ORIGINS", "TRUSTED_PROXIES", mode="before")
     @classmethod
-    def normalize_allowed_origins(cls, v: Any) -> list[str]:
+    def normalize_csv_or_json_list(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             # Supports comma-separated values and JSON arrays from deployment envs.
             try:
                 decoded = json.loads(v)
                 if isinstance(decoded, list):
-                    return [str(origin).strip() for origin in decoded if str(origin).strip()]
+                    return [str(item).strip() for item in decoded if str(item).strip()]
             except json.JSONDecodeError:
                 pass
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+            return [item.strip() for item in v.split(",") if item.strip()]
         return v
 
     def __init__(self, **kwargs: Any):

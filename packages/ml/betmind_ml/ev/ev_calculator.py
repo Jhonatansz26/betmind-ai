@@ -203,19 +203,3 @@ def enrich_markets_batch(
             # Sin cuota disponible — mantenemos la probabilidad, verdict=INSUFFICIENT
             enriched.append(market)
     return enriched
-
-
-def get_top_ev_opportunities(
-    markets: list[MarketProbability],
-    min_ev: float = 0.0,
-    top_n: int = 3,
-) -> list[MarketProbability]:
-    """
-    Retorna los mercados con mejor EV, ordenados de mayor a menor.
-    Útil para la UI: "Top 3 apuestas de valor para este partido".
-    """
-    with_ev = [
-        m for m in markets
-        if m.expected_value is not None and m.expected_value >= min_ev
-    ]
-    return sorted(with_ev, key=lambda m: m.expected_value, reverse=True)[:top_n]

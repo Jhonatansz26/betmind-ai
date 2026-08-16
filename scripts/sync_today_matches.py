@@ -172,8 +172,13 @@ async def sync_upcoming_matches():
 
     print_header()
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Mismo criterio que el servidor: AUTO_CREATE_TABLES=false en
+    # producción — el schema solo cambia por migraciones, los jobs no lo
+    # modifican por su cuenta (los workflows de GitHub Actions lo setean
+    # en false junto con DEBUG).
+    if settings.AUTO_CREATE_TABLES:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
     total_leagues = 0
     total_teams = 0
@@ -306,6 +311,7 @@ async def sync_upcoming_matches():
                             "match_date_str": fixture.match_date.strftime("%Y-%m-%d"),
                             "home_team_name": fixture.home_team,
                             "away_team_name": fixture.away_team,
+                            "match_type": league_match_type,
                             "espn_event_id": external_id,
                         })
 
@@ -517,6 +523,7 @@ async def sync_upcoming_matches():
                                 ),
                                 "home_team_name": home_name,
                                 "away_team_name": away_name,
+                                "match_type": af_match_type,
                             })
     
                         except Exception as e:

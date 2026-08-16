@@ -126,6 +126,11 @@ _MARKET_LABELS: dict[str, str] = {
     "SHOTS_OT_UNDER_10_5": "Menos de 10.5 Remates a Puerta",
 }
 
+# Exclusión LÓGICA: pares/grupos que no pueden ganar simultáneamente porque
+# son el mismo mercado con resultado opuesto (verdad formal, universal).
+# NOTA: las combinaciones PROHIBIDAS por correlación heurística viven en
+# apps/api/engine/ticket_builder.py::FORBIDDEN_COMBINATIONS — se mantienen
+# separadas a propósito (una es lógica, la otra es política de riesgo).
 _MUTUALLY_EXCLUSIVE: list[set[str]] = [
     {"BTTS_YES", "BTTS_NO"},
     {"OVER_0_5", "UNDER_0_5"},

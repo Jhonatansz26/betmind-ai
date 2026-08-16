@@ -13,7 +13,6 @@ from apps.api.dependencies import get_client_ip
 from apps.api.models import Base, Subscription, SubscriptionTransaction, User
 from apps.api.models.ticket import SavedTicket
 from apps.api.repositories.ticket_repository import TicketRepository
-from apps.api.routes.v1.subscriptions import _valid_event_signature
 from apps.api.schemas.prediction import BetBuilderProfileSchema, EVAnalysis, PredictionResponse, ProbabilityDistribution, TacticalAnalysisResponse, Verdict
 from apps.api.services.subscription_service import apply_transaction_status, effective_pro, as_utc, is_effectively_pro
 
@@ -349,22 +348,6 @@ async def test_reconcile_skips_recent_pending(_reconcile_db, monkeypatch):
     assert sub.status == "pending_payment"
 
 
-# ── Wompi signature validation ───────────────────────────────────────────
-    secret = "events_test_secret"
-    monkeypatch.setattr(settings, "WOMPI_EVENTS_SECRET", secret)
-    payload = {
-        "event": "transaction.updated",
-        "data": {"transaction": {"id": "tx-1", "status": "APPROVED", "amount_in_cents": 2990000}},
-        "timestamp": 1_700_000_000,
-        "signature": {
-            "properties": ["transaction.id", "transaction.status", "transaction.amount_in_cents"],
-        },
-    }
-    raw = "tx-1APPROVED2990000" + str(payload["timestamp"]) + secret
-    payload["signature"]["checksum"] = hashlib.sha256(raw.encode()).hexdigest()
-
-    assert _valid_event_signature(payload, payload["signature"]["checksum"]) is True
-    assert _valid_event_signature(payload, "bad-checksum") is False
 
 
 # ── Paywall enforcement tests ───────────────────────────────────────────────
@@ -415,10 +398,12 @@ def test_is_effectively_pro_free_user_no_header():
 
 
 def test_is_effectively_pro_dev_pro_header_in_debug():
-    """Dev header only grants bypass when DEBUG=True."""
+    """Dev header only grants bypass when DEBUG=True AND ENABLE_DEV_BACKDOOR=True."""
     req = _MockRequest({"X-Betmind-Dev-Pro": "1"})
     assert is_effectively_pro(req, is_pro=False, debug=False) is False
-    assert is_effectively_pro(req, is_pro=False, debug=True) is True
+    assert is_effectively_pro(req, is_pro=False, debug=True) is False
+    with patch.object(settings, "ENABLE_DEV_BACKDOOR", True):
+        assert is_effectively_pro(req, is_pro=False, debug=True) is True
 
 
 def test_is_effectively_pro_dev_pro_header_with_wrong_value():
@@ -507,8 +492,13 @@ def _make_request(ip: str, x_forwarded: str | None = None):
 
 @pytest.mark.asyncio
 async def test_client_ip_from_x_forwarded():
+    """X-Forwarded-For is only trusted from a configured proxy (S3.3)."""
+    # Untrusted peer (127.0.0.1 not in TRUSTED_PROXIES) -> header ignored.
     request = _make_request("127.0.0.1", "10.0.0.1, 10.0.0.2")
-    assert await get_client_ip(request) == "10.0.0.1"
+    assert await get_client_ip(request) == "127.0.0.1"
+    # Trusted peer -> first X-Forwarded-For entry wins.
+    with patch.object(settings, "TRUSTED_PROXIES", ["127.0.0.1"]):
+        assert await get_client_ip(request) == "10.0.0.1"
 
 
 @pytest.mark.asyncio

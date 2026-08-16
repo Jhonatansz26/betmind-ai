@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from dateutil import parser as date_parser
 
+from apps.api.core.stable_hash import stable_hash_int
 from apps.api.services.providers.ai_agent.schemas.agent_state import AgentState
 from apps.api.services.providers.base_provider import RawFixture
 
@@ -132,13 +133,13 @@ def _transform_to_raw_fixture(match_data: dict[str, Any], league_key: str) -> Op
         }
         
         return RawFixture(
-            external_id=hash(f"{validated_data.get('home_team')}-{validated_data.get('away_team')}-{match_date.isoformat()}"),
+            external_id=stable_hash_int(f"{validated_data.get('home_team')}-{validated_data.get('away_team')}-{match_date.isoformat()}"),
             league_code=league_key,
             league_name=league_names.get(league_key, league_key),
             home_team=validated_data.get("home_team", "Unknown"),
-            home_team_external_id=hash(validated_data.get("home_team", "")),
+            home_team_external_id=stable_hash_int(validated_data.get("home_team", "")),
             away_team=validated_data.get("away_team", "Unknown"),
-            away_team_external_id=hash(validated_data.get("away_team", "")),
+            away_team_external_id=stable_hash_int(validated_data.get("away_team", "")),
             match_date=match_date,
             status=validated_data.get("status", "SCHEDULED"),
             home_score=validated_data.get("home_score"),

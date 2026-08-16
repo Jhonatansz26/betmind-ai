@@ -29,7 +29,7 @@ from apps.api.repositories.bookmaker_odd_repository import (
     BookmakerOddsRepository,
 )
 from apps.api.services.cache_service import CacheService
-from apps.api.services.odds_service import OddsService
+from apps.api.services.odds_service import OddsService, validate_match_integrity
 from apps.api.services.providers.espn_provider import ESPN_LEAGUE_SLUGS
 from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
@@ -270,6 +270,25 @@ class EspnOddsService:
         for match in matches:
             league_id = match.get("league_external_id")
             if not league_id or int(league_id) not in ACTIVE_LEAGUE_IDS:
+                continue
+            # Red flags de integridad (mismo filtro que API-Football): los
+            # partidos con filiales/juveniles o fases tempranas de copa se
+            # excluyen ANTES de gastar el scoreboard/summary de ESPN.
+            try:
+                validate_match_integrity(
+                    home_team=str(match.get("home_team_name", "")),
+                    away_team=str(match.get("away_team_name", "")),
+                    match_type=str(match.get("match_type") or "LEAGUE"),
+                    round_name=match.get("round_name"),
+                )
+            except ValueError as red_flag:
+                logger.warning(
+                    "RED FLAG [match_id=%s] %s vs %s: %s — partido excluido de cuotas ESPN",
+                    match.get("match_id"),
+                    match.get("home_team_name"),
+                    match.get("away_team_name"),
+                    red_flag,
+                )
                 continue
             slug = ESPN_LEAGUE_SLUGS.get(int(league_id)) if league_id else None
             if not slug:

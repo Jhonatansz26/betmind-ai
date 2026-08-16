@@ -9,10 +9,17 @@ Regla de validación:
     Si jugador no está en 11 titular confirmado → mercado NOT_AVAILABLE
 """
 import logging
+from typing import Any, Callable
 from pydantic import BaseModel, Field
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+# Proveedor de perfiles de jugadores: (match_id) -> list[dict] con los campos
+# de PlayerPropProjection (player_name, stat_per_90, projected_minutes,
+# is_confirmed_starter, stat_type, opponent_defense_factor). Es el seam de
+# datos del módulo: sin proveedor no hay proyecciones.
+PlayerProfileProvider = Callable[[int], list[dict[str, Any]]]
 
 
 class PlayerPropStatus(str, Enum):
@@ -158,3 +165,67 @@ def calculate_shots_on_target_line(
         "over": round(p_over, 4),
         "under": round(p_under, 4),
     }
+
+
+def generate_predictions(
+    match_id: int,
+    min_minutes_gate: int = 60,
+    player_provider: PlayerProfileProvider | None = None,
+) -> list[PlayerPropProjection]:
+    """
+    Genera las proyecciones de player props de un partido.
+
+    Facade del módulo: toma la lista de perfiles de jugadores desde
+    `player_provider(match_id)` y les aplica las reglas de validación
+    (minutos >= min_minutes_gate, 11 titular confirmado, datos per 90) y el
+    cálculo de expectativa de cada proyección.
+
+    Args:
+        match_id: ID interno del partido.
+        min_minutes_gate: Minutos proyectados mínimos para considerar una
+            proyección operable (gate de perfil de minutos).
+        player_provider: Inyección de datos por partido. Mientras no exista
+            la ingesta de lineups/estadísticas individuales, debe quedar en
+            None y el módulo no emite proyecciones (no hay datos → no hay
+            mercado).
+
+    Returns:
+        Lista de PlayerPropProjection con status AVAILABLE (válidas).
+        Vacía si no hay proveedor de datos o si ningún jugador pasa los gates.
+    """
+    if player_provider is None:
+        logger.info(
+            "Player props: sin proveedor de perfiles — no se generan "
+            "proyecciones para match_id=%s (requiere ingesta de lineups)",
+            match_id,
+        )
+        return []
+
+    projections: list[PlayerPropProjection] = []
+    for profile in player_provider(match_id) or []:
+        projection = calculate_player_prop_projection(
+            player_name=str(profile.get("player_name", "")),
+            stat_type=str(profile.get("stat_type", "shots_on_target")),
+            stat_per_90=float(profile.get("stat_per_90", 0.0)),
+            projected_minutes=int(profile.get("projected_minutes", 90)),
+            is_confirmed_starter=bool(profile.get("is_confirmed_starter", True)),
+            opponent_defense_factor=float(
+                profile.get("opponent_defense_factor", 1.0)
+            ),
+        )
+        if (
+            projection.status == PlayerPropStatus.AVAILABLE
+            and projection.projected_minutes >= min_minutes_gate
+        ):
+            projections.append(projection)
+        else:
+            logger.debug(
+                "Player prop descartada: %s (%s) — %s",
+                projection.player_name, projection.stat_type, projection.status,
+            )
+
+    logger.info(
+        "Player props match_id=%s: %d proyecciones válidas",
+        match_id, len(projections),
+    )
+    return projections

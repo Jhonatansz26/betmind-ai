@@ -83,10 +83,15 @@ class TestFix1AnonymousPredictionTruncation:
     @pytest.mark.asyncio
     async def test_is_effectively_pro_respects_debug_header(self, session):
         from fastapi import Request
+        from apps.api.config import settings
         scope = {"type": "http", "headers": [(b"x-betmind-dev-pro", b"1")]}
         req = Request(scope)
-        assert is_effectively_pro(req, False, debug=True) is True
-        assert is_effectively_pro(req, False, debug=False) is False
+        # The dev backdoor requires the explicit ENABLE_DEV_BACKDOOR opt-in.
+        with patch("apps.api.config.settings.ENABLE_DEV_BACKDOOR", True):
+            assert is_effectively_pro(req, False, debug=True) is True
+            assert is_effectively_pro(req, False, debug=False) is False
+        # Without the explicit opt-in the header grants nothing, even in DEBUG.
+        assert is_effectively_pro(req, False, debug=True) is False
 
     @pytest.mark.asyncio
     async def test_prediction_truncation_condition(self, session):
@@ -487,9 +492,21 @@ class TestAgeConfirmationRegistration:
         from apps.api.routes.v1.auth import register
         from apps.api.models.user import User as UserModel
         from datetime import datetime, timezone
+        from fastapi import Request
 
         user_in = UserCreate(email="age-test@test.com", password="password12345", age_confirmed=True)
-        result = await register(user_in, session)
+        # El rate limiting de la ruta se testea aparte (test_security_s2);
+        # este test de unidad no debe consumir cuota del limiter real.
+        from unittest.mock import patch as _patch
+        from apps.api.core.rate_limit import limiter as _limiter
+        with _patch.object(_limiter, "enabled", False):
+            result = await register(
+                Request(scope={
+                    "type": "http", "path": "/register", "method": "POST", "headers": [],
+                }),
+                user_in,
+                session,
+            )
         assert result.access_token is not None
 
         db_user = (await session.execute(

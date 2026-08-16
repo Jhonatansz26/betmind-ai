@@ -15,6 +15,10 @@ class Prediction(TimestampMixin, Base):
         Integer, ForeignKey("matches.id"), nullable=False, index=True
     )
     prediction_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Corte de versión del modelo cuantitativo (ej. "2026.08.15-post-audit-fixes").
+    # NULL = predicciones generadas antes del versionado; permite filtrar
+    # por versión al medir Brier/calibración (P1-3) sin mezclar modelos.
+    model_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     confidence: Mapped[str] = mapped_column(String(20), nullable=False)
     value_score: Mapped[float] = mapped_column(Float, nullable=False)
     reasoning: Mapped[str] = mapped_column(Text, nullable=True)

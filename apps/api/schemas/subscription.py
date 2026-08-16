@@ -13,6 +13,7 @@ SubscriptionStatus = Literal[
     "active",
     "past_due",
     "cancelled",
+    "cancellation_pending",
     "refund_requested",
 ]
 

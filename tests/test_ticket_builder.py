@@ -9,6 +9,9 @@ from apps.api.engine.ticket_builder import (
     calculate_combined_odds,
     calculate_average_ev,
     build_ticket_for_mode,
+    build_isolated_single_ticket,
+    rescue_isolated_singles,
+    route_prediction,
     FORBIDDEN_COMBINATIONS,
     POSITIVE_CORRELATIONS,
     MODE_CONFIG,
@@ -264,6 +267,353 @@ class TestCalculateAverageEV:
         assert calculate_average_ev([]) == 0.0
 
 
+class TestRoutePrediction:
+    """Interceptor de ruteo: SINGLE / PARLAY_ELIGIBLE / DISCARD por volatilidad."""
+
+    def test_high_volatility_plus_ev_routes_to_single_in_edge_and_value(self):
+        for mode in (TicketMode.EDGE, TicketMode.VALUE, None):
+            routing = route_prediction(2.10, 0.05, ticket_mode=mode)
+            assert routing["mode"] == "SINGLE"
+            assert routing["reason"] == "High Volatility +EV"
+
+    def test_high_volatility_plus_ev_is_parlay_eligible_in_bold(self):
+        routing = route_prediction(2.10, 0.05, ticket_mode=TicketMode.BOLD)
+        assert routing["mode"] == "PARLAY_ELIGIBLE"
+        assert routing["reason"] == "High Volatility allowed in BOLD"
+
+    def test_high_volatility_boundary_is_parlay_eligible_in_bold(self):
+        assert route_prediction(
+            2.00, 0.05, ticket_mode=TicketMode.BOLD
+        )["mode"] == "PARLAY_ELIGIBLE"
+        assert route_prediction(
+            2.00, 0.05, ticket_mode=TicketMode.EDGE
+        )["mode"] == "SINGLE"
+
+    def test_controlled_odds_routes_to_parlay(self):
+        routing = route_prediction(1.60, 0.05)
+        assert routing["mode"] == "PARLAY_ELIGIBLE"
+        assert routing["reason"] == "Controlled Variance"
+
+    def test_controlled_range_has_no_black_hole(self):
+        """Todo el rango 1.30-1.99 es parlay-eligible: sin 'tierra de nadie'."""
+        for odds in (1.30, 1.60, 1.75, 1.90, 1.95, 1.99):
+            assert route_prediction(odds, 0.05)["mode"] == "PARLAY_ELIGIBLE", odds
+
+    def test_out_of_range_odds_discarded(self):
+        assert route_prediction(1.20, 0.10)["mode"] == "DISCARD"
+        assert route_prediction(1.00, 0.50)["mode"] == "DISCARD"
+
+    def test_high_volatility_without_positive_ev_is_discarded(self):
+        assert route_prediction(3.00, 0.02)["mode"] == "DISCARD"
+        assert route_prediction(3.00, 0.02, ticket_mode=TicketMode.BOLD)["mode"] == "DISCARD"
+
+    def test_high_volatility_plus_ev_isolated_as_single_ticket(self):
+        """En VALUE, la pierna de +EV de alta volatilidad se aísla: NUNCA viaja en parlay."""
+        predictions = [
+            {
+                "match_id": 1,
+                "home_team": "Team A",
+                "away_team": "Team B",
+                "league": "Test League",
+                "match_time_cot": "3:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "1X2_HOME",
+                        "market_label": "Home Win",
+                        "our_probability": 0.50,
+                        "bookmaker_odds": 2.10,
+                        "implied_probability": 0.42,
+                        "expected_value": 0.10,
+                    }
+                ],
+            }
+        ]
+        ticket = build_ticket_for_mode(TicketMode.VALUE, predictions)
+        assert ticket is not None
+        assert len(ticket.legs) == 1
+        assert ticket.legs[0].bookmaker_odds == 2.10
+        assert "SINGLE" in ticket.tactical_summary
+
+    def test_bold_mode_assembles_high_volatility_parlay(self):
+        """BOLD no aísla: las cuotas >= 2.00 arman combinadas de alto riesgo."""
+        predictions = [
+            {
+                "match_id": 1,
+                "home_team": "Team A",
+                "away_team": "Team B",
+                "league": "Test League",
+                "match_time_cot": "3:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "1X2_HOME",
+                        "market_label": "Home Win",
+                        "our_probability": 0.50,
+                        "bookmaker_odds": 2.10,
+                        "implied_probability": 0.42,
+                        "expected_value": 0.10,
+                    }
+                ],
+            },
+            {
+                "match_id": 2,
+                "home_team": "Team C",
+                "away_team": "Team D",
+                "league": "Test League",
+                "match_time_cot": "5:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "BTTS_YES",
+                        "market_label": "Both Teams Score",
+                        "our_probability": 0.45,
+                        "bookmaker_odds": 2.50,
+                        "implied_probability": 0.35,
+                        "expected_value": 0.09,
+                    }
+                ],
+            },
+            {
+                "match_id": 3,
+                "home_team": "Team E",
+                "away_team": "Team F",
+                "league": "Test League",
+                "match_time_cot": "7:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "OVER_3_5",
+                        "market_label": "Over 3.5 Goals",
+                        "our_probability": 0.42,
+                        "bookmaker_odds": 2.60,
+                        "implied_probability": 0.34,
+                        "expected_value": 0.08,
+                    }
+                ],
+            },
+        ]
+        ticket = build_ticket_for_mode(TicketMode.BOLD, predictions)
+        assert ticket is not None
+        assert len(ticket.legs) >= 2
+        # 2.10 * 2.50 * 2.60 = 13.65 — todas las piernas volátiles entran al parlay
+        assert ticket.combined_odds == round(2.10 * 2.50 * 2.60, 2)
+
+    def test_out_of_range_candidates_produce_no_ticket(self):
+        """Cuotas fuera del rango operable (< 1.30) no generan boleto."""
+        predictions = [
+            {
+                "match_id": 1,
+                "home_team": "Team A",
+                "away_team": "Team B",
+                "league": "Test League",
+                "match_time_cot": "3:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "1X2_HOME",
+                        "market_label": "Home Win",
+                        "our_probability": 0.55,
+                        "bookmaker_odds": 1.20,
+                        "implied_probability": 0.48,
+                        "expected_value": 0.10,
+                    }
+                ],
+            }
+        ]
+        assert build_ticket_for_mode(TicketMode.VALUE, predictions) is None
+
+    def test_null_odds_or_ev_is_discarded(self):
+        """Blindaje nulo: odds/EV None jamás crashean, se descartan."""
+        assert route_prediction(None, 0.05)["mode"] == "DISCARD"
+        assert route_prediction(2.10, None)["mode"] == "DISCARD"
+        assert route_prediction(None, None)["mode"] == "DISCARD"
+
+    def test_ticket_mode_string_normalized(self):
+        """Strings se normalizan a minúscula antes de validar el Enum."""
+        assert route_prediction(
+            2.10, 0.05, ticket_mode="BOLD"
+        )["mode"] == "PARLAY_ELIGIBLE"
+        assert route_prediction(
+            2.10, 0.05, ticket_mode="bold"
+        )["mode"] == "PARLAY_ELIGIBLE"
+        assert route_prediction(
+            2.10, 0.05, ticket_mode="VALUE"
+        )["mode"] == "SINGLE"
+        assert route_prediction(
+            2.10, 0.05, ticket_mode="edge"
+        )["mode"] == "SINGLE"
+
+    def test_unknown_ticket_mode_falls_back_to_strict_policy(self):
+        """Modo desconocido o vacío → política estricta (SINGLE para >= 2.00)."""
+        assert route_prediction(
+            2.10, 0.05, ticket_mode="BOLDO"
+        )["mode"] == "SINGLE"
+        assert route_prediction(
+            2.10, 0.05, ticket_mode=""
+        )["mode"] == "SINGLE"
+        assert route_prediction(
+            2.10, 0.05, ticket_mode=12345
+        )["mode"] == "SINGLE"
+        assert route_prediction(
+            1.60, 0.05, ticket_mode="BOLDO"
+        )["mode"] == "PARLAY_ELIGIBLE"  # el rango controlado no depende del modo
+
+
+class TestRescueIsolatedSingles:
+    """Rescate de singles fantasma: parlay + boletos de una pierna en la respuesta."""
+
+    def test_parlay_exposes_isolated_singles(self):
+        """El parlay expone las piernas volátiles aisladas en isolated_singles."""
+        predictions = [
+            {
+                "match_id": 1,
+                "home_team": "Team A",
+                "away_team": "Team B",
+                "league": "Test League",
+                "match_time_cot": "3:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "OVER_1_5",
+                        "market_label": "Over 1.5",
+                        "our_probability": 0.70,
+                        "bookmaker_odds": 1.50,  # controlada → parlay
+                        "implied_probability": 0.60,
+                        "expected_value": 0.09,
+                    },
+                    {
+                        "market_name": "1X2_HOME",
+                        "market_label": "Home Win",
+                        "our_probability": 0.50,
+                        "bookmaker_odds": 2.10,  # volátil → SINGLE aislada
+                        "implied_probability": 0.42,
+                        "expected_value": 0.10,
+                    },
+                ],
+            },
+            {
+                "match_id": 2,
+                "home_team": "Team C",
+                "away_team": "Team D",
+                "league": "Test League",
+                "match_time_cot": "5:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "OVER_2_5",
+                        "market_label": "Over 2.5",
+                        "our_probability": 0.62,
+                        "bookmaker_odds": 1.75,  # controlada → parlay
+                        "implied_probability": 0.52,
+                        "expected_value": 0.12,
+                    }
+                ],
+            },
+        ]
+        ticket = build_ticket_for_mode(TicketMode.EDGE, predictions)
+        assert ticket is not None
+        assert len(ticket.legs) == 2  # parlay de varianza controlada
+        assert len(ticket.isolated_singles) == 1
+        assert ticket.isolated_singles[0].bookmaker_odds == 2.10
+
+    def test_rescue_returns_parlay_plus_single_leg_tickets(self):
+        """La respuesta final tiene el parlay Y los singles aislados, sin match duplicado."""
+        predictions = [
+            {
+                "match_id": 1,
+                "home_team": "Team A",
+                "away_team": "Team B",
+                "league": "Test League",
+                "match_time_cot": "3:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "OVER_1_5",
+                        "market_label": "Over 1.5",
+                        "our_probability": 0.70,
+                        "bookmaker_odds": 1.50,  # controlada → parlay
+                        "implied_probability": 0.60,
+                        "expected_value": 0.09,
+                    },
+                    {
+                        "market_name": "1X2_HOME",
+                        "market_label": "Home Win",
+                        "our_probability": 0.50,
+                        "bookmaker_odds": 2.10,  # volátil → SINGLE (mismo partido)
+                        "implied_probability": 0.42,
+                        "expected_value": 0.10,
+                    },
+                ],
+            },
+            {
+                "match_id": 2,
+                "home_team": "Team C",
+                "away_team": "Team D",
+                "league": "Test League",
+                "match_time_cot": "5:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "OVER_2_5",
+                        "market_label": "Over 2.5",
+                        "our_probability": 0.62,
+                        "bookmaker_odds": 1.75,  # controlada → parlay
+                        "implied_probability": 0.52,
+                        "expected_value": 0.12,
+                    },
+                    {
+                        "market_name": "BTTS_YES",
+                        "market_label": "Both Teams Score",
+                        "our_probability": 0.48,
+                        "bookmaker_odds": 2.05,  # volátil → SINGLE (mismo partido)
+                        "implied_probability": 0.40,
+                        "expected_value": 0.08,
+                    },
+                ],
+            },
+            {
+                "match_id": 3,
+                "home_team": "Team E",
+                "away_team": "Team F",
+                "league": "Test League",
+                "match_time_cot": "7:00 PM COT",
+                "markets": [
+                    {
+                        "market_name": "BTTS_YES",
+                        "market_label": "Both Teams Score",
+                        "our_probability": 0.49,
+                        "bookmaker_odds": 2.10,  # volátil → SINGLE (partido libre)
+                        "implied_probability": 0.42,
+                        "expected_value": 0.10,
+                    }
+                ],
+            },
+        ]
+        parlay = build_ticket_for_mode(TicketMode.EDGE, predictions)
+        assert parlay is not None
+        assert len(parlay.legs) == 2  # parlay de varianza controlada
+        assert len(parlay.isolated_singles) == 3
+
+        used_match_ids = {leg.match_id for leg in parlay.legs}
+        response_tickets = rescue_isolated_singles([parlay], used_match_ids)
+
+        # Los singles de partidos ya cubiertos por el parlay NO se duplican;
+        # solo se rescata el single del partido libre (match 3).
+        rescued = [t for t in response_tickets if t is not parlay]
+        assert len(rescued) == 1
+        assert rescued[0].legs[0].match_id == 3
+        assert rescued[0].legs[0].bookmaker_odds == 2.10
+        assert "SINGLE" in rescued[0].tactical_summary
+
+    def test_rescue_respects_max_tickets_limit(self):
+        """El límite lógico de boletos por respuesta se respeta."""
+        tickets = []
+        used_match_ids: set[int] = set()
+        for i in range(1, 6):
+            single = build_isolated_single_ticket(
+                TicketMode.VALUE,
+                _make_leg(match_id=i, market_name="1X2_HOME", bookmaker_odds=2.10),
+            )
+            tickets.append(single)
+            used_match_ids.add(single.legs[0].match_id)
+
+        # Los 5 singles ya ocuparon el límite lógico: el rescate no agrega nada.
+        result = rescue_isolated_singles(tickets, set(used_match_ids), max_tickets=5)
+        assert len(result) == 5
+
+
 class TestBuildTicketForMode:
     def test_edge_mode_returns_ticket(self):
         predictions = _make_predictions()
@@ -387,7 +737,7 @@ class TestBuildTicketForMode:
                         "market_name": "1X2_HOME",
                         "market_label": "Home Win",
                         "our_probability": 0.58,
-                        "bookmaker_odds": 1.85,
+                        "bookmaker_odds": 1.70,  # Rango controlado (1.30-1.75) → parlay-eligible
                         "implied_probability": 0.48,
                         "expected_value": 0.06,
                     },
@@ -437,7 +787,7 @@ class TestBuildTicketForMode:
                         "market_name": "1X2_HOME",
                         "market_label": "Home Win",
                         "our_probability": 0.60,
-                        "bookmaker_odds": 1.80,
+                        "bookmaker_odds": 1.70,  # Rango controlado (1.30-1.75) → parlay-eligible
                         "implied_probability": 0.55,
                         "expected_value": 0.08,
                     },

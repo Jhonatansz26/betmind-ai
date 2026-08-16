@@ -708,21 +708,65 @@ class APIFootballService:
     def parse_fixture_to_match_data(self, fixture: dict) -> dict[str, Any]:
         """
         Convierte respuesta de fixture de API-Football a formato interno.
-        Extrae solo datos de tiempo reglamentario (90 minutos).
+        Extrae SOLO datos de tiempo reglamentario (90 minutos): cuando el
+        partido fue a prórroga (status AET/PEN) se reconstruye el score de
+        90' restando score.extratime de score.fulltime (que lo incluye).
+        Si no se puede reconstruir, el partido se marca con
+        regulation_time_only=False para excluirlo de forma/evaluación.
         """
         fixture_data = fixture.get("fixture", {})
         league_data = fixture.get("league", {})
         teams_data = fixture.get("teams", {})
         goals_data = fixture.get("goals", {})
-        
+        score_data = fixture.get("score", {}) or {}
+
         match_date_str = fixture_data.get("date", "")
         try:
             match_date = datetime.fromisoformat(match_date_str.replace("Z", "+00:00"))
         except (ValueError, AttributeError):
             match_date = datetime.utcnow()
-        
+
         status_short = fixture_data.get("status", {}).get("short", "NS")
-        
+
+        # ── Score de 90 minutos (regla estricta del proyecto) ─────────────
+        home_score = goals_data.get("home")
+        away_score = goals_data.get("away")
+        regulation_time_only = True
+
+        if status_short in {"AET", "PEN"}:
+            extratime = score_data.get("extratime") or {}
+            et_home = extratime.get("home")
+            et_away = extratime.get("away")
+            has_et_breakdown = isinstance(et_home, int) and isinstance(et_away, int)
+
+            if has_et_breakdown and isinstance(home_score, int) and isinstance(away_score, int):
+                # fulltime incluye los goles de la prórroga: restamos para
+                # quedarnos con el marcador de los 90'.
+                regulation_home = max(home_score - et_home, 0)
+                regulation_away = max(away_score - et_away, 0)
+                logger.info(
+                    "Fixture %s tuvo prórroga (status=%s): score 90' %s-%s "
+                    "(fulltime %s-%s, ET %s-%s)",
+                    fixture_data.get("id"), status_short,
+                    regulation_home, regulation_away, home_score, away_score,
+                    et_home, et_away,
+                )
+                home_score, away_score = regulation_home, regulation_away
+            elif status_short == "PEN" and not has_et_breakdown:
+                # Penales directos (sin ET): los penales no suman goles, el
+                # fulltime es el score de 90' — se usa tal cual.
+                pass
+            else:
+                # AET (o PEN con ET) sin desglose de extratime: no se puede
+                # reconstruir el 90'; el score persistido incluiría prórroga
+                # -> excluir de forma/evaluación.
+                logger.warning(
+                    "Fixture %s %s sin score reconstruible (goals=%s, extratime=%s); "
+                    "marcando regulation_time_only=False",
+                    fixture_data.get("id"), status_short, goals_data, extratime,
+                )
+                regulation_time_only = False
+
         return {
             "external_id": fixture_data.get("id"),
             "league_external_id": league_data.get("id"),
@@ -736,7 +780,7 @@ class APIFootballService:
             "away_team_logo": teams_data.get("away", {}).get("logo"),
             "match_date": match_date,
             "status": normalize_match_status(status_short),
-            "home_score": goals_data.get("home"),
-            "away_score": goals_data.get("away"),
-            "regulation_time_only": True,
+            "home_score": home_score,
+            "away_score": away_score,
+            "regulation_time_only": regulation_time_only,
         }
