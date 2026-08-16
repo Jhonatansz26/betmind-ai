@@ -32,8 +32,9 @@ def test_all_routes_registered():
 
     # Sin body: 422 = la ruta existe y valida el schema (404 = no registrada).
     assert client.post("/api/v1/auth/login").status_code == 422
-    # Sin body JSON: 400 "Invalid JSON" — la ruta existe y está registrada.
-    assert client.post("/api/v1/webhooks/wompi").status_code == 400
+    # Sin body JSON: 400 "Invalid JSON" si el secret está configurado, o
+    # 503 "not configured" si no — ambos prueban que la ruta está registrada.
+    assert client.post("/api/v1/webhooks/wompi").status_code in (400, 503)
     # Requiere autenticación: 401 = ruta registrada y protegida.
     assert client.get("/api/v1/tickets/history").status_code == 401
     assert client.post("/api/v1/subscriptions/cancel").status_code == 401
