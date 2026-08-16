@@ -50,3 +50,15 @@ jobs:
 
       - name: Suite de tests completa
         run: pytest tests/ -q
+
+  # Valida el Dockerfile (el que usa Render): si builda acá, builda en Render.
+  docker-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Build de la imagen Docker
+        run: docker build --no-cache -t betmind-api .
