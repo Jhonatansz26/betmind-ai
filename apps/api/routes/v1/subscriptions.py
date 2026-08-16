@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from datetime import timedelta
 
@@ -35,27 +36,10 @@ from apps.api.services.wompi_service import (
     recurrence_enabled_from_transaction,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
 REFUND_WINDOW_DAYS = 7
-
-
-def _valid_event_signature(payload: dict, checksum: str) -> bool:
-    """
-    Valida la firma de un evento de Wompi contra un checksum provisto.
-
-    Recalcula el checksum con WOMPI_EVENTS_SECRET (misma lógica que
-    wompi_service.compute_wompi_event_checksum) y compara en tiempo
-    constante. A diferencia de is_valid_wompi_event_signature, solo se
-    compara el checksum EXPLÍCITAMENTE provisto (no el del body), para que
-    un checksum inválido no pueda pasar por el del payload.
-    """
-    if not checksum:
-        return False
-    computed = compute_wompi_event_checksum(payload, settings.WOMPI_EVENTS_SECRET)
-    if computed is None:
-        return False
-    return secrets.compare_digest(computed, checksum.lower())
 
 
 async def _get_user(user_id: int, session: AsyncSession) -> User:
@@ -254,6 +238,33 @@ async def cancel_subscription(
     subscription = result.scalar_one_or_none()
     if subscription is None:
         raise HTTPException(status_code=404, detail="El usuario no tiene una suscripción.")
+
+    if subscription.status == "cancelled":
+        # Idempotente: ya está cancelada, no volver a anular la fuente.
+        return SubscriptionCancelResponse.model_validate(subscription)
+
+    # A4: cancelar NO es solo cambiar el status local. La recurrencia vive en
+    # Wompi (fuente de pago), así que primero se anula la fuente con
+    # PUT /payment_sources/{id}/void. Solo si Wompi confirma (status VOIDED)
+    # se marca la cancelación local; si falla, quedamos en
+    # "cancellation_pending" sin mentirle al usuario.
+    payment_source_id = subscription.wompi_payment_source_id
+    if payment_source_id:
+        client = WompiClient()
+        try:
+            await client.void_payment_source(payment_source_id)
+        except WompiConfigurationError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except WompiAPIError as exc:
+            logger.error(
+                "Cancelación incompleta: Wompi no anuló la fuente de pago %s "
+                "para subscription_id=%s (el cobro recurrente SIGUE activo): %s",
+                payment_source_id, subscription.id, exc,
+            )
+            subscription.status = "cancellation_pending"
+            await session.commit()
+            return SubscriptionCancelResponse.model_validate(subscription)
+
     subscription.status = "cancelled"
     if not effective_pro(user):
         user.is_pro = False

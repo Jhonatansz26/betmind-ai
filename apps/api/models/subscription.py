@@ -24,7 +24,7 @@ class Subscription(TimestampMixin, Base):
     # Nullable during trial and while a payment is still being tokenized.
     wompi_payment_source_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     plan: Mapped[str] = mapped_column(String(20), nullable=False)
-    # trial | pending_payment | active | past_due | cancelled | refund_requested
+    # trial | pending_payment | active | past_due | cancelled | cancellation_pending | refund_requested
     status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     current_period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
