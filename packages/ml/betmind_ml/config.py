@@ -4,7 +4,11 @@ Estos valores son el resultado de calibración empírica — se actualizan con b
 """
 import os
 
-MODEL_VERSION = "poisson_v1.0"
+# Versión del motor cuantitativo. Marca el corte del 2026-08-15 (post
+# auditoría): fix C1 de córneres/remates, contracción bayesiana única,
+# home advantage unificado, promedios de liga con filtro de temporada.
+# Se persiste en predictions.model_version para filtrar al medir Brier.
+MODEL_VERSION = "2026.08.15-post-audit-fixes"
 
 # Alcance actual del pipeline: IDs confirmados con partidos existentes en la
 # base de producción (consulta read-only, 2026-08-13). Mantener esta lista
@@ -110,7 +114,10 @@ EV_POSITIVE_THRESHOLD = 0.03
 EV_AVOID_THRESHOLD = -0.10
 
 # ── Mercado de Tarjetas ──────────────────────────────────────────────────────
-CARDS_LINE_DEFAULT = 3.5
+# Única fuente de verdad para el fallback de ligas sin línea conocida.
+# (Antes había dos defaults divergentes: 3.5 aquí y 4.0 en
+# CARDS_LINE_BY_LEAGUE["default"]; 4.0 es el que alimenta los mercados.)
+CARDS_LINE_DEFAULT = 4.0
 
 # Baselines dinámicos de tarjetas por liga/región
 # Ligas sudamericanas tienden a más tarjetas (4.5-5.5)
@@ -143,7 +150,7 @@ CARDS_LINE_BY_LEAGUE: dict[str, float] = {
     "super_league_sui": 3.5,
     # Fallback usado por market_calculator (calculate_cards_markets) para
     # ligas sin línea conocida — el orquestador pasa league_key="default".
-    "default": 4.0,
+    "default": CARDS_LINE_DEFAULT,
 }
 
 
