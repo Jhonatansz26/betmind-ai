@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
+import ipaddress
+import logging
+
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -12,6 +15,8 @@ from apps.api.services.cache_service import CacheService, get_redis_pool, close_
 from apps.api.services.subscription_service import effective_pro, as_utc
 from apps.api.config import settings
 from apps.api.models.user import User
+
+logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -78,6 +83,11 @@ async def get_current_user_id(
             algorithms=["HS256"],
             options={"verify_aud": False},
         )
+        # SECURITY: password-reset tokens carry a "purpose" claim and may be
+        # signed with the same secret. They must NEVER be accepted as session
+        # tokens — reject any token that carries a purpose claim (401).
+        if payload.get("purpose") is not None:
+            raise JWTError("Token has a purpose claim; not a session token")
         sub = payload.get("sub")
         if not isinstance(sub, str) or not sub:
             raise JWTError("Missing subject")
@@ -132,10 +142,42 @@ async def require_pro_user(
     return user_id
 
 
-async def get_client_ip(request: Request) -> str:
+def _is_trusted_proxy(host: str) -> bool:
+    """True si ``host`` figura en TRUSTED_PROXIES (IP exacta o rango CIDR)."""
+    proxies = settings.TRUSTED_PROXIES
+    if not proxies:
+        return False
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    for entry in proxies:
+        try:
+            if "/" in entry:
+                if addr in ipaddress.ip_network(entry, strict=False):
+                    return True
+            elif addr == ipaddress.ip_address(entry):
+                return True
+        except ValueError:
+            logger.warning("Entrada inválida en TRUSTED_PROXIES: %r", entry)
+            continue
+    return False
+
+
+def resolve_client_ip(request: Request) -> str:
+    """IP real del cliente.
+
+    X-Forwarded-For SOLO se respeta cuando el peer directo (request.client.host)
+    es un proxy listado en TRUSTED_PROXIES. En cualquier otro caso el header se
+    ignora por completo — un cliente no puede auto-declarar su IP para evadir
+    límites por IP (rate limiting, topes freemium anónimos).
+    """
+    client_host = request.client.host if request.client else "127.0.0.1"
     forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client and request.client.host:
-        return request.client.host
-    return "127.0.0.1"
+    if forwarded and _is_trusted_proxy(client_host):
+        return forwarded.split(",")[0].strip() or client_host
+    return client_host
+
+
+async def get_client_ip(request: Request) -> str:
+    return resolve_client_ip(request)

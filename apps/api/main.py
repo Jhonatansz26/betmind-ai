@@ -11,9 +11,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from apps.api.config import settings
 from apps.api.core.exceptions import (
@@ -22,6 +21,7 @@ from apps.api.core.exceptions import (
     PredictionNotAvailableException,
     ExternalAPIException,
 )
+from apps.api.core.rate_limit import limiter
 from apps.api.db.database import init_db, dispose_engine, ping_db
 from apps.api.routes.v1.router import api_router
 from apps.api.dependencies import close_redis_pool
@@ -29,16 +29,18 @@ from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
-limiter = Limiter(
-    key_func=get_remote_address,
-    storage_uri=settings.REDIS_URL,
-    default_limits=["200 per minute", "2000 per hour"],
-)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    if settings.AUTO_CREATE_TABLES:
+        await init_db()
+    else:
+        # Producción: el schema depende SOLO de las migraciones aplicadas;
+        # el servidor desplegado no debe modificar la DB por su cuenta.
+        logger.info(
+            "AUTO_CREATE_TABLES=false — no se toca el schema en el arranque "
+            "(depende de las migraciones)."
+        )
     yield
     await close_redis_pool()
     await dispose_engine()

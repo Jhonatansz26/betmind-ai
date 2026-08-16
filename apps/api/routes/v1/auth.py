@@ -3,11 +3,12 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.config import settings
+from apps.api.core.rate_limit import limiter
 from apps.api.dependencies import get_async_session, get_current_user_id
 from apps.api.models.user import User
 from apps.api.schemas.auth import (
@@ -41,7 +42,9 @@ _INVALID_CREDENTIALS = HTTPException(
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("3/hour")
 async def register(
+    request: Request,
     user_in: UserCreate,
     session: AsyncSession = Depends(get_async_session),
 ) -> TokenResponse:
@@ -74,7 +77,9 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("5/minute")
 async def login(
+    request: Request,
     credentials: UserLogin,
     session: AsyncSession = Depends(get_async_session),
 ) -> TokenResponse:
@@ -85,7 +90,10 @@ async def login(
     user = result.scalar_one_or_none()
 
     # Always run verify_password to prevent timing attacks even if user is None
-    dummy_hash = "$2b$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    # (structurally-valid bcrypt hash of a random dummy password; verify never
+    # succeeds against it — the previous hardcoded hash was malformed and made
+    # unknown-email logins crash with ValueError instead of returning 401).
+    dummy_hash = "$2b$12$87QMh3BCmKj1P/X3CkBKp.RyHKTjfjh.LbbZVlTKEkh6urHRlCO92"
     password_ok = verify_password(credentials.password, user.hashed_password if user else dummy_hash)
 
     if user is None or not password_ok:
@@ -97,7 +105,9 @@ async def login(
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
+@limiter.limit("3/hour")
 async def forgot_password(
+    request: Request,
     body: ForgotPasswordRequest,
     session: AsyncSession = Depends(get_async_session),
 ) -> ForgotPasswordResponse:
@@ -122,7 +132,9 @@ async def forgot_password(
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse)
+@limiter.limit("5/hour")
 async def reset_password(
+    request: Request,
     body: ResetPasswordRequest,
     session: AsyncSession = Depends(get_async_session),
 ) -> ResetPasswordResponse:
