@@ -6,6 +6,10 @@ Corre sobre partidos FINISHED con predicción y SIN evaluación todavía
 con our_probability no nula resuelve WON/LOST con outcome_resolver y guarda
 una fila en prediction_outcomes con su componente Brier.
 
+Además resuelve los featured_tickets (boletos destacados del sistema) en
+status PENDING contra prediction_outcomes: cualquier pata LOST -> LOST,
+todas las patas WON -> WON, faltan patas -> sigue PENDING.
+
 Idempotente: ON CONFLICT DO NOTHING sobre (match_id, market_name) — se puede
 correr cuantas veces sea necesario y solo inserta lo nuevo.
 
@@ -26,6 +30,7 @@ from sqlalchemy.orm import selectinload
 
 from apps.api.db.database import async_session_factory
 from apps.api.engine.outcome_resolver import MatchFinalScore, resolve_market_outcome
+from apps.api.models.featured_ticket import FeaturedTicket
 from apps.api.models.match import Match
 from apps.api.models.prediction import Prediction
 from apps.api.models.prediction_outcome import PredictionOutcome
@@ -165,6 +170,87 @@ async def evaluate_finished_predictions(days: int = DEFAULT_WINDOW_DAYS) -> dict
         return stats
 
 
+async def resolve_featured_tickets() -> dict[str, int]:
+    """
+    Resuelve los featured_tickets en status PENDING contra prediction_outcomes.
+
+    Reglas de resolución (parlay):
+      - Cualquier leg con actual_outcome LOST -> el boleto es LOST de inmediato
+        (no hace falta esperar a que resuelvan los demás).
+      - TODOS los legs resueltos y ninguno LOST -> WON.
+      - Falta algún leg por resolver y ninguno perdió -> sigue PENDING.
+
+    Idempotente: solo toca filas PENDING y las deja WON/LOST (con resolved_at),
+    de modo que una segunda corrida no modifica nada.
+    """
+    stats = {"scanned": 0, "won": 0, "lost": 0, "still_pending": 0}
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(FeaturedTicket).where(FeaturedTicket.status == "PENDING")
+        )
+        tickets = list(result.scalars().all())
+        stats["scanned"] = len(tickets)
+        if not tickets:
+            return stats
+
+        # Todos los pares (match_id, market_name) de las patas de los boletos
+        # pendientes, para traer los outcomes de una sola query.
+        pairs = {
+            (leg.get("match_id"), leg.get("market_name"))
+            for ticket in tickets
+            for leg in (ticket.legs or [])
+            if leg.get("match_id") is not None and leg.get("market_name")
+        }
+        outcome_map: dict[tuple[int, str], str] = {}
+        if pairs:
+            outcome_result = await session.execute(
+                select(
+                    PredictionOutcome.match_id,
+                    PredictionOutcome.market_name,
+                    PredictionOutcome.actual_outcome,
+                ).where(
+                    PredictionOutcome.match_id.in_({p[0] for p in pairs}),
+                    PredictionOutcome.market_name.in_({p[1] for p in pairs}),
+                )
+            )
+            for row in outcome_result:
+                outcome_map[(row.match_id, row.market_name)] = row.actual_outcome
+
+        now = datetime.now(timezone.utc)
+        for ticket in tickets:
+            legs = ticket.legs or []
+            resolved_legs = 0
+            lost = False
+            for leg in legs:
+                pair = (leg.get("match_id"), leg.get("market_name"))
+                actual = outcome_map.get(pair)
+                if actual is None:
+                    continue
+                resolved_legs += 1
+                if actual == "LOST":
+                    lost = True
+
+            if lost:
+                ticket.status = "LOST"
+                ticket.resolved_at = now
+                stats["lost"] += 1
+            elif resolved_legs == len(legs):
+                ticket.status = "WON"
+                ticket.resolved_at = now
+                stats["won"] += 1
+            else:
+                stats["still_pending"] += 1
+
+        await session.commit()
+
+    logger.info(
+        "Featured resolution: %s escaneados — %s WON, %s LOST, %s pending",
+        stats["scanned"], stats["won"], stats["lost"], stats["still_pending"],
+    )
+    return stats
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evalúa predicciones persistidas post-partido")
     parser.add_argument("--days", type=int, default=DEFAULT_WINDOW_DAYS,
@@ -183,6 +269,13 @@ def main() -> None:
     print(f"Mercados sin resolver:     {stats['skipped_unresolvable']}")
     print(f"Mercados ya evaluados:     {stats['skipped_existing']}")
     print(f"Errores:                   {stats['errors']}")
+
+    featured = asyncio.run(resolve_featured_tickets())
+    print(f"--- RESOLUCION DE BOLETOS DESTACADOS ---")
+    print(f"Boletos escaneados:        {featured['scanned']}")
+    print(f"Ganados:                   {featured['won']}")
+    print(f"Perdidos:                  {featured['lost']}")
+    print(f"Siguen pendientes:         {featured['still_pending']}")
 
 
 if __name__ == "__main__":

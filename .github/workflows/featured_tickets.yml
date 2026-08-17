@@ -1,0 +1,52 @@
+name: Boletos destacados BetMind AI
+
+# Genera los boletos destacados del día (featured_tickets) una vez al día,
+# ANTES de que arranquen los partidos (08:00 UTC = 03:00 COT). La resolución
+# post-partido la hace evaluate_predictions (ya corre cada 2h en
+# daily_predictions.yml y ahora también resuelve los featured tickets).
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: betmind-featured-tickets
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  generate-featured-tickets:
+    runs-on: ubuntu-latest
+    env:
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      DEBUG: "false"
+      AUTO_CREATE_TABLES: "false"
+
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e packages/ml
+          pip install -r apps/api/requirements.txt
+
+      - name: Generar boletos destacados del día
+        run: python -m apps.api.jobs.generate_featured_tickets

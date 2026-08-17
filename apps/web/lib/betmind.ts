@@ -60,6 +60,10 @@ export interface Match {
   away: string
   lambdaHome: number
   lambdaAway: number
+  /** Nivel de acceso freemium: "full" (análisis completo) o "teaser" (difuminado). */
+  accessLevel: 'full' | 'teaser'
+  /** Cuota diaria restante de desbloqueos; null para anónimos y PRO. */
+  unlocksRemaining: number | null
   odds: Record<MarketOdds['key'], number>
   pros: TacticalFactor[]
   cons: TacticalFactor[]

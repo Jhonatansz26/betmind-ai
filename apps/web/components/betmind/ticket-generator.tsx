@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import { addToTracking } from '@/lib/tracking'
 import { TicketLeg } from './ticket-leg'
 import { StakeConfirmDialog } from './stake-confirm-dialog'
+import { UnlockGate } from './access-gate'
 import { useBankroll } from './use-bankroll'
 
 /* ------------------------------------------------------------------ */
@@ -196,6 +197,8 @@ export function TicketGenerator({
   const [ticket, setTicket] = React.useState<Ticket | null>(null)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState(false)
+  /** 403 del backend: cuota diaria agotada o acceso denegado (acceso free). */
+  const [accessError, setAccessError] = React.useState<string | null>(null)
   const [generationKey, setGenerationKey] = React.useState(0)
   const { bankroll, loading: bankrollLoading } = useBankroll(isPro)
   const [stakeDialogOpen, setStakeDialogOpen] = React.useState(false)
@@ -256,15 +259,9 @@ export function TicketGenerator({
         setLoading(false)
         return
       }
-      // Only gate/count against the daily limit when the user explicitly
-      // clicked the generate button (isExplicitGenerate.current === true).
-      // Auto-runs (mount, config changes) bypass this check entirely.
-      if (isExplicitGenerate.current) {
-        isExplicitGenerate.current = false
-        if (onBeforeGenerate && !onBeforeGenerate()) return
-      }
       setLoading(true)
       setError(false)
+      setAccessError(null)
 
       try {
         const mode = RISK_MODE_MAP[config.riskProfile]
@@ -278,7 +275,16 @@ export function TicketGenerator({
 
         if (cancelled) return
 
-        if (!result.ok) throw new Error(result.error.message)
+        if (!result.ok) {
+          // 403: cuota diaria agotada (daily_limit_reached) o acceso sin
+          // sesión. Se muestra un estado claro en vez de un error genérico.
+          if (result.error.code === 'HTTP_403') {
+            setTicket(null)
+            setAccessError(result.error.message)
+            return
+          }
+          throw new Error(result.error.message)
+        }
         const candidate =
           result.data.tickets.find((t) => t.mode === mode) ?? result.data.tickets[0] ?? null
         setTicket(config.selectedMarkets.length === 0 ? null : candidate)
@@ -289,12 +295,21 @@ export function TicketGenerator({
       }
     }
 
+    // Free: la generación SOLO ocurre con el botón "Regenerar Boleto"
+    // (isExplicitGenerate.current === true) — los auto-runs de mount o de
+    // cambio de configuración no consumen la cuota diaria del usuario.
+    if (!isPro && !isExplicitGenerate.current) {
+      setTicket(null)
+      setLoading(false)
+      return
+    }
+    isExplicitGenerate.current = false
     generate()
     return () => {
       cancelled = true
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.riskProfile, config.selectedLeagues, config.selectedMarkets, config.selectionCount, generationKey, activeLeagueKeys.join(','), dateFilter, onBeforeGenerate])
+  }, [config.riskProfile, config.selectedLeagues, config.selectedMarkets, config.selectionCount, generationKey, activeLeagueKeys.join(','), dateFilter, onBeforeGenerate, isPro])
 
   React.useEffect(() => {
     if (!isPro && config.riskProfile !== 'conservative') {
@@ -635,10 +650,12 @@ export function TicketGenerator({
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col items-end gap-1">
-                  <div className="h-10 w-20 skeleton rounded-md" />
-                  <div className="h-2.5 w-16 skeleton rounded" />
-                </div>
+                !accessError && (
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="h-10 w-20 skeleton rounded-md" />
+                    <div className="h-2.5 w-16 skeleton rounded" />
+                  </div>
+                )
               )}
             </div>
 
@@ -672,7 +689,7 @@ export function TicketGenerator({
                 </div>
               </div>
             ) : (
-              <div className="h-[58px] w-full skeleton rounded-xl" />
+              !accessError && <div className="h-[58px] w-full skeleton rounded-xl" />
             )}
           </div>
 
@@ -686,12 +703,33 @@ export function TicketGenerator({
                   </li>
                 ))}
               </ul>
+            ) : accessError ? (
+              <div className="py-2">
+                <UnlockGate
+                  variant="limit"
+                  title="Ya usaste tus 3 gratis de hoy"
+                  body="Cada boleto consume desbloqueos de los partidos que usa. Volvé mañana para renovar tu cuota, o hacete PRO para generar sin límite."
+                />
+                {accessError !== 'daily_limit_reached' && (
+                  <p className="mt-3 text-center text-[11px] text-subtle">{accessError}</p>
+                )}
+              </div>
             ) : error ? (
               <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
                 <AlertCircle size={20} className="text-negative" aria-hidden />
                 <p className="text-sm font-semibold text-foreground">Error al consultar el modelo</p>
                 <p className="text-xs text-muted-foreground max-w-xs">
                   No se pudo conectar con el API. Verifica que el servidor esté activo y vuelve a intentarlo.
+                </p>
+              </div>
+            ) : !isPro && !ticket && !loading ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 py-10 px-6 text-center gap-2">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-muted/30 text-muted-foreground">
+                  <LockKeyhole size={18} aria-hidden />
+                </div>
+                <p className="text-sm font-semibold text-foreground">Tu pronóstico se arma cuando lo generás</p>
+                <p className="text-xs leading-relaxed text-muted-foreground max-w-xs">
+                  Cada boleto usa desbloqueos de los partidos que incluye, así que la generación solo ocurre cuando presionás &quot;Regenerar Boleto&quot;. Tu cuota diaria no se gasta al navegar.
                 </p>
               </div>
             ) : emptyReason ? (

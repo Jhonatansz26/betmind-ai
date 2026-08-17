@@ -30,6 +30,8 @@ import {
   type MarketRow,
 } from '@/lib/betmind'
 import { fetchMatchH2H, fetchMatchPrediction, type EnrichedMatch, type MatchH2HData } from '@/lib/api'
+import { hasSession } from '@/lib/auth'
+import { mutate } from 'swr'
 import { resolveLeague } from '@/lib/league-metadata'
 import { formatMarketName } from '@/lib/formatMarketName'
 import { formatEV, formatOdds, formatPercent, formatxG } from '@/lib/formatters'
@@ -40,6 +42,7 @@ import { MatchTabBar, type MatchTab } from '@/components/betmind/match-tab-bar'
 import { BetBuilderCards } from '@/components/betmind/bet-builder-cards'
 import { TacticalPanel } from '@/components/betmind/tactical-panel'
 import { StatDisclaimer } from '@/components/betmind/stat-disclaimer'
+import { UnlockGate } from '@/components/betmind/access-gate'
 import { useProStatus } from '@/components/betmind/use-pro-status'
 
 /* ------------------------------------------------------------------ */
@@ -251,10 +254,11 @@ function NarrativeBody({ text }: { text: string }) {
 /* MatchHero                                                           */
 /* ------------------------------------------------------------------ */
 
-function MatchHero({ match, leagueMeta, model }: {
+function MatchHero({ match, leagueMeta, model, teaser = false }: {
   match: Match
   leagueMeta: ReturnType<typeof resolveLeague>
   model: MatchModel
+  teaser?: boolean
 }) {
   const hw = model.home * 100
   const dw = model.draw * 100
@@ -334,8 +338,8 @@ function MatchHero({ match, leagueMeta, model }: {
         </div>
       </div>
 
-      {/* Probability boxes — only for upcoming matches */}
-      {!isLive && !isPaused && !isFinished && (
+      {/* Probability boxes — only for upcoming matches with full analysis */}
+      {!isLive && !isPaused && !isFinished && !teaser && (
         <>
           <div className="grid grid-cols-3 gap-2 mb-3">
             <div className="bg-surface/50 border border-border/50 rounded-xl p-3 text-center">
@@ -946,7 +950,7 @@ function H2HTab({
 /* MatchDetailContent                                                  */
 /* ------------------------------------------------------------------ */
 
-function MatchDetailContent({ match, enriched, h2h }: { match: Match; enriched?: EnrichedMatch | null; h2h: MatchH2HData | null }) {
+function MatchDetailContent({ match, enriched, h2h, onRetry }: { match: Match; enriched?: EnrichedMatch | null; h2h: MatchH2HData | null; onRetry: () => void }) {
   const [activeTab, setActiveTab] = React.useState<MatchTab>('preview')
   const model = React.useMemo(() => buildModel(match.lambdaHome, match.lambdaAway), [match])
   const rows  = React.useMemo(() => marketRows(match, model), [match, model])
@@ -959,6 +963,21 @@ function MatchDetailContent({ match, enriched, h2h }: { match: Match; enriched?:
   const mainEdge = Math.max(...rows.filter((row) => row.key === 'home' || row.key === 'draw' || row.key === 'away').map((row) => row.edge), 0)
   // TODO(backend-pagos): reemplazar por chequeo real de suscripción.
   const isPro = useProStatus()
+
+  // Modelo freemium: análisis difuminado (teaser). Se muestra el partido
+  // (equipos, hora, liga) y un gate con CTA — nunca datos incompletos.
+  if (match.accessLevel === 'teaser') {
+    // Anónimo → CTA de registro. Registrado sin cuota → límite diario.
+    // Registrado con cuota disponible pero carga fallida → reintentar.
+    const gateVariant = !hasSession() ? 'register' : match.unlocksRemaining === 0 ? 'limit' : 'retry'
+    return (
+      <div className="flex flex-col gap-4">
+        <MatchHero match={match} leagueMeta={leagueMeta} model={model} teaser />
+        <UnlockGate variant={gateVariant} onRetry={onRetry} />
+        <StatDisclaimer />
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -1020,6 +1039,7 @@ export default function PartidoDetailPage() {
   const [h2h, setH2H] = React.useState<MatchH2HData | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError]     = React.useState(false)
+  const [retryKey, setRetryKey] = React.useState(0)
 
   React.useEffect(() => {
     let cancelled = false
@@ -1035,6 +1055,12 @@ export default function PartidoDetailPage() {
           if (prediction?.ok && prediction.data) {
             setMatch(prediction.data)
             setEnriched(prediction.data)
+            // Si un usuario registrado desbloqueó el partido (full), las
+            // listas de /partidos quedaron stale (teaser + contador viejo):
+            // se revalidan para reflejar el desbloqueo y la cuota restante.
+            if (prediction.data.accessLevel === 'full' && hasSession()) {
+              void mutate((key) => typeof key === 'string' && key.startsWith('/matches/'))
+            }
           } else {
             setError(true)
           }
@@ -1047,7 +1073,7 @@ export default function PartidoDetailPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [params.id])
+  }, [params.id, retryKey])
 
   return (
     <div className="min-h-svh bg-background pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
@@ -1086,7 +1112,7 @@ export default function PartidoDetailPage() {
               </Link>
             </div>
           )}
-          {match && !loading && <MatchDetailContent match={match} enriched={enriched} h2h={h2h} />}
+          {match && !loading && <MatchDetailContent match={match} enriched={enriched} h2h={h2h} onRetry={() => setRetryKey((key) => key + 1)} />}
         </div>
       </div>
     </div>

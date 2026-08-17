@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 
-import { announceProLimit } from '@/lib/subscription'
+import { useAuthSession } from '@/lib/hooks/use-auth-session'
 import { useMatches } from '@/lib/hooks/use-matches'
 import { useLeagues } from '@/lib/hooks/use-leagues'
 
@@ -10,60 +10,46 @@ import { AppShell } from './app-shell'
 import { RouteError, RouteSkeleton } from './route-states'
 import { StatDisclaimer } from './stat-disclaimer'
 import { TicketGenerator } from './ticket-generator'
+import { UnlockGate, UnlocksBanner } from './access-gate'
 import { useProStatus } from './use-pro-status'
-
-const DAILY_GENERATIONS_KEY = 'betmind_daily_generations'
-
-function todayKey() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date())
-}
-
-function readDailyGenerations() {
-  if (typeof window === 'undefined') return { date: todayKey(), count: 0 }
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(DAILY_GENERATIONS_KEY) ?? '') as { date?: string; count?: number }
-    return parsed.date === todayKey() && typeof parsed.count === 'number' ? { date: parsed.date, count: parsed.count } : { date: todayKey(), count: 0 }
-  } catch {
-    return { date: todayKey(), count: 0 }
-  }
-}
 
 export function GeneratorPage() {
   // TODO(backend-pagos): reemplazar por chequeo real de suscripción.
   const isPro = useProStatus()
-  const [dailyGenerations, setDailyGenerations] = React.useState(0)
-
-  React.useEffect(() => {
-    setDailyGenerations(readDailyGenerations().count)
-  }, [])
+  const { isAuthenticated, isLoading: authLoading } = useAuthSession()
 
   // SWR-backed — shared cache with MatchesPage and HomePage for 'today'.
-  const { isLoading: matchesLoading, error: matchesError, revalidate } = useMatches('today')
+  const { matches, isLoading: matchesLoading, error: matchesError, revalidate } = useMatches('today')
   const { leagues } = useLeagues()
 
   const loading = matchesLoading
   const error = matchesError
 
-  const beforeGenerate = React.useCallback(() => {
-    if (isPro) return true
-    const current = readDailyGenerations()
-    if (current.count >= 2) {
-      announceProLimit('generations')
-      return false
+  // Cuota diaria restante del plan gratuito (la manda el backend).
+  const unlocksRemaining = React.useMemo(() => {
+    for (const match of matches) {
+      if (match.unlocksRemaining != null) return match.unlocksRemaining
     }
-    const next = { date: current.date, count: current.count + 1 }
-    window.localStorage.setItem(DAILY_GENERATIONS_KEY, JSON.stringify(next))
-    setDailyGenerations(next.count)
-    return true
-  }, [isPro])
+    return null
+  }, [matches])
 
   return (
     <AppShell activeLeagueCount={leagues.filter((league) => league.active_matches > 0).length}>
       <div className="flex flex-col gap-5">
         <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Constructor</p><h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground">Generador de boletos</h1><p className="mt-1 text-sm text-subtle">Configura tu selección y deja que el modelo encuentre las mejores combinaciones.</p></div>
-        {!isPro && <p className="text-xs text-subtle">Generaciones gratuitas hoy: {dailyGenerations}/2 · <a href="/planes" className="font-semibold text-brand hover:underline">Desbloquear PRO</a></p>}
-        {loading ? <RouteSkeleton rows={2} /> : error ? <RouteError label="los partidos del generador" onRetry={revalidate} /> : <>
-          <TicketGenerator leagues={leagues} isPro={isPro} onBeforeGenerate={beforeGenerate} dateFilter="today" />
+
+        {authLoading ? <RouteSkeleton rows={2} /> : !isAuthenticated ? (
+          <>
+            <UnlockGate
+              variant="register"
+              title="Registrate gratis para generar tus boletos"
+              body="Los pronósticos se generan con el análisis completo del modelo, por eso requieren una cuenta. Registrate sin costo y desbloqueá hasta 3 pronósticos por día."
+            />
+            <StatDisclaimer />
+          </>
+        ) : loading ? <RouteSkeleton rows={2} /> : error ? <RouteError label="los partidos del generador" onRetry={revalidate} /> : <>
+          {unlocksRemaining != null && <UnlocksBanner remaining={unlocksRemaining} />}
+          <TicketGenerator leagues={leagues} isPro={isPro} dateFilter="today" />
           <StatDisclaimer />
         </>}
       </div>

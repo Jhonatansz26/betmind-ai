@@ -4,7 +4,6 @@ SRP: Este archivo solo define contratos HTTP y delega al orquestador.
 Las rutas deben ser tan delgadas que casi no haya lógica aquí.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.core.exceptions import (
@@ -12,15 +11,24 @@ from apps.api.core.exceptions import (
     PredictionNotAvailableException,
 )
 from apps.api.dependencies import get_async_session, get_cache_service, get_optional_user_id
-from apps.api.models.user import User
-from apps.api.config import settings
-from apps.api.services.subscription_service import effective_pro, is_effectively_pro
 from apps.api.orchestrators.prediction_orchestrator import PredictionOrchestrator
 from apps.api.repositories.match_repository import MatchRepository
 from apps.api.repositories.tactical_analysis_repository import TacticalAnalysisRepository
 from apps.api.schemas.prediction import OddsInput, PredictionResponse
 from apps.api.services.cache_service import CacheService
 from apps.api.services.odds_service import OddsService
+from apps.api.services.prediction_access import (
+    DAILY_LIMIT_DETAIL,
+    DAILY_UNLOCK_LIMIT,
+    AccessLevel,
+    UnlockDecision,
+    apply_teaser,
+    cot_today,
+    count_unlocks_today,
+    mark_full,
+    resolve_access_level,
+    resolve_unlock,
+)
 
 router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
@@ -85,6 +93,13 @@ async def get_match_prediction(
     - Analisis tactico completo (Fase 4): goles, tarjetas, corners, bet builder
 
     Si no hay datos historicos, estima lambdas desde las cuotas del mercado.
+
+    Modelo freemium:
+    - Anónimo: el análisis completo llega difuminado (teaser); el dato real
+      no se serializa.
+    - Registrado sin PRO: el partido se desbloquea (hasta 3/día COT); si ya
+      fue desbloqueado hoy, se muestra completo sin volver a contar.
+    - PRO: siempre completo.
     """
     odds_input = OddsInput(
         home_win=home_win_odds,
@@ -107,28 +122,41 @@ async def get_match_prediction(
             pass
 
     try:
+        access_level, user = await resolve_access_level(
+            request, session, current_user_id
+        )
+
         response = await orchestrator.get_prediction(match_id=match_id, odds=odds_input)
 
-        is_pro = False
-        if current_user_id is not None:
-            user_result = await session.execute(
-                select(User).where(User.id == current_user_id, User.is_active.is_(True))
+        if access_level is AccessLevel.PRO:
+            return mark_full(response)
+
+        if access_level is AccessLevel.ANON:
+            # No se manda el dato real: teaser difuminado en el payload.
+            return apply_teaser(response)
+
+        # Registrado sin PRO: desbloquear (o re-ver) el partido.
+        cot_date = cot_today()
+        decision = await resolve_unlock(session, user.id, match_id, cot_date)
+        if decision is UnlockDecision.LIMIT_REACHED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=DAILY_LIMIT_DETAIL,
             )
-            user = user_result.scalar_one_or_none()
-            if user is not None and effective_pro(user):
-                is_pro = True
 
-        if not is_effectively_pro(request, is_pro, settings.DEBUG):
-            response.ev_analysis = response.ev_analysis[:10]
-            response.bet_builder = []
-
-        return response
+        remaining = DAILY_UNLOCK_LIMIT - await count_unlocks_today(
+            session, user.id, cot_date
+        )
+        return mark_full(response, unlocks_remaining=remaining)
 
     except MatchNotFoundException as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+    except HTTPException:
+        raise
 
     except Exception as exc:
         import logging

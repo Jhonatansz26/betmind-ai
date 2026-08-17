@@ -114,7 +114,7 @@ class ProbabilityDistribution(BaseModel):
 class EVAnalysis(BaseModel):
     """Análisis de Valor Esperado para un mercado específico."""
     market: str
-    our_probability: float = Field(..., ge=0, le=1)
+    our_probability: float | None = Field(None, ge=0, le=1)
     bookmaker_implied_probability: float | None = Field(None, ge=0, le=1)
     bookmaker_odds: float | None = Field(None, gt=1.0)
     edge_percentage: float | None = None
@@ -167,11 +167,11 @@ class PredictionResponse(BaseModel):
     league: str
     match_date: str
 
-    lambda_home: float = Field(0.0, description="xG del equipo local según modelo Poisson")
-    lambda_away: float = Field(0.0, description="xG del equipo visitante según modelo Poisson")
+    lambda_home: float | None = Field(None, description="xG del equipo local según modelo Poisson")
+    lambda_away: float | None = Field(None, description="xG del equipo visitante según modelo Poisson")
 
-    probabilities: ProbabilityDistribution
-    ev_analysis: list[EVAnalysis]
+    probabilities: ProbabilityDistribution | None = None
+    ev_analysis: list[EVAnalysis] = Field(default_factory=list)
     player_props: list[dict[str, Any]] = Field(
         default_factory=list,
         description=(
@@ -180,16 +180,25 @@ class PredictionResponse(BaseModel):
             "stat_per_90, projected_minutes, expected_stat, status."
         ),
     )
-    confidence_score: int = Field(..., ge=0, le=100)
+    confidence_score: int | None = Field(None, ge=0, le=100)
     risk_level: str = Field("MEDIUM", description="LOW | MEDIUM | HIGH — nivel de riesgo de la predicción")
-    tactical_narrative: str = Field(..., description="Explicación en lenguaje natural")
+    tactical_narrative: str | None = Field(None, description="Explicación en lenguaje natural")
     tactical_analysis: TacticalAnalysisResponse | None = Field(None, description="Análisis táctico completo (Fase 4)")
     bet_builder: list[BetBuilderProfileSchema] = Field(default_factory=list, description="Bet Builder automático por perfil")
     total_markets: int = Field(0, description="Número total de mercados calculados por el modelo (puede ser mayor que los devueltos en ev_analysis para planes Free)")
+    # Acceso freemium: "full" cuando se devuelve el análisis completo,
+    # "teaser" cuando el partido está difuminado para el cliente.
+    access_level: str = Field("full", description="full | teaser — nivel de acceso de la respuesta")
+    unlocks_remaining: int | None = Field(
+        None,
+        description="Cuota diaria restante de desbloqueos (solo usuarios registrados sin PRO).",
+    )
 
     @computed_field
     @property
-    def confidence_level(self) -> ConfidenceLevel:
+    def confidence_level(self) -> ConfidenceLevel | None:
+        if self.confidence_score is None:
+            return None
         if self.confidence_score >= 70:
             return ConfidenceLevel.HIGH
         elif self.confidence_score >= 50:

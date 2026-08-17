@@ -5,6 +5,10 @@ import { formatEV } from './formatters'
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 const API_TIMEOUT_MS = 12_000
+/** La generación de una predicción (pipeline ML + LLM) tarda 20-60s. */
+const PREDICTION_TIMEOUT_MS = 90_000
+/** La generación de boletos lee predicciones persistidas; puede tardar. */
+const TICKETS_TIMEOUT_MS = 60_000
 
 export interface ApiError {
   code: string
@@ -284,7 +288,7 @@ export async function fetchTickets(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  })
+  }, TICKETS_TIMEOUT_MS)
 
   if (!result.ok) return result
   const data = result.data
@@ -327,14 +331,18 @@ interface BackendMatch {
   }
   prediction?: {
     prediction_type: string
-    confidence: string
-    value_score: number
+    confidence: string | null
+    value_score: number | null
     reasoning: string | null
     lambda_home: number | null
     lambda_away: number | null
+    teaser?: boolean
   } | null
   match_advanced_stats?: Match['advancedStats']
   referee_profile?: Match['refereeProfile']
+  /** Nivel de acceso freemium ("full" | "teaser") y cuota diaria restante. */
+  access_level?: 'full' | 'teaser'
+  unlocks_remaining?: number | null
 }
 
 interface BackendMatchesResponse {
@@ -439,6 +447,8 @@ function mapBackendMatch(raw: BackendMatch): Match {
     away: raw.away_team_name || 'Visitante',
     lambdaHome: prediction?.lambda_home ?? 0,
     lambdaAway: prediction?.lambda_away ?? 0,
+    accessLevel: raw.access_level === 'teaser' ? 'teaser' : 'full',
+    unlocksRemaining: raw.unlocks_remaining ?? null,
     odds: {
       home: realOdds.home ?? 0,
       draw: realOdds.draw ?? 0,
@@ -634,21 +644,21 @@ interface BackendPrediction {
   away_team: string
   league: string
   match_date: string
-  lambda_home: number
-  lambda_away: number
+  lambda_home: number | null
+  lambda_away: number | null
   probabilities: {
     home_win: number
     draw: number
     away_win: number
     over_2_5: number
     over_1_5: number
-  }
+  } | null
   ev_analysis: BackendEVEntry[]
-  confidence_score: number
-  tactical_narrative: string
+  confidence_score: number | null
+  tactical_narrative: string | null
   tactical_analysis: BackendTacticalAnalysis | null
-  confidence_level: string
-  risk_level: string
+  confidence_level: string | null
+  risk_level: string | null
   bet_builder: Array<{
     profile: string
     label: string
@@ -662,6 +672,9 @@ interface BackendPrediction {
     combined_probability: number
   }>
   total_markets: number
+  /** Nivel de acceso freemium ("full" | "teaser") y cuota diaria restante. */
+  access_level?: 'full' | 'teaser'
+  unlocks_remaining?: number | null
 }
 
 export interface EnrichedMatch extends Match {
@@ -747,28 +760,55 @@ export async function fetchMatchH2H(matchId: string): Promise<ApiResult<MatchH2H
 }
 
 function mapBackendPrediction(raw: BackendPrediction, baseMatch: Match): EnrichedMatch {
+  const isTeaser = raw.access_level === 'teaser'
+
+  // Teaser: el backend NUNCA envía el dato real. Los campos sensibles vienen
+  // null y no deben crashear el mapper ni mostrar undefined — se devuelven
+  // valores seguros y el render decide mostrar el gate difuminado.
+  if (isTeaser) {
+    return {
+      ...baseMatch,
+      accessLevel: 'teaser',
+      unlocksRemaining: raw.unlocks_remaining ?? baseMatch.unlocksRemaining ?? null,
+      lambdaHome: 0,
+      lambdaAway: 0,
+      probabilities: { home_win: 0, draw: 0, away_win: 0, over_2_5: 0, over_1_5: 0 },
+      evAnalysis: [],
+      confidenceScore: 0,
+      riskLevel: raw.risk_level ?? 'MEDIUM',
+      tacticalNarrative: '',
+      tacticalHeadline: '',
+      llmModelUsed: 'none',
+      tacticalAnalysis: null,
+      betBuilder: [],
+      totalMarkets: raw.total_markets,
+    }
+  }
+
   return {
     ...baseMatch,
-    lambdaHome: raw.lambda_home,
-    lambdaAway: raw.lambda_away,
+    accessLevel: 'full',
+    unlocksRemaining: raw.unlocks_remaining ?? baseMatch.unlocksRemaining ?? null,
+    lambdaHome: raw.lambda_home ?? 0,
+    lambdaAway: raw.lambda_away ?? 0,
     probabilities: {
-      home_win: raw.probabilities.home_win,
-      draw: raw.probabilities.draw,
-      away_win: raw.probabilities.away_win,
-      over_2_5: raw.probabilities.over_2_5,
-      over_1_5: raw.probabilities.over_1_5,
+      home_win: raw.probabilities?.home_win ?? 0,
+      draw: raw.probabilities?.draw ?? 0,
+      away_win: raw.probabilities?.away_win ?? 0,
+      over_2_5: raw.probabilities?.over_2_5 ?? 0,
+      over_1_5: raw.probabilities?.over_1_5 ?? 0,
     },
     evAnalysis: raw.ev_analysis.map((ev) => ({
       market: ev.market,
-      probability: ev.our_probability,
+      probability: ev.our_probability ?? 0,
       odds: ev.bookmaker_odds ?? 0,
       edge: ev.edge_percentage ?? 0,
       ev: ev.expected_value ?? 0,
       verdict: ev.verdict,
     })),
-    confidenceScore: raw.confidence_score,
+    confidenceScore: raw.confidence_score ?? 0,
     riskLevel: raw.risk_level ?? 'MEDIUM',
-    tacticalNarrative: raw.tactical_narrative,
+    tacticalNarrative: raw.tactical_narrative ?? '',
     tacticalHeadline: raw.tactical_analysis?.match_preview_headline ?? '',
     llmModelUsed: raw.tactical_analysis?.llm_model_used ?? 'none',
     tacticalAnalysis: raw.tactical_analysis ? {
@@ -788,18 +828,24 @@ export async function fetchMatchPrediction(matchId: string): Promise<ApiResult<E
   const predUrl = `${API_BASE}/api/v1/predictions/${matchId}`
 
   const [matchResult, predictionResult] = await Promise.all([
-    apiFetch<BackendMatch>(matchUrl),
-    apiFetch<BackendPrediction>(predUrl),
+    apiFetch<BackendMatch>(matchUrl, {}, PREDICTION_TIMEOUT_MS),
+    apiFetch<BackendPrediction>(predUrl, {}, PREDICTION_TIMEOUT_MS),
   ])
 
   if (!matchResult.ok) return matchResult
   const baseMatch = mapBackendMatch(matchResult.data)
 
+  // El detalle de /matches manda la información base + el nivel de acceso
+  // (full si el partido ya fue desbloqueado hoy, si no teaser). Si la
+  // predicción falla (p. ej. 403 daily_limit_reached) el render usa el
+  // nivel de acceso del match base — nunca se muestra una pantalla rota.
   if (!predictionResult.ok) {
     return {
       ok: true,
       data: {
         ...baseMatch,
+        accessLevel: baseMatch.accessLevel,
+        unlocksRemaining: baseMatch.unlocksRemaining,
         probabilities: { home_win: 0, draw: 0, away_win: 0, over_2_5: 0, over_1_5: 0 },
         evAnalysis: [], confidenceScore: 0, riskLevel: 'MEDIUM',
         tacticalNarrative: '', tacticalHeadline: '', llmModelUsed: 'none',
@@ -810,4 +856,54 @@ export async function fetchMatchPrediction(matchId: string): Promise<ApiResult<E
   }
 
   return { ok: true, data: mapBackendPrediction(predictionResult.data, baseMatch) }
+}
+
+/* ------------------------------------------------------------------ */
+/* Resultados públicos (featured_tickets del sistema)                  */
+/* ------------------------------------------------------------------ */
+
+export type FeaturedTicketStatus = 'WON' | 'LOST' | 'PENDING'
+
+export interface FeaturedTicketLeg {
+  match_id: number
+  home_team: string
+  away_team: string
+  league: string
+  market_name: string
+  market_label: string
+  our_probability: number
+  bookmaker_odds: number
+}
+
+export interface FeaturedTicketRecord {
+  id: number
+  mode: string
+  mode_label: string
+  combined_odds: number
+  real_ev: number
+  status: FeaturedTicketStatus
+  legs: FeaturedTicketLeg[]
+}
+
+export interface ResultsSummary {
+  total: number
+  resolved: number
+  won: number
+  lost: number
+  pending: number
+  win_rate: number | null
+}
+
+export interface PublicResultsResponse {
+  date: string
+  tickets: FeaturedTicketRecord[]
+  summary_7d: ResultsSummary
+  summary_30d: ResultsSummary
+}
+
+/** Sección pública: boletos destacados del sistema con su récord real. Sin auth. */
+export async function fetchPublicResults(date?: string): Promise<ApiResult<PublicResultsResponse>> {
+  const url = new URL(`${API_BASE}/api/v1/public/results`)
+  if (date) url.searchParams.set('date', date)
+  return apiFetch<PublicResultsResponse>(url.toString())
 }

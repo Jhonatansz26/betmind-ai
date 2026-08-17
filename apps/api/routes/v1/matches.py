@@ -2,13 +2,13 @@ import logging
 from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from apps.api.config import settings
-from apps.api.dependencies import get_async_session, require_admin_key
+from apps.api.dependencies import get_async_session, get_optional_user_id, require_admin_key
 from apps.api.models.match import Match
 from apps.api.models.league import League
 from apps.api.models.team import Team
@@ -18,6 +18,16 @@ from apps.api.models.prediction import Prediction
 from apps.api.core.enums import FINISHED_MATCH_STATUSES, UPCOMING_MATCH_STATUSES
 from apps.api.services.api_football import APIFootballService
 from apps.api.services.data_ingestion import DataIngestionService
+from apps.api.services.prediction_access import (
+    DAILY_UNLOCK_LIMIT,
+    AccessLevel,
+    apply_match_access,
+    cot_today,
+    count_unlocks_today,
+    is_unlocked_today,
+    resolve_access_level,
+    unlocked_match_ids_today,
+)
 from betmind_ml.config import ACTIVE_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
@@ -29,6 +39,7 @@ COT = ZoneInfo("America/Bogota")
 
 @router.get("/")
 async def list_matches(
+    request: Request,
     skip: int = 0,
     limit: int = 100,
     date_str: str | None = Query(None, alias="date", description="Fecha en formato YYYY-MM-DD (zona COT)"),
@@ -40,6 +51,7 @@ async def list_matches(
     include_upcoming: bool = Query(True, description="Incluir partidos programados"),
     include_finished: bool = Query(False, description="Incluir partidos finalizados"),
     db: AsyncSession = Depends(get_async_session),
+    current_user_id: int | None = Depends(get_optional_user_id),
 ):
     """Lista partidos almacenados en la base de datos con datos de equipos y liga."""
     conditions = []
@@ -111,16 +123,39 @@ async def list_matches(
     match_ids = [m.id for m in matches]
     odds_map = await _fetch_odds_for_matches(db, match_ids)
 
+    access, user = await resolve_access_level(request, db, current_user_id)
+    if access is AccessLevel.FREE and user is not None:
+        unlock_date = cot_today()
+        unlocked = await unlocked_match_ids_today(db, user.id, match_ids, unlock_date)
+        remaining = DAILY_UNLOCK_LIMIT - await count_unlocks_today(db, user.id, unlock_date)
+        return {
+            "matches": [
+                apply_match_access(
+                    _match_to_dict_full(m, odds_map.get(m.id, {})),
+                    access,
+                    unlocks_remaining=remaining,
+                    unlocked=(m.id in unlocked),
+                )
+                for m in matches
+            ],
+            "total": len(matches),
+        }
+
     return {
-        "matches": [_match_to_dict_full(m, odds_map.get(m.id, {})) for m in matches],
+        "matches": [
+            apply_match_access(_match_to_dict_full(m, odds_map.get(m.id, {})), access)
+            for m in matches
+        ],
         "total": len(matches),
     }
 
 
 @router.get("/upcoming/")
 async def get_upcoming_matches(
+    request: Request,
     limit: int = 10,
     db: AsyncSession = Depends(get_async_session),
+    current_user_id: int | None = Depends(get_optional_user_id),
 ):
     """Obtiene partidos próximos a disputarse."""
     stmt = (
@@ -142,13 +177,40 @@ async def get_upcoming_matches(
     matches = result.scalars().all()
     match_ids = [m.id for m in matches]
     odds_map = await _fetch_odds_for_matches(db, match_ids)
-    return {"matches": [_match_to_dict_full(m, odds_map.get(m.id, {})) for m in matches], "total": len(matches)}
+
+    access, user = await resolve_access_level(request, db, current_user_id)
+    if access is AccessLevel.FREE and user is not None:
+        unlock_date = cot_today()
+        unlocked = await unlocked_match_ids_today(db, user.id, match_ids, unlock_date)
+        remaining = DAILY_UNLOCK_LIMIT - await count_unlocks_today(db, user.id, unlock_date)
+        return {
+            "matches": [
+                apply_match_access(
+                    _match_to_dict_full(m, odds_map.get(m.id, {})),
+                    access,
+                    unlocks_remaining=remaining,
+                    unlocked=(m.id in unlocked),
+                )
+                for m in matches
+            ],
+            "total": len(matches),
+        }
+
+    return {
+        "matches": [
+            apply_match_access(_match_to_dict_full(m, odds_map.get(m.id, {})), access)
+            for m in matches
+        ],
+        "total": len(matches),
+    }
 
 
 @router.get("/{match_id}")
 async def get_match(
+    request: Request,
     match_id: int,
     db: AsyncSession = Depends(get_async_session),
+    current_user_id: int | None = Depends(get_optional_user_id),
 ):
     """Obtiene un partido específico por ID con datos completos de equipos, liga y odds."""
     stmt = (
@@ -211,7 +273,15 @@ async def get_match(
         if match.referee
         else None
     )
-    return response
+
+    access, user = await resolve_access_level(request, db, current_user_id)
+    if access is AccessLevel.FREE and user is not None:
+        unlock_date = cot_today()
+        unlocked = await is_unlocked_today(db, user.id, match_id, unlock_date)
+        remaining = DAILY_UNLOCK_LIMIT - await count_unlocks_today(db, user.id, unlock_date)
+        return apply_match_access(response, access, unlocks_remaining=remaining, unlocked=unlocked)
+
+    return apply_match_access(response, access)
 
 
 @router.post("/sync/{league_id}")

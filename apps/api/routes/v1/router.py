@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from apps.api.routes.v1 import auth, bankroll, matches, predictions, backtesting, tickets, leagues, users, subscriptions, webhooks
+from apps.api.routes.v1 import auth, bankroll, matches, predictions, backtesting, tickets, leagues, users, subscriptions, webhooks, public_results
 
 api_router = APIRouter()
 
@@ -14,3 +14,4 @@ api_router.include_router(tickets.router)
 api_router.include_router(leagues.router)
 api_router.include_router(subscriptions.router)
 api_router.include_router(webhooks.router)
+api_router.include_router(public_results.router)

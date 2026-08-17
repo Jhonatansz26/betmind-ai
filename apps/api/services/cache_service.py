@@ -128,7 +128,7 @@ class CacheService:
             if on_error is not None:
                 logger.error(
                     "Redis unavailable al incrementar '%s' (ttl=%ss); aplicando "
-                    "fail-closed (on_error=%s) — los límites freemium pueden "
+                    "fail-closed (on_error=%s) — los contadores de cuota pueden "
                     "bloquear usuarios legítimos mientras Redis siga caído: %s",
                     key, ttl_seconds, on_error, e,
                 )

@@ -30,7 +30,6 @@ from apps.api.engine.ticket_builder import (
 from apps.api.dependencies import (
     get_async_session,
     get_cache_service,
-    get_client_ip,
     get_current_user_id,
     get_optional_user_id,
 )
@@ -38,6 +37,13 @@ from apps.api.repositories.ticket_repository import TicketRepository
 from apps.api.repositories.ticket_repository import TicketStatusConflict
 from apps.api.config import settings
 from apps.api.services.subscription_service import effective_pro, is_effectively_pro
+from apps.api.services.prediction_access import (
+    ANON_GENERATE_DETAIL,
+    AccessLevel,
+    consume_unlocks_for_matches,
+    cot_today,
+    resolve_access_level,
+)
 from apps.api.models.user import User
 from betmind_ml.ev.ev_calculator import calculate_ev_metrics
 from betmind_ml.config import EV_POSITIVE_THRESHOLD
@@ -55,15 +61,10 @@ async def save_ticket(
     request: Request,
     body: SaveTicketRequest,
     session=Depends(get_async_session),
-    cache=Depends(get_cache_service),
     current_user_id: int | None = Depends(get_optional_user_id),
-    client_ip: str = Depends(get_client_ip),
 ):
     """Persist a ticket snapshot for the user's tracking history."""
     repository = TicketRepository(session)
-
-    now_cot = datetime.now(COT)
-    cot_date = now_cot.strftime("%Y-%m-%d")
 
     is_pro = False
     if current_user_id is not None:
@@ -74,24 +75,13 @@ async def save_ticket(
         if user is not None and effective_pro(user):
             is_pro = True
 
-    if not is_effectively_pro(request, is_pro, settings.DEBUG):
-        if current_user_id is not None:
-            existing = await repository.count_by_user(current_user_id)
-            if existing >= 5:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Tu plan gratuito guarda hasta 5 boletos. Actualizá a PRO para guardar sin límite.",
-                )
-        else:
-            anon_key = f"save:daily:ip:{client_ip}:{cot_date}"
-            saved_count = await cache.increment(
-                anon_key, ttl_seconds=86_400, on_error=6
+    if not is_effectively_pro(request, is_pro, settings.DEBUG) and current_user_id is not None:
+        existing = await repository.count_by_user(current_user_id)
+        if existing >= 5:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tu plan gratuito guarda hasta 5 boletos. Actualizá a PRO para guardar sin límite.",
             )
-            if saved_count > 5:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Registrate para guardar más de 5 boletos por día.",
-                )
 
     effective_stake = body.stake_amount
     if effective_stake is not None and not is_effectively_pro(request, is_pro, settings.DEBUG):
@@ -440,7 +430,6 @@ async def generate_tickets(
     session=Depends(get_async_session),
     cache=Depends(get_cache_service),
     current_user_id: int | None = Depends(get_optional_user_id),
-    client_ip: str = Depends(get_client_ip),
 ):
     now_cot = datetime.now(COT)
     start_utc, end_utc = _ticket_window(date_filter)
@@ -453,35 +442,23 @@ async def generate_tickets(
     markets_slug = ",".join(sorted(body.markets or [])) or "all"
     cache_key = f"tickets:stored:{date_filter or 'rolling'}:{window_slug}:{leagues_slug}:{markets_slug}:{body.selection_count or 'default'}"
 
-    # Enforce daily generation limit BEFORE serving from cache so that
-    # hitting the same cached request cannot bypass the daily cap.
-    cot_date = now_cot.strftime("%Y-%m-%d")
-    is_pro = False
-    if current_user_id is not None:
-        user_result = await session.execute(
-            select(User).where(User.id == current_user_id, User.is_active.is_(True))
+    # Modelo freemium: el análisis real viaja en los boletos, así que los
+    # anónimos no pueden generarlos (solo ven teasers). Se rechaza ANTES de
+    # servir el caché para que el mismo request cacheado no pueda bypassear
+    # el gate.
+    access_level, user = await resolve_access_level(request, session, current_user_id)
+    if access_level is AccessLevel.ANON:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=ANON_GENERATE_DETAIL,
         )
-        user = user_result.scalar_one_or_none()
-        if user is not None and effective_pro(user):
-            is_pro = True
-
-    if not is_effectively_pro(request, is_pro, settings.DEBUG):
-        gen_key = (
-            f"gen:daily:{current_user_id}:{cot_date}"
-            if current_user_id is not None
-            else f"gen:daily:ip:{client_ip}:{cot_date}"
-        )
-        count = await cache.increment(gen_key, ttl_seconds=86_400, on_error=3)
-        if count > 2:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Tu plan gratuito genera hasta 2 boletos por día. Actualizá a PRO para generar sin límite.",
-            )
 
     if not body.force_refresh:
         if cached := await cache.get(cache_key, TicketGenerateResponse):
             if set(body.modes) != {TicketMode.EDGE, TicketMode.VALUE, TicketMode.BOLD}:
                 cached.tickets = [t for t in cached.tickets if t.mode in body.modes]
+            if access_level is AccessLevel.FREE and user is not None:
+                await _charge_generation_unlocks(session, user.id, cached)
             return cached
 
     all_matches, odds_map = await _read_stored_predictions(
@@ -563,9 +540,24 @@ async def generate_tickets(
         matches_analyzed=len(all_matches),
     )
 
+    if access_level is AccessLevel.FREE and user is not None:
+        await _charge_generation_unlocks(session, user.id, response)
+
     await cache.set(cache_key, response, ttl=60 * 30)
 
     return response
+
+
+async def _charge_generation_unlocks(session, user_id: int, response: TicketGenerateResponse) -> None:
+    """Cobra la cuota de desbloqueo de los partidos usados en un boleto FREE.
+
+    Los partidos ya desbloqueados hoy no cuentan de nuevo. Si la cuota de 3
+    no alcanza para los partidos nuevos, lanza 403 daily_limit_reached.
+    """
+    used_match_ids = {
+        leg.match_id for ticket in response.tickets for leg in ticket.legs
+    }
+    await consume_unlocks_for_matches(session, user_id, used_match_ids, cot_today())
 
 
 def _format_cot_time(dt) -> str:

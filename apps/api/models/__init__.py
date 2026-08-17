@@ -13,11 +13,14 @@ from apps.api.models.team import Team
 from apps.api.models.user import User
 from apps.api.models.ticket import SavedTicket
 from apps.api.models.subscription import Subscription, SubscriptionTransaction
+from apps.api.models.daily_unlock import DailyUnlock
 from apps.api.models.webhook_event import WebhookEvent
+from apps.api.models.featured_ticket import FeaturedTicket
 
 __all__ = [
     "Base", "TimestampMixin", "Bankroll", "BankrollMovement", "BookmakerOdd",
     "MatchEvent", "MatchAdvancedStats", "RefereeProfile", "League", "Match",
     "Prediction", "PredictionOutcome", "TacticalAnalysis", "Team", "User", "SavedTicket",
-    "Subscription", "SubscriptionTransaction", "WebhookEvent",
+    "Subscription", "SubscriptionTransaction", "DailyUnlock", "WebhookEvent",
+    "FeaturedTicket",
 ]

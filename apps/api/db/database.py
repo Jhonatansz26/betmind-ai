@@ -44,6 +44,7 @@ async def init_db() -> None:
         Team, League, Match, Prediction, User, BookmakerOdd,
         MatchEvent, MatchAdvancedStats, RefereeProfile,
         SavedTicket, Bankroll, BankrollMovement, Subscription, SubscriptionTransaction,
+        DailyUnlock, FeaturedTicket,
     )
 
     async with engine.begin() as conn:

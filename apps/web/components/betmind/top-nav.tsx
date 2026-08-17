@@ -4,7 +4,7 @@ import * as React from 'react'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { BarChart3, CalendarIcon, ChevronDown, History, LogOut, MenuIcon, Monitor, Moon, Sun, User, Wallet } from 'lucide-react'
+import { BarChart3, CalendarIcon, ChevronDown, History, LogOut, MenuIcon, Monitor, Moon, Sun, Trophy, User, Wallet } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { clearToken } from '@/lib/auth'
@@ -16,6 +16,7 @@ import { useProStatus } from './use-pro-status'
 const NAV_ITEMS = [
   { href: '/senales', label: 'Señales', icon: <BarChart3 className="size-4" aria-hidden="true" /> },
   { href: '/partidos', label: 'Partidos', icon: <CalendarIcon className="size-4" aria-hidden="true" /> },
+  { href: '/resultados', label: 'Resultados', icon: <Trophy className="size-4" aria-hidden="true" /> },
   { href: '/historial', label: 'Historial', icon: <History className="size-4" aria-hidden="true" /> },
   { href: '/bankroll', label: 'Bankroll', icon: <Wallet className="size-4" aria-hidden="true" /> },
 ] as const
@@ -269,7 +270,7 @@ export function BottomNav() {
   const pathname = usePathname()
 
   return (
-    <nav aria-label="Navegación principal móvil" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
+    <nav aria-label="Navegación principal móvil" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
       {NAV_ITEMS.map((item) => (
         <Link key={item.href} href={item.href} aria-current={isActivePath(pathname, item.href) ? 'page' : undefined} className={cn('flex min-h-14 flex-col items-center justify-center gap-1 px-2 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60', isActivePath(pathname, item.href) ? 'text-primary' : 'text-muted-foreground hover:text-foreground')}>
           {item.icon}

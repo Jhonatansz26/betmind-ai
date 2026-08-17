@@ -7,12 +7,16 @@ import Link from 'next/link'
 import { type Ticket } from '@/lib/betmind'
 import { fetchTickets } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useAuthSession } from '@/lib/hooks/use-auth-session'
+import { useMatches } from '@/lib/hooks/use-matches'
 
 import { AppShell } from './app-shell'
 import { DateSelector, formatDateTitle, type DateFilter } from './date-selector'
 import { RouteError } from './route-states'
 import { StatDisclaimer } from './stat-disclaimer'
 import { TicketCard } from './ticket-card'
+import { FreePicksGate, UnlockGate } from './access-gate'
+import { useProStatus } from './use-pro-status'
 
 function formatAge(value?: string | null) {
   if (!value) return 'Actualizando datos…'
@@ -49,18 +53,44 @@ function EmptySignals({ onRetry }: { onRetry: () => void }) {
 }
 
 export function SignalsPage() {
+  const { isAuthenticated, isLoading: authLoading } = useAuthSession()
+  const isPro = useProStatus()
   const [dateFilter, setDateFilter] = React.useState<DateFilter>('today')
   const [tickets, setTickets] = React.useState<Ticket[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState(false)
+  /** 403 del backend (cuota diaria agotada). */
+  const [accessError, setAccessError] = React.useState<string | null>(null)
   const [retryKey, setRetryKey] = React.useState(0)
   const [meta, setMeta] = React.useState<{ totalEv: number; generatedAt: string } | null>(null)
 
+  // Contador de cuota (solo lo manda el backend para usuarios free).
+  const { matches } = useMatches(dateFilter === 'all' ? undefined : dateFilter)
+  const unlocksRemaining = React.useMemo(() => {
+    for (const match of matches) {
+      if (match.unlocksRemaining != null) return match.unlocksRemaining
+    }
+    return null
+  }, [matches])
+
   React.useEffect(() => {
     let cancelled = false
+
+    // Anónimos y free NO generan señales automáticamente: la cuota de 3 se
+    // gasta cuando el usuario elige partidos, no al abrir la página.
+    if (authLoading) return
+    if (!isAuthenticated || !isPro) {
+      setTickets([])
+      setMeta(null)
+      setAccessError(null)
+      setLoading(false)
+      return
+    }
+
     async function load() {
       setLoading(true)
       setError(false)
+      setAccessError(null)
       const result = await fetchTickets(['EDGE', 'VALUE', 'BOLD'], undefined, dateFilter === 'all' ? undefined : dateFilter)
       if (cancelled) return
       if (result.ok) {
@@ -69,13 +99,14 @@ export function SignalsPage() {
       } else {
         setTickets([])
         setMeta(null)
-        setError(true)
+        if (result.error.code === 'HTTP_403') setAccessError(result.error.message)
+        else setError(true)
       }
       setLoading(false)
     }
     void load()
     return () => { cancelled = true }
-  }, [dateFilter, retryKey])
+  }, [authLoading, isAuthenticated, isPro, dateFilter, retryKey])
 
   const dateInfo = React.useMemo(() => formatDateTitle(dateFilter, new Date()), [dateFilter])
 
@@ -97,9 +128,23 @@ export function SignalsPage() {
           <p className="w-full text-xs text-muted-foreground">{meta ? `${meta.totalEv} señales +EV · ${formatAge(meta.generatedAt)}` : 'Consultando modelo…'}</p>
         </section>
 
-        {loading ? <TicketLoadingGrid /> : error ? <RouteError label="las señales" onRetry={() => setRetryKey((key) => key + 1)} /> : tickets.length > 0 ? (
+        {authLoading ? <TicketLoadingGrid /> : !isAuthenticated ? (
+          <UnlockGate
+            variant="register"
+            title="Las señales completas son para usuarios registrados"
+            body="Registrate gratis para ver hasta 3 pronósticos completos por día, con EV, mercados y el análisis táctico del modelo."
+          />
+        ) : !isPro ? (
+          <FreePicksGate remaining={unlocksRemaining} />
+        ) : loading ? <TicketLoadingGrid /> : accessError ? (
+          <UnlockGate
+            variant="limit"
+            title="Ya usaste tus 3 gratis de hoy"
+            body="Volvé mañana para renovar tu cuota, o hacete PRO para ver todas las señales sin límite."
+          />
+        ) : error ? <RouteError label="las señales" onRetry={() => setRetryKey((key) => key + 1)} /> : tickets.length > 0 ? (
           <div className={cn('grid items-stretch gap-4', tickets.length === 1 ? 'max-w-md' : tickets.length === 2 ? 'md:grid-cols-2 max-w-2xl' : 'md:grid-cols-2 xl:grid-cols-3')}>
-            {tickets.map((ticket) => <TicketCard key={ticket.mode} ticket={ticket} />)}
+            {tickets.map((ticket, index) => <TicketCard key={`${ticket.mode}-${index}`} ticket={ticket} />)}
           </div>
         ) : <EmptySignals onRetry={() => setRetryKey((key) => key + 1)} />}
         <StatDisclaimer />

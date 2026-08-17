@@ -80,6 +80,11 @@ class TestDevBackdoor:
 # ---------------------------------------------------------------------------
 
 class TestIncrementFailClosed:
+    """cache_service.increment sigue siendo fail-closed (on_error): cuando
+    Redis falla retorna on_error en vez de 0, para que un contador de cuota
+    bloquee en vez de abrirse. (Los topes freemium viejos de Redis se
+    reemplazaron por la tabla daily_unlocks; el helper queda como utilidad.)"""
+
     def test_on_error_returns_fail_closed_value(self, caplog):
         cache = CacheService("redis://localhost:9999")
         cache.client = MagicMock()
@@ -87,8 +92,8 @@ class TestIncrementFailClosed:
 
         import asyncio
         with caplog.at_level(logging.ERROR, logger="apps.api.services.cache_service"):
-            count = asyncio.run(cache.increment("gen:daily:1:2026-01-01", on_error=3))
-        assert count == 3  # 3 > 2 -> the daily-generation cap is enforced
+            count = asyncio.run(cache.increment("counter:daily:1:2026-01-01", on_error=3))
+        assert count == 3  # on_error devuelto: fail-closed aplicado
         assert any(
             "fail-closed" in r.message and "Redis" in r.message for r in caplog.records
         ), caplog.text
@@ -99,8 +104,8 @@ class TestIncrementFailClosed:
         cache.client.incr = MagicMock(side_effect=RedisError("down"))
 
         import asyncio
-        count = asyncio.run(cache.increment("save:daily:ip:x:2026-01-01", on_error=6))
-        assert count == 6  # 6 > 5 -> anonymous save cap is enforced
+        count = asyncio.run(cache.increment("counter:daily:ip:x:2026-01-01", on_error=6))
+        assert count == 6  # on_error devuelto sin tocar Redis
 
     def test_without_on_error_keeps_legacy_behavior(self):
         cache = CacheService("redis://localhost:9999")

@@ -9,6 +9,7 @@ import { useAuthSession } from '@/lib/hooks/use-auth-session'
 import { summarizeTrackedTickets } from '@/lib/tracking'
 import { cn } from '@/lib/utils'
 import { StatDisclaimer } from './stat-disclaimer'
+import { FreePicksGate, UnlockGate, UnlocksBanner } from './access-gate'
 import { useTicketHistory } from './use-ticket-history'
 
 interface HomeViewProps {
@@ -17,6 +18,11 @@ interface HomeViewProps {
   tickets: BetmindTicket[]
   ticketsLoading: boolean
   ticketsError: boolean
+  /** 403 del backend: las señales requieren sesión/cuota → CTA en vez de error. */
+  ticketsAccessError?: boolean
+  /** Free registrado: no se auto-genera; se invita a elegir partidos. */
+  ticketsPick?: boolean
+  unlocksRemaining?: number | null
   ticketCount: number | null
   onRetryTickets: () => void
   matches: Match[]
@@ -96,6 +102,9 @@ export function HomeView({
   tickets,
   ticketsLoading,
   ticketsError,
+  ticketsAccessError = false,
+  ticketsPick = false,
+  unlocksRemaining = null,
   ticketCount,
   onRetryTickets,
   matches,
@@ -157,7 +166,7 @@ export function HomeView({
           </div>
           <span className="hidden font-mono text-[10px] uppercase tracking-wider text-subtle sm:block">Top 3 por EV</span>
         </div>
-        {ticketsLoading ? <BlockSkeleton type="signals" /> : ticketsError ? <BlockError label="las señales" onRetry={onRetryTickets} /> : featuredTickets.length > 0 ? <div className="grid gap-3 md:grid-cols-3">{featuredTickets.map((ticket) => <SignalCard key={ticket.mode} ticket={ticket} onOpen={onOpenTickets} />)}</div> : <div className="rounded-2xl border border-dashed border-border bg-card/60 p-8 text-center"><p className="text-sm font-semibold text-foreground">No hay señales +EV disponibles todavía</p><button type="button" onClick={onRetryTickets} className="mt-3 text-xs font-semibold text-primary hover:underline">Actualizar señales</button></div>}
+        {ticketsLoading ? <BlockSkeleton type="signals" /> : ticketsAccessError ? <UnlockGate variant="register" title="Las señales completas son para usuarios registrados" body="Registrate gratis para ver hasta 3 pronósticos completos por día, con EV, mercados y el análisis táctico del modelo." className="min-h-52" /> : ticketsPick ? <div className="flex flex-col gap-3"><UnlocksBanner remaining={unlocksRemaining ?? 0} /><FreePicksGate remaining={unlocksRemaining} /></div> : ticketsError ? <BlockError label="las señales" onRetry={onRetryTickets} /> : featuredTickets.length > 0 ? <div className="grid gap-3 md:grid-cols-3">{featuredTickets.map((ticket, index) => <SignalCard key={`${ticket.mode}-${index}`} ticket={ticket} onOpen={onOpenTickets} />)}</div> : <div className="rounded-2xl border border-dashed border-border bg-card/60 p-8 text-center"><p className="text-sm font-semibold text-foreground">No hay señales +EV disponibles todavía</p><button type="button" onClick={onRetryTickets} className="mt-3 text-xs font-semibold text-primary hover:underline">Actualizar señales</button></div>}
         <StatDisclaimer />
       </section>
 

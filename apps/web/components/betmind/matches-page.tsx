@@ -16,6 +16,7 @@ import { LeagueAccordion } from './league-accordion'
 import { LeagueLogo } from './league-logo'
 import { LeagueSidebar } from './league-sidebar'
 import { RouteError } from './route-states'
+import { UnlocksBanner } from './access-gate'
 
 function MatchesSkeleton() {
   return <div aria-busy="true" className="flex flex-col gap-3"><span className="sr-only">Cargando partidos…</span>{[0, 1, 2, 3].map((item) => <div key={item} className="h-24 rounded-xl border border-border bg-card skeleton" />)}</div>
@@ -118,6 +119,15 @@ export function MatchesPage() {
 
   const dateInfo = React.useMemo(() => formatDateTitle(dateFilter, new Date()), [dateFilter])
 
+  // Cuota diaria restante del plan gratuito (la manda el backend en cada
+  // partido; null para anónimos y PRO → sin banner).
+  const unlocksRemaining = React.useMemo(() => {
+    for (const match of matches) {
+      if (match.unlocksRemaining != null) return match.unlocksRemaining
+    }
+    return null
+  }, [matches])
+
   return (
     <AppShell onToggleSidebar={() => setSidebarOpen((open) => !open)} activeLeagueCount={leagues.filter((league) => league.active_matches > 0).length}>
       <div className="flex gap-6">
@@ -150,6 +160,8 @@ export function MatchesPage() {
               ] as const).map((filter) => <button key={filter.id} type="button" onClick={() => setCardFilter(filter.id)} aria-pressed={cardFilter === filter.id} className={cn('whitespace-nowrap rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors', cardFilter === filter.id ? filter.id === 'best_value' ? 'border-positive/40 bg-positive/15 text-positive' : filter.id === 'high_confidence' ? 'border-primary/40 bg-primary/15 text-primary' : 'border-border bg-surface text-foreground' : 'border-border/60 bg-transparent text-muted-foreground hover:border-border hover:text-foreground')}>{filter.label}</button>)}
             </div>
           </div>
+
+          {unlocksRemaining != null && <UnlocksBanner remaining={unlocksRemaining} />}
 
           {loading ? <MatchesSkeleton /> : error ? <RouteError label="los partidos" onRetry={revalidate} /> : groupedMatches.length > 0 ? <div className="flex flex-col gap-3">{groupedMatches.map((group) => <LeagueAccordion key={group.key} leagueExternalId={group.externalId} leagueName={group.name} matches={group.matches} isOpen={openLeagues[group.key] !== false} onToggle={() => setOpenLeagues((current) => ({ ...current, [group.key]: current[group.key] === false }))} />)}</div> : <EmptyMatches onRetry={revalidate} />}
           {updatedAt && <p className="text-right text-[10px] font-mono text-subtle">Actualizado {new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' }).format(new Date(updatedAt))}</p>}

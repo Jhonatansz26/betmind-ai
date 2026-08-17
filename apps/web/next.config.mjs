@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Acceso en dev desde otros dispositivos de la LAN (p. ej. 192.168.18.156).
+  allowedDevOrigins: ['192.168.18.156'],
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -9,14 +11,6 @@ const nextConfig = {
       { protocol: 'https', hostname: 'a3.espncdn.com' },
       { protocol: 'https', hostname: 'a4.espncdn.com' },
       { protocol: 'https', hostname: 'upload.wikimedia.org' },
-    ],
-    domains: [
-      'a.espncdn.com',
-      'a1.espncdn.com',
-      'a2.espncdn.com',
-      'a3.espncdn.com',
-      'a4.espncdn.com',
-      'upload.wikimedia.org',
     ],
   },
 }
